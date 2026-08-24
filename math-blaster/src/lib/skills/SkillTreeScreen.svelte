@@ -11,17 +11,16 @@
     getInstallmentsPaid,
     installmentsForNextLevel,
     nextInstallmentCost,
-    purchaseNextInstallment,
     type SkillNode,
   } from './SkillTree';
   import type { PlayerProfile } from '../runtime/PlayerProfile';
-  import { savePlayerProfile } from '../runtime/PlayerProfile';
 
   interface Props {
     profile: PlayerProfile;
     onPlay: () => void;
+    onPurchase: (node: SkillNode<BaseSkillEffect>) => void;
   }
-  let { profile, onPlay }: Props = $props();
+  let { profile, onPlay, onPurchase }: Props = $props();
 
   const CATEGORY_LABELS: Record<BaseSkillCategory, string> = {
     economy: '💰 Economy',
@@ -173,6 +172,11 @@
     return depth === 0 ? 0 : RING_OFFSET + depth * RING_STEP;
   }
 
+  /** Angular breathing room between sibling branches, so a bead's whole
+   * sector reads as a distinct spoke instead of the ring looking like one
+   * solid wall of pips right after the node feeding them is purchased. */
+  const SIBLING_GAP_DEG = 5;
+
   const layout = $derived.by(() => {
     const nodes: LaidOutPip[] = [];
     const edges: Edge[] = [];
@@ -194,11 +198,13 @@
       if (children.length === 0) return;
       const weights = children.map(leafWeight);
       const total = weights.reduce((a, b) => a + b, 0);
+      const totalGap = children.length > 1 ? SIBLING_GAP_DEG * (children.length - 1) : 0;
+      const usableSpan = Math.max(0, endAngle - startAngle - totalGap);
       let cursor = startAngle;
       for (let i = 0; i < children.length; i++) {
-        const span = (endAngle - startAngle) * (weights[i] / total);
+        const span = usableSpan * (weights[i] / total);
         place(children[i], depth + 1, cursor, cursor + span, { x, y });
-        cursor += span;
+        cursor += span + SIBLING_GAP_DEG;
       }
     }
     place(ROOT_PIP, 0, 0, 360, null);
@@ -254,12 +260,8 @@
   }
 
   function purchase(pip: Pip) {
-    const result = purchaseNextInstallment(pip.node, profile.skillProgress, profile.skillSubProgress, profile.currency);
-    if (!result) return;
-    profile.skillProgress = result.progress;
-    profile.skillSubProgress = result.subProgress;
-    profile.currency -= result.pointsSpent;
-    savePlayerProfile(profile);
+    onPurchase(pip.node);
+    activePipKey = null;
   }
 </script>
 
@@ -433,8 +435,13 @@
     flex: 1;
     overflow: auto;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    /* Plain `center` on a scrollable flex container clamps negative scroll
+     * offsets to 0, permanently hiding any overflow before the centered
+     * content (e.g. branches to the left of root) - `safe center` keeps
+     * centering when everything fits, but falls back to start-aligned
+     * once content overflows, so every pip stays reachable by scrolling. */
+    align-items: safe center;
+    justify-content: safe center;
     min-height: 300px;
   }
   .radial-canvas {

@@ -14,6 +14,8 @@
   import type { PlayerProfile } from './runtime/PlayerProfile';
   import { loadPlayerProfile, savePlayerProfile } from './runtime/PlayerProfile';
   import { installSkillTreeDebugTools } from './runtime/devTools';
+  import { purchaseNextInstallment, type SkillNode } from './skills/SkillTree';
+  import type { BaseSkillEffect } from './skills/baseSkillTree';
   import { GAME_LEVELS } from './levels/gameLevels';
   import type { StageTheme } from './levels/LevelDefinition';
   import { gameEvents, type GameEvent } from './events';
@@ -77,6 +79,17 @@
 
   function goToSkillTree() {
     phase = 'skillTree';
+  }
+  /** Owns the actual profile mutation for a skill purchase - SkillTreeScreen
+   * only reads `profile` (via props) and calls back here, so Svelte's
+   * ownership checks never see a child mutating a prop it doesn't own. */
+  function purchaseSkill(node: SkillNode<BaseSkillEffect>) {
+    const result = purchaseNextInstallment(node, profile.skillProgress, profile.skillSubProgress, profile.currency);
+    if (!result) return;
+    profile.skillProgress = result.progress;
+    profile.skillSubProgress = result.subProgress;
+    profile.currency -= result.pointsSpent;
+    savePlayerProfile(profile);
   }
   function startRun() {
     resetRun(runtime, profile);
@@ -180,7 +193,7 @@
       <div class="mini-scores currency-note">💰 {profile.currency} banked</div>
     </div>
   {:else if phase === 'skillTree'}
-    <SkillTreeScreen profile={profile} onPlay={startRun} />
+    <SkillTreeScreen profile={profile} onPlay={startRun} onPurchase={purchaseSkill} />
   {:else}
     <div class="hud">
       <div class="hud-left">
