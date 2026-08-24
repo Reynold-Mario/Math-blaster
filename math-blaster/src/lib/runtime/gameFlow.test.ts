@@ -14,6 +14,7 @@ import {
   isBossWave,
   waveSpecFor,
 } from '../levels/waveProgression';
+import { cumulativeScopeForGrade, type GradeLevel } from '../levels/gradeTree';
 import { toNumber } from '../math/MathValue';
 import type { ProblemDefinition } from '../math/ProblemDefinition';
 
@@ -110,6 +111,77 @@ function spawnUntil(
   tickUntil(state, profile, () => state.enemies.some((e) => e.archetype === archetype), `a ${archetype} to spawn`);
   return state.enemies.find((e) => e.archetype === archetype)!;
 }
+
+describe('grade scoping', () => {
+  /** Collects the problems a run at this grade actually puts on screen,
+   * across enough waves to walk the whole ladder and past its end. */
+  function problemsAtGrade(grade: GradeLevel, waves: number[]): ProblemDefinition[] {
+    const profile = createEmptyProfile();
+    profile.selectedGrade = grade;
+    const seen: ProblemDefinition[] = [];
+
+    for (const wave of waves) {
+      const state = createInitialRuntimeState();
+      beginWave(state, wave);
+      tickUntil(state, profile, () => state.enemies.length > 0 || state.boss !== null, `wave ${wave}`);
+      for (const enemy of state.enemies) seen.push(enemy.problem);
+      if (state.boss) seen.push(state.boss.problem);
+    }
+    return seen;
+  }
+
+  /** A problem's operator. It lives on the expression rather than the
+   * problem, so that a problem could one day be a non-arithmetic form. */
+  function operatorOf(problem: ProblemDefinition): string {
+    return problem.expression.operator;
+  }
+
+  /** Every operator the grade is allowed to ask about, waves and boss alike. */
+  function allowedOperators(grade: GradeLevel): Set<string> {
+    return new Set(cumulativeScopeForGrade(grade).flatMap((c) => c.operations));
+  }
+
+  it('asks a Kindergarten run nothing but addition and subtraction', () => {
+    // Times tables must not turn up because a K player had a long run.
+    const problems = problemsAtGrade('K', [1, 2, 3, 4, 6, 7, 12, 30, 61, 120]);
+    expect(problems.length).toBeGreaterThan(5);
+    for (const problem of problems) {
+      expect(['+', '-']).toContain(operatorOf(problem));
+    }
+  });
+
+  it('keeps a Kindergarten boss inside Kindergarten maths too', () => {
+    const problems = problemsAtGrade('K', [WAVE_BOSS_INTERVAL, WAVE_BOSS_INTERVAL * 4]);
+    expect(problems.length).toBeGreaterThan(0);
+    for (const problem of problems) {
+      expect(['+', '-']).toContain(operatorOf(problem));
+    }
+  });
+
+  it('holds every grade to its own cumulative scope', () => {
+    for (const grade of ['K', '1', '2', '3'] as GradeLevel[]) {
+      const allowed = allowedOperators(grade);
+      for (const problem of problemsAtGrade(grade, [1, 5, 9, 20, 55])) {
+        expect(allowed).toContain(operatorOf(problem));
+      }
+    }
+  });
+
+  it('does reach multiplication for a Grade 3 run', () => {
+    // The flip side of the containment guarantee: scoping must not
+    // accidentally pin every grade to the easiest material.
+    const operators = new Set(problemsAtGrade('3', [1, 2, 3, 4, 6, 7, 8, 9, 11, 12]).map((p) => operatorOf(p)));
+    expect(operators.has('×') || operators.has('÷')).toBe(true);
+  });
+
+  it('takes the grade from resolveGrade, not from the wave number', () => {
+    // A run's difficulty is a property of who is playing, which is what
+    // makes the endless ladder safe for a six-year-old.
+    const early = problemsAtGrade('K', [1]);
+    const late = problemsAtGrade('K', [200]);
+    for (const problem of [...early, ...late]) expect(['+', '-']).toContain(operatorOf(problem));
+  });
+});
 
 describe('the run clock', () => {
   /**

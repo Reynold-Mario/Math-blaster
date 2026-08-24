@@ -10,7 +10,6 @@ import { phaseIndexForProgress } from '../levels/LevelDefinition';
 import { enemyArchetype, stepMovement, clampLane, GLOBAL_FALL_SPEED_MULTIPLIER } from '../levels/enemyArchetypes';
 import { buildFormation } from '../levels/waves';
 import {
-  DEFAULT_CURRICULUM_LADDER,
   arcadeDifficultyFor,
   bossRulesFor,
   bossScopeForWave,
@@ -25,6 +24,8 @@ import { resolveTarget, ALIGNMENT_TOLERANCE_PCT, weakPointXPct } from '../target
 import { gameEvents } from '../events';
 import { currentEffect } from '../skills/SkillTree';
 import { findBaseSkillNode } from '../skills/baseSkillTree';
+import { curriculumLadderForGrade, cumulativeScopeForGrade } from '../levels/gradeTree';
+import { resolveGrade } from './gradeSource';
 
 // Must match GameCanvas.svelte's own IMPACT_LINE_PCT constant.
 const IMPACT_LINE_PCT = 86;
@@ -131,21 +132,33 @@ function activeArcadeDifficulty(state: RuntimeState) {
     : arcadeDifficultyFor(state.waveNumber);
 }
 
-/** The curriculum ladder this run draws from. A single seam: the ladder is
- * a property of the run, not of the wave, so scoping it (to a grade, say)
- * means changing what is passed here and nothing else. */
-function curriculumLadder(): Curriculum[] {
-  return DEFAULT_CURRICULUM_LADDER;
+/**
+ * The curriculum ladder this run draws from - the player's grade and
+ * nothing harder. Every problem in the game comes through here.
+ *
+ * Resolved per call rather than captured at run start, so it costs nothing
+ * and can't go stale. `resolveGrade` is the one place the grade itself is
+ * decided; see gradeSource.ts.
+ */
+function curriculumLadder(profile: PlayerProfile): Curriculum[] {
+  return curriculumLadderForGrade(resolveGrade(profile));
+}
+
+/** What a boss may draw on: everything up to and including the run's grade,
+ * so a fight reviews the ground already covered. Wider than the wave ladder
+ * on purpose - waves teach this grade, bosses test everything up to it. */
+function bossScope(profile: PlayerProfile): Curriculum[] {
+  return cumulativeScopeForGrade(resolveGrade(profile));
 }
 
 /** Where a newly spawned or re-layered enemy's problem comes from. During
  * a boss fight even the adds draw from the boss's cumulative scope, so
  * the whole fight reviews everything learned so far. */
-function problemForCurrentPhase(state: RuntimeState): ProblemDefinition {
+function problemForCurrentPhase(state: RuntimeState, profile: PlayerProfile): ProblemDefinition {
   if (state.runPhase === 'boss' && state.boss && state.bossRules) {
     return generateBossProblem(state.bossRules.scope, state.boss.progress);
   }
-  return generateProblem(curriculumForWave(curriculumLadder(), state.waveNumber));
+  return generateProblem(curriculumForWave(curriculumLadder(profile), state.waveNumber));
 }
 
 // --- Skill-effect lookups. Skill levels now live on PlayerProfile (they
@@ -259,7 +272,7 @@ export function beginWave(state: RuntimeState, waveNumber: number): void {
 
 /** The breather has elapsed: send in whatever this wave is. */
 function openWave(state: RuntimeState, profile: PlayerProfile): void {
-  if (isBossWave(state.waveNumber)) startBossPhase(state);
+  if (isBossWave(state.waveNumber)) startBossPhase(state, profile);
   else releaseWave(state, profile);
 }
 
@@ -292,7 +305,6 @@ interface SpawnOptions {
   archetype: EnemyArchetypeId;
   xPct: number;
   y: number;
-  curriculum?: Curriculum;
 }
 
 /** Builds one enemy from its archetype. Everything mechanical - sprite,
@@ -301,7 +313,7 @@ interface SpawnOptions {
  * is no health to initialise: `layersRemaining` is the whole of it. */
 function spawnEnemy(state: RuntimeState, profile: PlayerProfile, options: SpawnOptions): EnemyInstance {
   const archetype = enemyArchetype(options.archetype);
-  const problem = options.curriculum ? generateProblem(options.curriculum) : problemForCurrentPhase(state);
+  const problem = problemForCurrentPhase(state, profile);
   const [minSpeed, maxSpeed] = activeArcadeDifficulty(state).fallSpeed;
   const lane = clampLane(options.xPct);
 
@@ -462,7 +474,7 @@ function applyHitToEnemy(
     gameEvents.emit({ type: 'shield-blocked', xPct: enemy.xPct, y: enemy.y, targetId: enemy.uid });
   } else if (outcome.shieldBroken) {
     enemy.shielded = false;
-    enemy.problem = problemForCurrentPhase(state);
+    enemy.problem = problemForCurrentPhase(state, profile);
     gameEvents.emit({ type: 'shield-broken', xPct: enemy.xPct, y: enemy.y, targetId: enemy.uid });
   } else {
     emitHitEvent(result, enemy.xPct, enemy.y, enemy.uid);
@@ -488,7 +500,7 @@ function applyHitToEnemy(
 
     if (outcome.layerBroken && !outcome.defeated) {
       enemy.layersRemaining -= 1;
-      enemy.problem = problemForCurrentPhase(state);
+      enemy.problem = problemForCurrentPhase(state, profile);
       gameEvents.emit({
         type: 'enemy-layer-broken',
         xPct: enemy.xPct,
@@ -565,8 +577,8 @@ function enterBossPhase(state: RuntimeState, phaseIndex: number): void {
 /** Builds the fight for this wave and starts it. The rules are generated
  * from the wave number rather than read off a level, and stored on the run
  * because there's nowhere else for them to live. */
-function startBossPhase(state: RuntimeState): void {
-  const rules = bossRulesFor(state.waveNumber, bossScopeForWave(curriculumLadder(), state.waveNumber));
+function startBossPhase(state: RuntimeState, profile: PlayerProfile): void {
+  const rules = bossRulesFor(state.waveNumber, bossScopeForWave(bossScope(profile), state.waveNumber));
   state.runPhase = 'boss';
   state.bossRules = rules;
   state.enemies = [];
@@ -748,7 +760,7 @@ function applyBomb(state: RuntimeState, profile: PlayerProfile, layersStripped: 
 
     if (enemy.layersRemaining > layersStripped) {
       enemy.layersRemaining -= layersStripped;
-      enemy.problem = problemForCurrentPhase(state);
+      enemy.problem = problemForCurrentPhase(state, profile);
       gameEvents.emit({
         type: 'enemy-layer-broken',
         xPct: enemy.xPct,

@@ -131,6 +131,26 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   with no authored palette of its own darkens where it is rather than jumping
   somewhere unrelated. Colour parsing falls back to an unblended end rather
   than to black, so a malformed palette can't paint the scene out.
+- **DIFFICULTY OF THE MATHS IS THE PLAYER'S GRADE, NOT THE WAVE NUMBER.**
+  `gradeTree.ts` is the curriculum spine (it was dead code; now everything is
+  drawn through it). `curriculumLadderForGrade()` gives a run that grade's
+  topics *and nothing harder*, and `curriculumForWave` holds at the last rung -
+  so a six-year-old having an excellent run gets faster and busier waves, never
+  times tables. `gameFlow.curriculumLadder()` is the single seam every problem
+  comes through; `gradeTree.test.ts` and `gameFlow.test.ts` both pin the
+  containment property out past wave 300. Arcade difficulty still scales with
+  the wave number - that separation is the point.
+- **Boss scope is cumulative, wave scope is not.** `cumulativeScopeForGrade()`
+  spans K up through the run's grade, because waves teach this grade and bosses
+  test everything up to it. It must stay ordered easiest-first:
+  `generateBossProblem` weights selection toward the end of the array as a
+  fight goes on, so an out-of-order scope would make a fight get *easier*.
+- **`resolveGrade()` in `gradeSource.ts` is the only place the grade is
+  decided**, and it exists to be swapped: the grade is meant to come from a
+  service that already knows it, and that function's body is all that should
+  change. Treat that future answer as untrusted the way the current one is -
+  validate against `GRADE_ORDER` and fall back to a real grade, never let an
+  unknown value reach the ladder.
 - **`waveProgression.ts` is the only place a wave number becomes anything.**
   Formation, fall speed, concurrency, curriculum, boss, backdrop - all of it
   from `waveNumber`, all pure and deterministic. Wave 12 must be wave 12 every
@@ -211,13 +231,12 @@ instead of events - stop, that's the exact coupling this structure exists to avo
 
 Don't "fix" these without checking - they're intentional stopping points, not bugs:
 
-- **No grade-select screen.** `gradeTree.ts` (K-3 curriculum unlock data) is real
-  and functional but nothing reads it yet. A run walks
-  `gameLevels.CURRICULUM_LADDER` - every authored curriculum, K through Grade 3 -
-  as its wave count climbs. Scoping that to one grade is a one-function change:
-  `gameFlow.curriculumLadder()` is the single seam every problem is drawn
-  through, and `curriculumForWave` already guarantees a run can never reach
-  past the ladder it is handed.
+- **Grades 4-12 are typed but unauthored.** `GRADE_ORDER` runs to 12;
+  `GRADE_TOPICS` only has K-3. The grade picker offers only grades with topics,
+  and `curriculumLadderForGrade` falls back to every authored curriculum for a
+  grade with none - a run with no problems in it is a far worse failure than a
+  run at the wrong difficulty. Adding a grade is a data addition to
+  `GRADE_TOPICS`; Grades 4-5 would also need fraction/decimal *generation*.
 - **Gamepad isn't implemented.** `InputManager` has a doc-comment constraint
   (dedicated buttons per action category, never overloaded) for whenever it is.
 - **Base skill tree unlocks through five branch gates.** The free root reveals
