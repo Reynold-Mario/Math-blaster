@@ -17,12 +17,11 @@ export interface EnemyInstance {
   kind: GruntKind;
   mini: boolean;
   problem: ProblemDefinition;
-  /** Health of the *current layer only*, not of the whole enemy. */
-  hp: number;
-  maxHp: number;
-  /** Layers still standing, including the one currently being chipped.
-   * Emptying a layer while others remain mints a fresh problem rather
-   * than killing the enemy - a multi-layer enemy is multiple questions. */
+  /** Layers still standing, including the one currently being answered.
+   * There is no health behind a layer - a layer IS the question, and only
+   * an exact/equivalent answer clears one. Answering a layer while others
+   * remain mints a fresh problem rather than killing the enemy, so a
+   * multi-layer enemy is simply multiple questions. */
   layersRemaining: number;
   layersTotal: number;
   /** True while an intact shield is deflecting everything short of an

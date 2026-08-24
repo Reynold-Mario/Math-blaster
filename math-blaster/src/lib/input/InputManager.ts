@@ -52,7 +52,6 @@ export class InputManager {
     const k = key.toLowerCase();
     if (k === 'f') return { type: 'skill', skill: 'freeze' };
     if (k === 'b') return { type: 'skill', skill: 'bomb' };
-    if (k === 's') return { type: 'skill', skill: 'shield' };
     return null;
   }
 

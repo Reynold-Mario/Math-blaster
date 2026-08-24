@@ -14,14 +14,13 @@ export type HitTargetId = number | 'boss';
 
 export type GameEvent =
   | { type: 'shot-fired'; guessText: string; xPct: number }
-  | { type: 'hit-exact'; xPct: number; y: number; damage: number; targetId: HitTargetId }
-  | { type: 'hit-equivalent'; xPct: number; y: number; damage: number; targetId: HitTargetId }
-  | { type: 'hit-close'; xPct: number; y: number; damage: number; targetId: HitTargetId }
+  | { type: 'hit-exact'; xPct: number; y: number; targetId: HitTargetId }
+  | { type: 'hit-equivalent'; xPct: number; y: number; targetId: HitTargetId }
+  | { type: 'hit-close'; xPct: number; y: number; targetId: HitTargetId }
   | {
       type: 'hit-partial';
       xPct: number;
       y: number;
-      damage: number;
       targetId: HitTargetId;
       /** Place-value aligned, same shape as MathValue's DigitMatch, so the
        * "distinct visual indication" can highlight exactly which digits
@@ -36,9 +35,13 @@ export type GameEvent =
    * have been right, it just wasn't right *enough*. */
   | { type: 'shield-blocked'; xPct: number; y: number; targetId: HitTargetId }
   | { type: 'shield-broken'; xPct: number; y: number; targetId: HitTargetId }
-  /** One layer of a multi-layer enemy emptied, revealing a fresh problem.
+  /** One layer of a multi-layer enemy answered, revealing a fresh problem.
    * The enemy is still alive - see `enemy-defeated` for the last layer. */
   | { type: 'enemy-layer-broken'; xPct: number; y: number; layersRemaining: number }
+  /** A close or partial answer shoved a grunt back up the screen. Enemies
+   * have no health, so this - buying time - is what a not-quite-right
+   * answer earns, and `amountPct` is how much of it was earned. */
+  | { type: 'enemy-knockback'; xPct: number; y: number; amountPct: number }
   | { type: 'enemy-defeated'; xPct: number; y: number; kind: string }
   | { type: 'enemy-split'; xPct: number; y: number; count: number }
   | { type: 'reinforcement-spawned'; xPct: number }

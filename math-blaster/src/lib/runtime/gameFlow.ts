@@ -35,6 +35,10 @@ const OPENING_WAVE_DELAY_SEC = 1.2;
 const WAVE_RETRY_DELAY_SEC = 0.7;
 /** Horizontal spread of the minis a splitter breaks into. */
 const SPLIT_SPREAD_PCT = 9;
+/** How far back up the screen a knockback can push an enemy. Kept a little
+ * above the top edge so a shoved enemy still reads as being on its way in
+ * rather than vanishing off-screen. */
+const KNOCKBACK_CEILING_Y_PCT = -10;
 
 /** The fight enters its finale when this fraction of the survive timer is
  * left - the boss drops its shield for good and goes berserk. */
@@ -102,10 +106,6 @@ function currentEnemySpeedMultiplier(profile: PlayerProfile): number {
   const effect = currentEffect(findBaseSkillNode('enemy-slowdown')!, profile.skillProgress);
   return effect.kind === 'enemySpeed' ? effect.multiplier : 1;
 }
-function currentEnemyHpMultiplier(profile: PlayerProfile): number {
-  const effect = currentEffect(findBaseSkillNode('health-pool')!, profile.skillProgress);
-  return effect.kind === 'health' ? effect.enemyHpMultiplier : 1;
-}
 function currentPierceChance(profile: PlayerProfile): number {
   const effect = currentEffect(findBaseSkillNode('pierce')!, profile.skillProgress);
   return effect.kind === 'pierce' ? effect.chance : 0;
@@ -120,7 +120,7 @@ function currentDodgeChance(profile: PlayerProfile): number {
 }
 function currentArmorReduction(profile: PlayerProfile): number {
   const effect = currentEffect(findBaseSkillNode('armor')!, profile.skillProgress);
-  return effect.kind === 'armor' ? effect.damageReduction : 0;
+  return effect.kind === 'armor' ? effect.penaltyReduction : 0;
 }
 function currentBountyBonus(profile: PlayerProfile): number {
   const effect = currentEffect(findBaseSkillNode('bounty')!, profile.skillProgress);
@@ -128,10 +128,7 @@ function currentBountyBonus(profile: PlayerProfile): number {
 }
 function startingTimeMs(profile: PlayerProfile): number {
   const moreTime = currentEffect(findBaseSkillNode('more-time')!, profile.skillProgress);
-  const health = currentEffect(findBaseSkillNode('health-pool')!, profile.skillProgress);
-  const moreTimeBonus = moreTime.kind === 'moreTime' ? moreTime.bonusMs : 0;
-  const healthBonus = health.kind === 'health' ? health.bonusTimeMs : 0;
-  return BASE_TIMER_MS + moreTimeBonus + healthBonus;
+  return BASE_TIMER_MS + (moreTime.kind === 'moreTime' ? moreTime.bonusMs : 0);
 }
 
 // --- Setup ---
@@ -194,12 +191,11 @@ interface SpawnOptions {
 
 /** Builds one enemy from its archetype. Everything mechanical - sprite,
  * layers, shield, speed - is read from the archetype here and then never
- * looked up again during a hit, so an instance is self-describing. */
+ * looked up again during a hit, so an instance is self-describing. There
+ * is no health to initialise: `layersRemaining` is the whole of it. */
 function spawnEnemy(state: RuntimeState, profile: PlayerProfile, options: SpawnOptions): EnemyInstance {
   const archetype = enemyArchetype(options.archetype);
   const problem = options.curriculum ? generateProblem(options.curriculum) : problemForCurrentPhase(state);
-  const baseMaxHp = archetype.mini ? 60 : 100;
-  const maxHp = Math.round(baseMaxHp * currentEnemyHpMultiplier(profile));
   const [minSpeed, maxSpeed] = activeArcadeDifficulty(state).fallSpeed;
   const lane = clampLane(options.xPct);
 
@@ -209,8 +205,6 @@ function spawnEnemy(state: RuntimeState, profile: PlayerProfile, options: SpawnO
     kind: archetype.sprite,
     mini: archetype.mini,
     problem,
-    hp: maxHp,
-    maxHp,
     layersRemaining: archetype.layers,
     layersTotal: archetype.layers,
     shielded: archetype.shielded,
@@ -295,23 +289,22 @@ function spawnSplit(state: RuntimeState, profile: PlayerProfile, parent: EnemyIn
 
 // --- Combat resolution ---
 
-function emitHitEvent(result: AnswerResult, xPct: number, y: number, damage: number, targetId: number | 'boss'): void {
+function emitHitEvent(result: AnswerResult, xPct: number, y: number, targetId: number | 'boss'): void {
   switch (result.verdict) {
     case 'exact':
-      gameEvents.emit({ type: 'hit-exact', xPct, y, damage, targetId });
+      gameEvents.emit({ type: 'hit-exact', xPct, y, targetId });
       break;
     case 'equivalent':
-      gameEvents.emit({ type: 'hit-equivalent', xPct, y, damage, targetId });
+      gameEvents.emit({ type: 'hit-equivalent', xPct, y, targetId });
       break;
     case 'close':
-      gameEvents.emit({ type: 'hit-close', xPct, y, damage, targetId });
+      gameEvents.emit({ type: 'hit-close', xPct, y, targetId });
       break;
     case 'partial':
       gameEvents.emit({
         type: 'hit-partial',
         xPct,
         y,
-        damage,
         targetId,
         answerDigits: result.digitMatch?.answerDigits ?? '',
         digitMatches: result.digitMatch?.matches ?? [],
@@ -365,10 +358,21 @@ function applyHitToEnemy(
     enemy.problem = problemForCurrentPhase(state);
     gameEvents.emit({ type: 'shield-broken', xPct: enemy.xPct, y: enemy.y, targetId: enemy.uid });
   } else {
-    emitHitEvent(result, enemy.xPct, enemy.y, outcome.damage, enemy.uid);
-    enemy.hp = Math.max(0, enemy.hp - outcome.damage);
+    emitHitEvent(result, enemy.xPct, enemy.y, enemy.uid);
 
-    if (outcome.damage > 0) {
+    if (outcome.knockbackPct > 0) {
+      enemy.y = Math.max(KNOCKBACK_CEILING_Y_PCT, enemy.y - outcome.knockbackPct);
+      gameEvents.emit({
+        type: 'enemy-knockback',
+        xPct: enemy.xPct,
+        y: enemy.y,
+        amountPct: outcome.knockbackPct,
+      });
+    }
+
+    // Burn is earned by any answer that actually reached the enemy, not
+    // just a layer-clearing one - a close answer is still a hit landing.
+    if (outcome.layerBroken || outcome.knockbackPct > 0) {
       const burn = currentEffect(findBaseSkillNode('burn')!, profile.skillProgress);
       if (burn.kind === 'burn' && burn.chance > 0 && Math.random() < burn.chance) {
         enemy.burnUntilMs = performance.now() + burn.durationSec * 1000;
@@ -377,7 +381,6 @@ function applyHitToEnemy(
 
     if (outcome.layerBroken && !outcome.defeated) {
       enemy.layersRemaining -= 1;
-      enemy.hp = enemy.maxHp;
       enemy.problem = problemForCurrentPhase(state);
       gameEvents.emit({
         type: 'enemy-layer-broken',
@@ -534,7 +537,7 @@ function resolveBossShot(
     return;
   }
 
-  emitHitEvent(result, fxX, BOSS_FX_Y_PCT, outcome.surviveCutMs, 'boss');
+  emitHitEvent(result, fxX, BOSS_FX_Y_PCT, 'boss');
 
   if (outcome.shieldBroken) {
     dropBossShield(state, currentBossPhase(state));
@@ -610,7 +613,7 @@ function fire(state: RuntimeState, profile: PlayerProfile): void {
   }
 }
 
-function applyBomb(state: RuntimeState, profile: PlayerProfile, damage: number): void {
+function applyBomb(state: RuntimeState, profile: PlayerProfile, layersStripped: number): void {
   if (state.stagePhase === 'boss' && state.boss) {
     const boss = state.boss;
     const cleared = state.enemies.length;
@@ -627,17 +630,15 @@ function applyBomb(state: RuntimeState, profile: PlayerProfile, damage: number):
     return;
   }
 
-  // A bomb only ever empties the layer an enemy is currently on - a
-  // multi-layer enemy survives it with a fresh problem, which is what
-  // makes those enemies the answer to a bomb-heavy playstyle.
+  // A bomb answers layers outright rather than dealing damage to them. It
+  // strips a fixed number, so a multi-layer enemy can survive one with a
+  // fresh problem - which is what makes those enemies the answer to a
+  // bomb-heavy playstyle.
   for (const enemy of [...state.enemies]) {
     if (enemy.shielded) continue;
-    enemy.hp = Math.max(0, enemy.hp - damage);
-    if (enemy.hp > 0) continue;
 
-    if (enemy.layersRemaining > 1) {
-      enemy.layersRemaining -= 1;
-      enemy.hp = enemy.maxHp;
+    if (enemy.layersRemaining > layersStripped) {
+      enemy.layersRemaining -= layersStripped;
       enemy.problem = problemForCurrentPhase(state);
       gameEvents.emit({
         type: 'enemy-layer-broken',
@@ -664,8 +665,8 @@ function useSkill(state: RuntimeState, profile: PlayerProfile, skillId: string):
     state.skillCooldowns.freeze = effect.cooldownSec * 1000;
     gameEvents.emit({ type: 'skill-used', skill: 'freeze' });
   } else if (skillId === 'bomb' && effect.kind === 'bomb') {
-    if (effect.damage <= 0) return; // level 0 - not yet purchased
-    applyBomb(state, profile, effect.damage);
+    if (effect.layersStripped <= 0) return; // level 0 - not yet purchased
+    applyBomb(state, profile, effect.layersStripped);
     state.skillCooldowns.bomb = effect.cooldownSec * 1000;
     gameEvents.emit({ type: 'skill-used', skill: 'bomb' });
   }

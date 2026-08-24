@@ -12,8 +12,6 @@ function makeEnemy(overrides: Partial<EnemyInstance> & { uid: number; xPct: numb
     kind: 'slime',
     mini: false,
     problem: arithmeticProblem('+', 1, 1),
-    hp: 10,
-    maxHp: 10,
     layersRemaining: 1,
     layersTotal: 1,
     shielded: false,

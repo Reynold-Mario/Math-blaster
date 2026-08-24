@@ -8,7 +8,19 @@ const MISS_STREAK_THRESHOLD = 3;
 const REINFORCE_CHANCE_CLOSE = 0.5;
 const REINFORCE_CHANCE_PARTIAL = 0.35;
 
-const GRUNT_PARTIAL_BASE = 0.7;
+// --- Grunt knockback. Grunts have no health: an exact answer breaks a
+// layer outright, and a near-miss shoves the enemy back up the screen
+// instead of chipping a hit-point pool. What a good-but-not-exact answer
+// buys is time, which is the only resource this game runs on.
+//
+// The partial ceiling sits below the close amount on purpose, so a close
+// answer always out-pushes a partial one no matter how many digits that
+// partial matched. ---
+
+/** How far up the screen (in y-percent) a `close` answer shoves a grunt. */
+const KNOCKBACK_CLOSE_PCT = 18;
+/** The most a `partial` answer can shove one, at a full digit match. */
+const KNOCKBACK_PARTIAL_MAX_PCT = 11;
 
 // --- Boss timer cuts. A boss has no health; a good answer shortens how
 // long the player has to survive instead. The numbers are milliseconds
@@ -23,9 +35,9 @@ const BOSS_CUT_PARTIAL_MAX_MS = 1600;
  * hit on the body - it's a harder shot under a tighter tolerance. */
 const BOSS_WEAK_POINT_CUT_MS = 4200;
 
-/** How much of a "partial" hit's damage lands, scaled by how many digits
- * actually matched rather than a flat rate - more matching digits reads
- * as more damage, not just a fixed partial-credit amount. */
+/** How much of a "partial" hit lands, scaled by how many digits actually
+ * matched rather than a flat rate - more matching digits reads as a
+ * bigger shove, not just a fixed partial-credit amount. */
 function partialMatchRatio(result: AnswerResult): number {
   if (!result.digitMatch || result.digitMatch.matches.length === 0) return 0;
   const hits = result.digitMatch.matches.filter(Boolean).length;
@@ -38,15 +50,15 @@ function isMastered(verdict: AnswerVerdict): boolean {
   return verdict === 'exact' || verdict === 'equivalent';
 }
 
-function damageForGrunt(result: AnswerResult, maxHp: number): number {
+/** How far a non-exact answer shoves a grunt back up the screen. Exact and
+ * equivalent return 0 because they don't push anything - they break the
+ * layer instead. */
+function knockbackForGrunt(result: AnswerResult): number {
   switch (result.verdict) {
-    case 'exact':
-    case 'equivalent':
-      return maxHp;
     case 'close':
-      return Math.round(maxHp * 0.5);
+      return KNOCKBACK_CLOSE_PCT;
     case 'partial':
-      return Math.round(maxHp * GRUNT_PARTIAL_BASE * partialMatchRatio(result));
+      return KNOCKBACK_PARTIAL_MAX_PCT * partialMatchRatio(result);
     default:
       return 0;
   }
@@ -100,27 +112,31 @@ function decideReinforcement(verdict: AnswerVerdict, missStreak: number): Reinfo
 }
 
 /** The consequence of one shot on a grunt. Pure - callers apply the
- * hp/layer/shield changes and spawn the reinforcement themselves. */
+ * knockback/layer/shield changes and spawn the reinforcement themselves. */
 export interface GruntHitOutcome {
-  damage: number;
+  /** How far up the screen to shove the enemy, in y-percent. Only ever
+   * non-zero for close and partial answers - the reward for nearly getting
+   * it right is time, not a dent in a health bar. */
+  knockbackPct: number;
   /** The shot bounced off an intact shield: nothing landed, and the
    * shield is still up. */
   blocked: boolean;
-  /** This shot stripped the shield. No damage lands on the same shot -
+  /** This shot stripped the shield. Nothing else lands on the same shot -
    * breaking through is its own step. */
   shieldBroken: boolean;
-  /** The current layer was emptied. When other layers remain the caller
-   * refreshes hp and mints a new problem instead of removing the enemy. */
+  /** The current layer was answered. When other layers remain the caller
+   * mints a new problem instead of removing the enemy. */
   layerBroken: boolean;
-  /** The last layer was emptied - the enemy is gone. */
+  /** The last layer was answered - the enemy is gone. */
   defeated: boolean;
   reinforce: boolean;
   missStreak: number;
 }
 
+/** Everything a grunt hit reads off its target. No health here: a layer is
+ * a question to answer, not a pool to drain, so `layersRemaining` is the
+ * whole of an enemy's durability. */
 export interface GruntTarget {
-  hp: number;
-  maxHp: number;
   layersRemaining: number;
   shielded: boolean;
 }
@@ -132,13 +148,13 @@ export function resolveGruntHit(result: AnswerResult, target: GruntTarget, missS
     missStreak: decision.missStreak,
   };
 
-  // A shield is a hard gate, not a damage reduction: only an exact answer
+  // A shield is a hard gate, not a partial reduction: only an exact answer
   // gets through it, and doing so costs the whole shot.
   if (target.shielded) {
     const cracked = isMastered(result.verdict);
     return {
       ...base,
-      damage: 0,
+      knockbackPct: 0,
       blocked: !cracked,
       shieldBroken: cracked,
       layerBroken: false,
@@ -146,12 +162,14 @@ export function resolveGruntHit(result: AnswerResult, target: GruntTarget, missS
     };
   }
 
-  const damage = damageForGrunt(result, target.maxHp);
-  const layerBroken = damage > 0 && target.hp - damage <= 0;
+  // Only mastery answers a layer. Anything less lands as a shove, which is
+  // why `close` can never accumulate into a kill the way half-damage used
+  // to - it buys the player time to work the problem out properly.
+  const layerBroken = isMastered(result.verdict);
 
   return {
     ...base,
-    damage,
+    knockbackPct: layerBroken ? 0 : knockbackForGrunt(result),
     blocked: false,
     shieldBroken: false,
     layerBroken,

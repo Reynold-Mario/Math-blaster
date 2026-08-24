@@ -127,6 +127,11 @@
       case 'enemy-layer-broken':
         pushFloat(event.xPct, event.y, `${event.layersRemaining} LEFT`, COLOR_PARTIAL);
         break;
+      case 'enemy-knockback':
+        // Reads as ground gained rather than damage dealt - what a
+        // close-but-not-exact answer actually buys is time.
+        pushFloat(event.xPct, event.y, 'PUSHED BACK!', COLOR_CLOSE);
+        break;
       case 'enemy-split':
         pushFloat(event.xPct, event.y, 'SPLIT!', COLOR_PARTIAL);
         break;
@@ -222,7 +227,10 @@
     ctx.restore();
   }
 
-  function drawHpBar(ctx: CanvasRenderingContext2D, cx: number, y: number, width: number, height: number, ratio: number, isBoss: boolean) {
+  /** A generic 0-1 meter. Named for what it is rather than what it once
+   * drew - the only meter left in the game is the boss's survive clock;
+   * nothing here has health. */
+  function drawMeterBar(ctx: CanvasRenderingContext2D, cx: number, y: number, width: number, height: number, ratio: number, isBoss: boolean) {
     const x = cx - width / 2;
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.fillRect(x, y, width, height);
@@ -334,9 +342,6 @@
     const size = spriteSize(sprite, pixel);
     const isTargeted = target.kind === 'enemy' && target.enemy.uid === enemy.uid;
 
-    if (enemy.hp < enemy.maxHp) {
-      drawHpBar(ctx, x, y - 10, 40, 6, enemy.hp / enemy.maxHp, false);
-    }
     if (enemy.layersTotal > 1) {
       drawLayerPips(ctx, x, y - 19, enemy.layersRemaining, enemy.layersTotal);
     }
@@ -409,7 +414,7 @@
 
     // The bar is the survive clock, not health - it drains toward the
     // player winning rather than toward the boss dying.
-    drawHpBar(ctx, x, y - 22, 96, 9, boss.surviveRemainingMs / boss.surviveTotalMs, true);
+    drawMeterBar(ctx, x, y - 22, 96, 9, boss.surviveRemainingMs / boss.surviveTotalMs, true);
     drawComboPips(ctx, x, y - 10, boss.combo, boss.comboRequired);
 
     drawSprite(ctx, sprite, x, y, pixel, { centerX: true, filter: flashFilter(isFlashing('boss', nowMs)) });

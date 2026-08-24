@@ -17,12 +17,17 @@ The game grades answers on a spectrum, not just right/wrong:
 
 | Verdict | What it means | What happens |
 |---|---|---|
-| **Exact** | Correct, as written | Big damage |
+| **Exact** | Correct, as written | Answers the enemy's problem outright — it's gone |
 | **Equivalent** | Correct, different form (e.g. a fraction equal to the target) | Same as exact |
-| **Close** | Numerically near | Partial damage, chance of a reinforcement enemy |
-| **Partial** | Some digits right (by place value) | Damage scaled to how much matched, shown with the matched digits highlighted |
-| **Incorrect** | Wrong | No damage, no direct penalty — but repeated misses eventually call in a reinforcement |
+| **Close** | Numerically near | Shoves the enemy back up the screen, buying you time; chance of a reinforcement enemy |
+| **Partial** | Some digits right (by place value) | A smaller shove, scaled to how much matched, shown with the matched digits highlighted |
+| **Incorrect** | Wrong | Nothing happens, no direct penalty — but repeated misses eventually call in a reinforcement |
 | **Invalid** | Unparseable input | No effect either way |
+
+Nothing in the game has health. An enemy is a stack of problems, and only a
+fully correct answer clears one. A close answer can never accumulate into a
+kill — what it buys is *time*, which is the only resource a run actually
+spends.
 
 Nothing about answering wrong costs you anything *directly*. The pressure
 comes from the clock and from enemies that reach the bottom, not from
@@ -47,10 +52,10 @@ still making genuine mastery matter for how well a run goes.
 - **Incremental-style meta-progression.** You earn currency from every
   defeated enemy and spend it between runs on permanent upgrades — the
   loop is meant to reward repeated play, not just a single sitting.
-- **Enemies are threats to read, not health bars to drain.** What makes
-  one enemy harder than another is how it moves, how many problems it
-  takes, and whether it will accept anything less than an exact answer —
-  never just a bigger number attached to the same behaviour.
+- **Nothing has health.** Not the player, not the bosses, not the enemies.
+  What makes one enemy harder than another is how it moves, how many
+  problems it takes, and whether it will accept anything less than an
+  exact answer — never a number being ground down.
 
 ## Core gameplay loop
 
@@ -93,7 +98,7 @@ difficulty between levels.
 
 ## Boss fights
 
-Bosses have no health bar. A fight ends one of two ways:
+Bosses have no health bar either. A fight ends one of two ways:
 
 - **Outlast it.** Survive the fight's timer and the boss goes down.
   Every correct answer shortens that timer, so close and partial answers
@@ -129,7 +134,7 @@ session) is designed for but not wired up yet; see Current Status.
 
 **Base Skill Tree** — combat/economy upgrades, purchased with currency
 between runs: Economy (Bounty, More Time), Movement (Player Speed, Enemy
-Slowdown), Defense (Health Pool, Dodge, Armor), Firing (Piercing Shots,
+Slowdown), Defense (Dodge, Armor), Firing (Piercing Shots,
 Burn, Firing Speed), and two unlockable Active Abilities (Freeze, Bomb).
 Multi-level skills render as a chain of nodes in the shop — the next
 level only becomes visible once the previous one is bought, and a node
@@ -157,7 +162,7 @@ worlds and three phased boss fights with both win conditions.
 - Gamepad input — the input system is built to support it cleanly
   whenever it's added, but no gamepad code exists yet.
 
-**Not yet tuned:** skill costs, damage numbers, fall speeds, wave gaps, the
+**Not yet tuned:** skill costs, knockback distances, fall speeds, wave gaps, the
 30-second timer, the 5-second impact penalty, and every boss's survive
 duration and combo requirement are all reasonable placeholders, not numbers
 validated by real play.

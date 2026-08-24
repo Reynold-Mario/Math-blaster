@@ -115,6 +115,10 @@ function handleGameEvent(event: GameEvent) {
     case 'enemy-split':
       sfx.layerBreak();
       break;
+    case 'enemy-knockback':
+      // No sound of its own: the hit-close/hit-partial cue that always
+      // accompanies a knockback already reports it.
+      break;
     case 'boss-combo':
       sfx.combo(event.combo);
       break;

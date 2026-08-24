@@ -51,7 +51,6 @@
     'more-time': '⏱',
     'player-speed': '🏃',
     'enemy-slowdown': '🐌',
-    'health-pool': '❤️',
     dodge: '🤸',
     armor: '🛡',
     pierce: '🏹',
@@ -88,12 +87,10 @@
         return `Move speed ×${effect.multiplier.toFixed(2)}`;
       case 'enemySpeed':
         return `Enemy fall speed ×${effect.multiplier.toFixed(2)}`;
-      case 'health':
-        return `+${(effect.bonusTimeMs / 1000).toFixed(0)}s start time (enemies ×${effect.enemyHpMultiplier.toFixed(2)} HP)`;
       case 'dodge':
         return `${Math.round(effect.chance * 100)}% dodge chance`;
       case 'armor':
-        return `${Math.round(effect.damageReduction * 100)}% less time lost per hit`;
+        return `${Math.round(effect.penaltyReduction * 100)}% less time lost per hit`;
       case 'pierce':
         return `${Math.round(effect.chance * 100)}% pierce chance`;
       case 'burn':
@@ -101,7 +98,7 @@
       case 'fireRate':
         return `${effect.cooldownSec.toFixed(2)}s between shots`;
       case 'bomb':
-        return `${effect.damage} dmg blast, ${effect.cooldownSec.toFixed(0)}s cooldown`;
+        return `Clears ${effect.layersStripped} layer${effect.layersStripped === 1 ? '' : 's'}, ${effect.cooldownSec.toFixed(0)}s cooldown`;
       case 'freeze':
         return `${effect.durationSec.toFixed(1)}s freeze, ${effect.cooldownSec.toFixed(0)}s cooldown`;
       case 'bounty':
