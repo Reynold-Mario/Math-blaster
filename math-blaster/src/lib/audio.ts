@@ -143,15 +143,17 @@ function handleGameEvent(event: GameEvent) {
     case 'impact-avoided':
       sfx.skill();
       break;
-    case 'stage-cleared':
-    case 'boss-defeated':
+    case 'wave-cleared':
       sfx.stageClear();
+      break;
+    case 'boss-defeated':
+      // The old victory sting, repurposed: with an endless wave sequence
+      // there's no final win to save it for, and beating a boss is the
+      // biggest thing that happens in a run.
+      sfx.victory();
       break;
     case 'game-over':
       sfx.gameover();
-      break;
-    case 'victory':
-      sfx.victory();
       break;
     default:
       break;

@@ -1,5 +1,5 @@
 import type { ProblemDefinition } from '../math/ProblemDefinition';
-import type { GruntKind, BossSpriteKind } from '../levels/LevelDefinition';
+import type { BossRules, GruntKind, BossSpriteKind } from '../levels/LevelDefinition';
 import type { EnemyArchetypeId } from '../levels/enemyArchetypes';
 
 /** A grunt enemy actually on screen. References its ProblemDefinition and
@@ -118,17 +118,23 @@ export interface BossState {
   defeatedBy: BossDefeatCause | null;
 }
 
-export type StagePhase = 'level' | 'boss';
+/** What the run is currently doing. A boss is a *kind of wave* now, not a
+ * phase of a stage - there are no stages left to be a phase of. */
+export type RunPhase = 'wave' | 'boss';
 
 /**
- * Everything that changes during a single run, as opposed to the static
- * LevelDefinition/ProblemDefinition data describing the rules, and as
- * opposed to PlayerProfile, which persists *across* runs (currency,
- * purchased skill levels). This resets every time a run starts.
+ * Everything that changes during a single run, as opposed to the authored
+ * LevelDefinition/ProblemDefinition data it is built from, and as opposed
+ * to PlayerProfile, which persists *across* runs (currency, purchased
+ * skill levels). This resets every time a run starts.
  */
 export interface RuntimeState {
-  stageIndex: number;
-  stagePhase: StagePhase;
+  /** Which wave the run is on, 1-based and global. This is the run's whole
+   * sense of position - there is no stage index any more, and the number
+   * is what the HUD shows, what the boss cadence divides, and what a
+   * checkpoint starts you at. */
+  waveNumber: number;
+  runPhase: RunPhase;
   score: number;
   /** Milliseconds left on the clock - the run ends at 0. Replaces the
    * earlier discrete-lives model with a single depleting time budget;
@@ -137,19 +143,36 @@ export interface RuntimeState {
   timeRemainingMs: number;
   enemies: EnemyInstance[];
   player: PlayerState;
-  /** Present only while stagePhase is 'boss'. */
+  /** Present only while runPhase is 'boss'. */
   boss: BossState | null;
-  /** Counts only kills that qualify toward the level quota - see the
-   * archetype's countsTowardClear. */
+  /** The rules the current fight is running under. Bosses are generated
+   * from a wave number now rather than authored on a stage, so the run has
+   * to hold onto the ones it generated - there's no level to look them up
+   * on. Present exactly when `boss` is. */
+  bossRules: BossRules | null;
+  /** Qualifying kills this run, for score and end-of-run readout only. It
+   * no longer gates anything: the boss cadence is a wave count. */
   enemiesDefeated: number;
-  /** Seconds until the next wave is released (level phase) or the next
-   * add is called in (boss phase). */
+  /** Qualifying kills in the current wave - what the wave-clear payout is
+   * measured against, so leaking enemies costs the bonus as well as the
+   * clock. */
+  enemiesDefeatedThisWave: number;
+  /** Reinforcements called in during the current wave. Capped, because a
+   * wave ends when the board empties and unbounded reinforcements could
+   * keep one going indefinitely. */
+  reinforcementsThisWave: number;
+  /** How many enemies the current wave released, so the HUD can show
+   * progress through it. */
+  waveSize: number;
+  /** Seconds until the next boss add is called in. Boss-phase only - an
+   * ordinary wave releases once, all at once. */
   spawnTimer: number;
-  /** Position in the current level's WavePlan. Advances past the authored
-   * waves and then loops, so a level always has something to send next. */
-  waveIndex: number;
-  /** Consecutive incorrect/invalid answers during level play (resets on
-   * any exact/equivalent/close/partial verdict) - the level-phase
+  /** Seconds before the current wave releases. Every wave opens with one
+   * of these, so a wave arrives as an announced event and the countdown
+   * never hands the player a formation already halfway down the screen. */
+  waveBreatherSec: number;
+  /** Consecutive incorrect/invalid answers during wave play (resets on
+   * any exact/equivalent/close/partial verdict) - the wave-phase
    * counterpart to BossState.missStreak, gating the "repeated mistakes"
    * reinforcement rule outside of boss fights. */
   missStreak: number;

@@ -4,12 +4,15 @@
  * capped by maxConcurrent. That produced no rhythm - no build, no lull,
  * nothing to read ahead of.
  *
- * A level now authors a sequence of *waves*, each a formation released at
- * once, with an explicit gap after it. The shapes are computed rather
- * than hand-placed so a wave stays one compact line of level data, and
- * they're fully deterministic (no Math.random) - the same wave index
- * always produces the same formation, which is what makes a level
- * learnable and these functions testable.
+ * Waves are formations released all at once, with an explicit breather
+ * after. The shapes are computed rather than hand-placed so a wave stays
+ * one compact line of authored data, and they're fully deterministic (no
+ * Math.random) - the same wave number always produces the same formation,
+ * which is what makes a wave learnable, a checkpoint meaningful, and these
+ * functions testable.
+ *
+ * This module owns formation *geometry* only. Which formation a given wave
+ * number sends is `waveProgression.ts`'s job.
  */
 
 import type { EnemyArchetypeId } from './enemyArchetypes';
@@ -50,15 +53,19 @@ export interface WaveSpec {
   staggerPct?: number;
 }
 
+/**
+ * An authored run of formations, easiest first.
+ *
+ * There is no `loopFrom` any more. It existed because a level ended on an
+ * enemy quota rather than on running out of waves, so a plan had to have
+ * something to send forever and looping from a later index kept the
+ * opening wave from repeating. `waveProgression.ts` reads every plan as
+ * one stretch of a single long ladder and moves on to the next plan
+ * instead of looping - which gives each opener exactly one appearance,
+ * the thing `loopFrom` was there to arrange.
+ */
 export interface WavePlan {
   waves: WaveSpec[];
-  /**
-   * Index to loop back to once the authored waves are exhausted. Levels
-   * end on an enemy quota, not on running out of waves, so there always
-   * has to be something after the last one - looping from a later index
-   * lets the opening waves stay introductory and never repeat.
-   */
-  loopFrom: number;
 }
 
 export interface FormationSlot {
@@ -153,18 +160,4 @@ export function buildFormation(spec: WaveSpec, waveIndex: number): FormationSlot
     xPct: clampLane(laneFor(spec.shape, index, count, waveIndex)),
     y: depthFor(spec.shape, index, count, waveIndex, stagger),
   }));
-}
-
-/** The wave to release at `index`, guarding against a plan whose index has
- * drifted out of range. */
-export function waveAt(plan: WavePlan, index: number): WaveSpec {
-  return plan.waves[index] ?? plan.waves[plan.loopFrom] ?? plan.waves[0];
-}
-
-/** Where the plan goes after `index` - onward through the authored list,
- * then back to `loopFrom` forever. */
-export function nextWaveIndex(plan: WavePlan, index: number): number {
-  const next = index + 1;
-  if (next < plan.waves.length) return next;
-  return Math.min(plan.loopFrom, plan.waves.length - 1);
 }

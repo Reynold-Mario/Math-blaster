@@ -45,7 +45,15 @@ export type GameEvent =
   | { type: 'enemy-defeated'; xPct: number; y: number; kind: string }
   | { type: 'enemy-split'; xPct: number; y: number; count: number }
   | { type: 'reinforcement-spawned'; xPct: number }
-  | { type: 'wave-incoming'; index: number; count: number }
+  /** A wave has been called and is on its way in. Fires at the start of
+   * the breather, before anything is on screen. */
+  | { type: 'wave-announced'; waveNumber: number; isBoss: boolean }
+  /** The wave's formation has just been released. */
+  | { type: 'wave-incoming'; waveNumber: number; count: number }
+  /** The board emptied, which is what ends a wave. `defeated` counts the
+   * qualifying kills; anything in `released` that isn't in `defeated` got
+   * through and cost the player clock instead. */
+  | { type: 'wave-cleared'; waveNumber: number; defeated: number; released: number }
   /** A good answer shortened the fight. The boss analogue of a damage
    * number, in the units a boss actually runs on. */
   | { type: 'boss-timer-cut'; amountMs: number; remainingMs: number }
@@ -54,16 +62,15 @@ export type GameEvent =
   | { type: 'boss-shield-dropped' }
   | { type: 'boss-combo'; combo: number; required: number }
   | { type: 'boss-combo-broken'; lostCombo: number }
-  | { type: 'boss-defeated'; by: BossDefeatCause; bestCombo: number }
+  | { type: 'boss-defeated'; by: BossDefeatCause; bestCombo: number; waveNumber: number }
   | { type: 'boss-finale-started' }
   | { type: 'time-lost'; amountMs: number; remainingMs: number }
   | { type: 'impact-avoided' }
   | { type: 'currency-earned'; amount: number; total: number }
   | { type: 'skill-used'; skill: string }
-  | { type: 'stage-cleared'; stageId: string }
-  | { type: 'level-started'; stageId: string }
-  | { type: 'game-over' }
-  | { type: 'victory' };
+  /** The run's only ending. There is no victory event: the wave sequence
+   * is endless, so a run finishes when the clock does and nowhere else. */
+  | { type: 'game-over' };
 
 export type GameEventListener = (event: GameEvent) => void;
 

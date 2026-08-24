@@ -15,16 +15,19 @@ export interface Curriculum {
   numberRange: [number, number];
 }
 
-/** The arcade/gameplay dimension: how intense the level feels to play,
- * independent of how hard the math is. Spawn *timing* has moved out to
- * the wave plan - what's left here is how fast things fall once released
- * and how much can be on screen at once. */
+/** The arcade/gameplay dimension: how intense play feels, independent of
+ * how hard the math is. `maxConcurrent` caps how much can be on screen at
+ * once - which for a discrete wave means its formation size, and during a
+ * boss fight means how many adds can pile up. */
 export interface ArcadeDifficulty {
   fallSpeed: [number, number];
   maxConcurrent: number;
 }
 
-export interface StageTheme {
+/** A backdrop palette. Was `StageTheme` back when a run moved through
+ * discrete stages; a run is now one continuous wave sequence, and these
+ * are the rungs the backdrop travels along to show progress. */
+export interface Backdrop {
   name: string;
   sky1: string;
   sky2: string;
@@ -110,32 +113,31 @@ export interface BossRules {
   finaleProblem: AuthoredProblemRecipe;
   /** Optional distinct backdrop for the boss phase (e.g. a sunset
    * showdown). Falls back to the level's own theme when omitted. */
-  theme?: StageTheme;
+  theme?: Backdrop;
 }
 
 /**
- * A modular level definition: curriculum, arcade difficulty, wave
- * structure, progression, and boss rules, each independently specified.
- * This describes the rules governing a level, not its current running
- * state - runtime models (enemy positions, defeat counts, boss timer
- * remaining) live separately.
+ * A bundle of authored source data: a curriculum, an arcade difficulty, a
+ * wave plan, a backdrop palette, and optionally a boss.
+ *
+ * This is NO LONGER a stage the player travels to. A run is one continuous
+ * sequence of waves; `waveProgression.ts` reads these bundles as the
+ * material it builds that sequence out of - the curriculum ladder, the
+ * wave-plan ladder, the backdrop ladder and the boss roster are all
+ * assembled from them. Nothing indexes into `GAME_LEVELS` to decide "where
+ * the player is" any more, and the `world` label and `enemiesToClear`
+ * quota that used to encode exactly that are gone.
  */
 export interface LevelDefinition {
   id: string;
   name: string;
-  world: string;
-  theme: StageTheme;
+  theme: Backdrop;
   curriculum: Curriculum;
   arcadeDifficulty: ArcadeDifficulty;
-  /** What arrives, in what shape, and how often. Replaces the old single
-   * `grunt` sprite kind - which archetypes a level uses is now a property
-   * of its waves, so one level can mix several. */
+  /** What arrives and in what shape. Which archetypes appear is a property
+   * of the waves, so one bundle can mix several. */
   waves: WavePlan;
-  /** How many qualifying grunts must be defeated before the embedded boss
-   * phase begins. Split debris doesn't qualify - see the archetype's
-   * countsTowardClear. */
-  enemiesToClear: number;
-  /** Present only on levels that culminate in a boss fight. */
+  /** Present only on bundles that author a boss. */
   boss?: BossRules;
 }
 

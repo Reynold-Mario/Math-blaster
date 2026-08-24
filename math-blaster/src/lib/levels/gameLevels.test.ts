@@ -1,7 +1,6 @@
 import { GAME_LEVELS } from './gameLevels';
 import { phaseIndexForProgress, type BossPhase } from './LevelDefinition';
 import { enemyArchetype } from './enemyArchetypes';
-import { waveAt, nextWaveIndex } from './waves';
 
 function phase(overrides: Partial<BossPhase> = {}): BossPhase {
   return {
@@ -49,21 +48,10 @@ describe('phaseIndexForProgress', () => {
 describe('authored levels', () => {
   it.each(GAME_LEVELS.map((l) => [l.id, l] as const))('%s has a usable wave plan', (_id, level) => {
     expect(level.waves.waves.length).toBeGreaterThan(0);
-    expect(level.waves.loopFrom).toBeLessThan(level.waves.waves.length);
     for (const wave of level.waves.waves) {
       expect(wave.archetypes.length).toBeGreaterThan(0);
       expect(wave.gapSec).toBeGreaterThan(0);
       for (const id of wave.archetypes) expect(enemyArchetype(id)).toBeDefined();
-    }
-  });
-
-  it.each(GAME_LEVELS.map((l) => [l.id, l] as const))('%s can keep spawning indefinitely', (_id, level) => {
-    // Levels end on an enemy quota, not on running out of waves, so the
-    // plan has to still serve a wave long after its authored list.
-    let index = 0;
-    for (let i = 0; i < 50; i++) {
-      expect(waveAt(level.waves, index)).toBeDefined();
-      index = nextWaveIndex(level.waves, index);
     }
   });
 

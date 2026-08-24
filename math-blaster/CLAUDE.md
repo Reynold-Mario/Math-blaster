@@ -19,13 +19,16 @@ lib/math/          MathValue, ProblemDefinition, evaluator - pure, no game state
 lib/levels/         enemyArchetypes.ts = the LEAF module: sprite-kind vocabulary,
                     the archetype registry (movement/layers/shield/split), and
                     pure stepMovement(). Everything else here depends on it.
-                    waves.ts (formation shapes + WavePlan traversal, fully
-                    deterministic - no Math.random, so a wave index always
-                    builds the same formation),
+                    waves.ts (formation GEOMETRY only - shapes and
+                    buildFormation, fully deterministic, no Math.random),
+                    waveProgression.ts (THE PROGRESSION SPINE: turns a wave
+                    number into a formation, a difficulty, a curriculum, a
+                    boss and a backdrop. Also pure and deterministic),
                     LevelDefinition (curriculum + arcade difficulty + wave plan +
-                    progression + embedded boss rules incl. BossPhase, kept as
-                    separate dimensions on purpose),
-                    gameLevels.ts (the actual 7 authored levels, K-3),
+                    backdrop + boss rules incl. BossPhase, kept as separate
+                    dimensions on purpose),
+                    gameLevels.ts (7 authored bundles, K-3, plus the ladders
+                    waveProgression reads them through),
                     gradeTree.ts (K-3 curriculum-unlock nodes, built on SkillTree),
                     problemGenerators.ts (generated + authored problems)
 
@@ -59,8 +62,8 @@ lib/input/            InputManager abstracts keyboard/touch/future-gamepad into
                     one action vocabulary (move/moveTo/digit/backspace/fire/skill).
 
 lib/Game.svelte       Top-level orchestrator: phases (boot/skillTree/countdown/
-                    playing/stageClear/gameover/victory), HUD, wires InputManager,
-                    runs the rAF loop, mounts GameCanvas + SkillTreeScreen.
+                    playing/gameover), HUD, wires InputManager, runs the rAF
+                    loop, mounts GameCanvas + SkillTreeScreen.
 App.svelte           Arcade cabinet chrome (marquee/bezel/scanlines) around Game.
 ```
 
@@ -110,12 +113,31 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   not a knockback). This is the one place in the game where "close" earns
   literally nothing. Shields are *not* health: they are an exactness gate, which
   is why they survive the no-health rule.
-- **Spawning is wave-based.** Levels author a `WavePlan` of formations
-  (line/vee/column/pincer/scatter) with explicit gaps, instead of the old
-  random per-enemy trickle. Plans loop from `loopFrom` (not index 0), so the
-  introductory wave plays once and a long level escalates rather than resetting
-  to its own tutorial. Formations are deterministic on purpose - that's what
-  makes a level learnable and `buildFormation` testable.
+- **A RUN IS AN ENDLESS SEQUENCE OF DISCRETE WAVES.** There are no worlds, no
+  stages, no `stageIndex`, and no victory. `RuntimeState.waveNumber` is the
+  run's entire sense of position. A wave is announced, its breather runs, the
+  whole formation arrives at once, and the next wave starts only once the board
+  is **empty** - `state.enemies.length === 0` is what ends a wave. That always
+  happens: an enemy is either answered or it crosses the impact line and is
+  removed, so a wave cannot stall. Reinforcements are capped per wave
+  (`MAX_REINFORCEMENTS_PER_WAVE`) precisely because they extend the board a
+  player has to clear before moving on.
+- **`waveProgression.ts` is the only place a wave number becomes anything.**
+  Formation, fall speed, concurrency, curriculum, boss, backdrop - all of it
+  from `waveNumber`, all pure and deterministic. Wave 12 must be wave 12 every
+  time, or the wave number stops being meaningful (and a checkpoint that starts
+  you at wave 15 stops meaning anything). Past the authored material the ladder
+  cycles its hardest stretch, widening formations and tightening gaps, so an
+  endless run escalates rather than plateauing or running dry.
+- **`gameLevels.ts` is source material, not a sequence.** Its 7 bundles are
+  read through the ladders it exports (`CURRICULUM_LADDER`, `WAVE_PLAN_LADDER`,
+  `BACKDROP_LADDER`, `BOSS_ROSTER`). Nothing indexes `GAME_LEVELS` to decide
+  where the player is. Their easiest-first *order* is load-bearing.
+- **Formations are deterministic on purpose** - that's what makes a wave
+  learnable and `buildFormation` testable. `waves.ts` owns geometry only;
+  `WavePlan` has no `loopFrom` any more (each plan is one stretch of a single
+  long ladder, so its opener plays exactly once and the run moves on - which is
+  what looping was there to arrange).
 - **Survival is timer-based, not lives.** `RuntimeState.timeRemainingMs` starts
   at 30s (+ the More Time skill bonus) and ticks down continuously.
   Enemy impacts cut into it: **Dodge** is a chance to fully negate the penalty;
@@ -126,11 +148,20 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   on the HUD and end-of-run screen only - it isn't persisted. `PlayerProfile.currency`
   is the persistent spendable resource, earned per kill (`Bounty` skill increases
   the flat amount) and spent in the Base skill tree shop between runs.
-- **Boss fights are embedded in a level**, not a separate stage type. A boss
-  phase auto-starts once `enemiesToClear` is hit. Its problems are drawn from a
-  *cumulative* scope (this level's curriculum + every earlier one), weighted
-  progressively harder as the fight goes on, culminating in an authored finale
-  problem for the last 15% of the survive timer.
+- **A boss is a kind of wave**, arriving on every `WAVE_BOSS_INTERVAL`th one
+  (5). Boss *identity* (name, sprite, phases, finale) cycles the authored
+  `BOSS_ROSTER`, escalating `surviveSec`/`comboToDefeat` and taking a tier
+  prefix on each pass; boss *maths* arrives separately as `scope`. That split
+  is what lets a boss appear on wave 5 for any curriculum - only 2 of the 7
+  authored bundles wrote a boss at all. Because the rules are generated rather
+  than authored per stage, the run holds them in `RuntimeState.bossRules` for
+  the duration of the fight; there is no level to look them up on.
+  Problems are drawn from a *cumulative* scope, weighted progressively harder
+  as the fight goes on, culminating in an authored finale problem for the last
+  15% of the survive timer.
+- **Beating a boss drops straight into the next wave.** No stage-clear screen,
+  no Continue button, no victory state. The banner in GameCanvas is the only
+  thing that reports how the fight was won, so don't remove it.
 - **Bosses have NO health bar.** Don't add one back. A fight ends one of two
   ways: the player outlasts `surviveSec`, or lands `comboToDefeat` consecutive
   exact/equivalent answers (the mastery route - anything less than exact resets
@@ -155,10 +186,12 @@ instead of events - stop, that's the exact coupling this structure exists to avo
 Don't "fix" these without checking - they're intentional stopping points, not bugs:
 
 - **No grade-select screen.** `gradeTree.ts` (K-3 curriculum unlock data) is real
-  and functional but nothing reads it yet - `GAME_LEVELS` in `gameLevels.ts` is
-  still one flat 7-level sequence (K through Grade 3) every session plays in
-  full. Wiring grade selection means deriving the session's level list from
-  `topicsForGrade()` instead of the flat array.
+  and functional but nothing reads it yet. A run walks
+  `gameLevels.CURRICULUM_LADDER` - every authored curriculum, K through Grade 3 -
+  as its wave count climbs. Scoping that to one grade is a one-function change:
+  `gameFlow.curriculumLadder()` is the single seam every problem is drawn
+  through, and `curriculumForWave` already guarantees a run can never reach
+  past the ladder it is handed.
 - **Gamepad isn't implemented.** `InputManager` has a doc-comment constraint
   (dedicated buttons per action category, never overloaded) for whenever it is.
 - **Base skill tree unlocks through five branch gates.** The free root reveals
@@ -187,20 +220,22 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   speeds, the 30s timer, the 5s impact penalty, boss surviveSec/comboToDefeat,
   the boss timer-cut amounts. None of this has been tuned via real play; expect
   to need to adjust based on feedback, not treat as final.
-- **The run clock is still global, not per-stage.** `timeRemainingMs` is set
-  once in `resetRun()` and never refilled between stages - a run is meant to be
-  short, with death expected and currency banked for the next attempt. This
-  interacts with boss survive timers on purpose: enter a fight with less clock
-  left than `surviveSec` and the endurance route is arithmetically impossible,
-  leaving the combo as the only way out. That's a feature, not an oversight -
-  don't "fix" it by refilling the clock per stage without deciding that's the
-  design you want.
+- **The run clock is still set once and never refilled.** `timeRemainingMs`
+  comes from `resetRun()` and only ever drains. With a boss now on wave 5 this
+  is the live problem rather than a design stance: a fully upgraded 60s clock
+  reaches about wave 4, so nothing gets to a boss. Refilling it on a wave clear
+  is the intended next change - `onWaveCleared` is where it goes, and
+  `wave-cleared` already carries `defeated`/`released` for exactly that.
+  The interaction with boss survive timers is deliberate and worth keeping:
+  enter a fight with less clock left than `surviveSec` and the endurance route
+  is arithmetically impossible, leaving the combo as the only way out.
 - **Freeze does not pause a boss's survive clock.** Freezing the adds buys
   breathing room; stalling the fight it's meant to win would make the skill a
   self-nerf during exactly the moment you'd want it.
-- **Only 4 of 7 levels have unique art direction** in the sense of a distinct
-  boss sprite - Grade 2's boss ("Hundred Hydra") reuses the boss1 sprite with a
-  different name/theme/scope, since only two boss sprites exist in `sprites.ts`.
+- **Only two boss sprites exist** in `sprites.ts`, so the roster's three fights
+  share them - "Hundred Hydra" reuses boss1 with a different name/theme/phases.
+  A cycled roster makes this more visible than it was, which is why repeat
+  visits take a tier prefix ("Elder", "Ancient", "Eternal").
 - **Shields, weak points and layer pips are drawn, not sprited.** GameCanvas
   composes them from canvas primitives so they work over every silhouette
   without new pixel art. If you add archetype-specific art later, that's where
@@ -215,8 +250,10 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   need the other to know a new event exists).
 - Persisted localStorage key in use: `pixelMathBlaster.profile.v1` (currency +
   skill progress). Bump the version suffix if you change its shape incompatibly.
-  There is no leaderboard/high-score persistence - a gameover/victory run ends
-  at a "Play Again" / "Skill Tree" choice, nothing is saved beyond the profile.
+  There is no leaderboard/high-score persistence - a run ends at a "Play Again"
+  / "Skill Tree" choice, nothing is saved beyond the profile. The end-of-run
+  screen reports the wave reached, which is the number that means something in
+  an endless run.
 - Pixel sprites are plain numeric grids + a palette (`sprites.ts`), rasterized
   once per size via `spriteCanvas.ts`'s cache - don't add per-frame `fillRect`
   loops for enemies, use `drawSprite()`.

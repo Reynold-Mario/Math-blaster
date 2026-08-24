@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { RuntimeState, EnemyInstance, PlayerState, BossState } from '../runtime/RuntimeState';
-  import type { StageTheme } from '../levels/LevelDefinition';
+  import type { Backdrop } from '../levels/LevelDefinition';
   import { SPRITES } from '../sprites';
   import { drawSprite, spriteSize } from './spriteCanvas';
   import { resolveTarget, weakPointXPct, type Target } from '../targeting';
@@ -21,7 +21,7 @@
 
   interface Props {
     runtime: RuntimeState;
-    theme: StageTheme;
+    theme: Backdrop;
   }
   let { runtime, theme }: Props = $props();
 
@@ -135,8 +135,22 @@
       case 'enemy-split':
         pushFloat(event.xPct, event.y, 'SPLIT!', COLOR_PARTIAL);
         break;
-      case 'wave-incoming':
-        pushBanner(`WAVE ${event.index + 1}`, COLOR_INFO);
+      case 'wave-announced':
+        pushBanner(event.isBoss ? `WAVE ${event.waveNumber} - BOSS` : `WAVE ${event.waveNumber}`, event.isBoss ? COLOR_MISS : COLOR_INFO);
+        if (event.isBoss) triggerShake();
+        break;
+      case 'wave-cleared':
+        // Reports the wave that just ended; `wave-announced` names the one
+        // coming next a beat later.
+        pushBanner(`WAVE ${event.waveNumber} CLEAR!`, COLOR_EXACT);
+        break;
+      case 'boss-defeated':
+        // The stage-clear screen used to report how a fight was won. There
+        // isn't one any more, so the banner has to carry it.
+        pushBanner(
+          event.by === 'mastery' ? `MASTERED - ${event.bestCombo} IN A ROW!` : 'BOSS OUTLASTED!',
+          COLOR_COMBO
+        );
         break;
       case 'boss-phase-changed':
         pushBanner(event.name.toUpperCase(), COLOR_MISS);
