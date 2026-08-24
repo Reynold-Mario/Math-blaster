@@ -100,8 +100,16 @@ export const DIVE_APPROACH_MULTIPLIER = 0.55;
  * relative pacing between levels and between archetypes is preserved
  * either way. Applied at spawn, so it reaches level grunts, boss adds and
  * splitter debris alike.
+ *
+ * This is the game's real answer-time limit, and it binds harder than the
+ * run clock does: the clock is a budget for the run, but a descent is the
+ * whole time a player has for one problem. At 0.7 an opening enemy crossed
+ * in 10-15s, which is under two attempts for a child who needs ~6.5s to
+ * read, walk under it and type - so a second enemy in the formation was
+ * unanswerable by construction. Lower it to give more reading time
+ * everywhere; raise it and the weakest players feel it first.
  */
-export const GLOBAL_FALL_SPEED_MULTIPLIER = 0.7;
+export const GLOBAL_FALL_SPEED_MULTIPLIER = 0.58;
 
 /** Enemies stay inside these lanes so a weaver can never drift somewhere
  * the player (clamped to 4-96) can't line up under. */

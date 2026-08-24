@@ -294,7 +294,7 @@ describe('the run clock', () => {
     const state = createInitialRuntimeState();
     const profile = createEmptyProfile();
     resetRun(state, profile);
-    expect(state.timeRemainingMs).toBe(45000);
+    expect(state.timeRemainingMs).toBe(50000);
   });
 
   it('pays time back for clearing a wave', () => {
@@ -360,7 +360,7 @@ describe('the run clock', () => {
 
     for (let wave = 0; wave < 6; wave++) {
       clearWave(state, profile);
-      expect(state.timeRemainingMs).toBeLessThanOrEqual(75000);
+      expect(state.timeRemainingMs).toBeLessThanOrEqual(85000);
     }
   });
 
@@ -374,7 +374,7 @@ describe('the run clock', () => {
     const state = createInitialRuntimeState();
     resetRun(state, maxed);
     const start = state.timeRemainingMs;
-    expect(start).toBeGreaterThan(45000);
+    expect(start).toBeGreaterThan(50000);
 
     // Spend a little, then clear a wave: the payout has to actually land.
     state.timeRemainingMs = start - 5000;
@@ -390,15 +390,15 @@ describe('the run clock', () => {
     // Near the ceiling, so the payout cannot land in full. (It can't be
     // pinned exactly: the clock drains while the wave is being played, which
     // is itself the reason the granted figure has to be measured, not assumed.)
-    // 75s is base 45s + the 30s of bankable headroom, with no More Time bought.
-    state.timeRemainingMs = 74000;
+    // 85s is base 50s + the 35s of bankable headroom, with no More Time bought.
+    state.timeRemainingMs = 84000;
 
     clearWave(state, profile);
 
     const granted = eventsOfType('wave-cleared')[0].bonusMs;
-    expect(state.timeRemainingMs).toBe(75000);
-    // The flat part of the payout alone is 12s; the event must not claim it.
-    expect(granted).toBeLessThan(12000);
+    expect(state.timeRemainingMs).toBe(85000);
+    // The flat part of the payout alone is 9.5s; the event must not claim it.
+    expect(granted).toBeLessThan(9500);
   });
 
   it('pays out for surviving a boss wave', () => {

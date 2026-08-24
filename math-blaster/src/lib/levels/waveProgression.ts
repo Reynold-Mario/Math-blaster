@@ -47,19 +47,26 @@ const WAVES_PER_BACKDROP = 3;
  * wave gets when its roster entry didn't author one. */
 const BOSS_BACKDROP_DARKEN = 0.22;
 
-// --- Difficulty ramp. The authored bundles ran from [8,12] fall speed and
-// 3 concurrent up to [13,18] and 5; the ramp reproduces that curve across
-// its first stretch and then keeps creeping, because an endless run has
-// to stay able to out-scale the player. ---
+// --- Difficulty ramp. Fall speed traces the curve the authored bundles
+// described ([8,12] up to [13,18]) and then keeps creeping, because an
+// endless run has to stay able to out-scale the player.
+//
+// Concurrency deliberately does NOT trace that curve. The bundles opened at
+// 3 on screen, which measured as the single harshest number in the game for
+// the audience it is for: a child who needs most of a descent to answer one
+// problem leaks everything past the first, so the third arrival was pure
+// clock penalty rather than difficulty. It opens at 2 and climbs past where
+// the bundles ended instead, which puts the pressure in the middle of a run
+// where a player has upgrades and reading speed to meet it. ---
 
-const RAMP_START: ArcadeDifficulty = { fallSpeed: [8, 12], maxConcurrent: 3 };
-const RAMP_END: ArcadeDifficulty = { fallSpeed: [13, 18], maxConcurrent: 5 };
+const RAMP_START: ArcadeDifficulty = { fallSpeed: [8, 12], maxConcurrent: 2 };
+const RAMP_END: ArcadeDifficulty = { fallSpeed: [13, 18], maxConcurrent: 6 };
 /** Wave at which the ramp reaches RAMP_END. */
-const RAMP_WAVES = 30;
+const RAMP_WAVES = 26;
 /** Fall speed added per wave once past the ramp. */
-const ENDLESS_SPEED_CREEP = 0.12;
+const ENDLESS_SPEED_CREEP = 0.16;
 /** Waves past the ramp per additional concurrent enemy. */
-const WAVES_PER_EXTRA_SLOT = 12;
+const WAVES_PER_EXTRA_SLOT = 10;
 /** However long a run goes on, a formation never gets wider than this -
  * past it the screen stops being readable, which isn't difficulty. */
 const MAX_CONCURRENT_CAP = 8;
@@ -136,10 +143,38 @@ const AUTHORED_SPECS: WaveSpec[] = WAVE_PLAN_LADDER.flatMap((plan) => plan.waves
 const TAIL_SPECS: WaveSpec[] = AUTHORED_SPECS.slice(Math.floor((AUTHORED_SPECS.length * 2) / 3));
 
 /**
- * The formation this wave sends. Runs through every authored wave once,
- * then cycles the hardest stretch, widening it and tightening its gap on
- * each pass so the tail escalates instead of plateauing. Always capped by
- * the wave's own maxConcurrent, so it stays readable.
+ * The widest formation anyone ever authored. It's the line between "this
+ * wave is as the designer wrote it" and "the ladder has run out of authored
+ * material and is now generating escalation", which is what
+ * `waveSpecFor` uses to decide whether widening is allowed at all.
+ */
+const AUTHORED_CEILING: number = AUTHORED_SPECS.reduce((n, s) => Math.max(n, s.archetypes.length), 1);
+
+/**
+ * The formation this wave sends, always capped by the wave's own
+ * maxConcurrent so it stays readable.
+ *
+ * `maxConcurrent` is a two-sided knob here, and the two sides matter at
+ * opposite ends of a run:
+ *
+ * - Below `AUTHORED_CEILING` it TRIMS. The early ramp starts under the
+ *   width of the authored openers, so wave 3's trio arrives as a pair -
+ *   which is the whole early-game difficulty curve, because a child who
+ *   can only answer one problem per descent leaks every enemy past the
+ *   first regardless of how many were sent.
+ * - Above it, it WIDENS, by repeating the formation's own archetypes
+ *   rather than splicing in new ones: a wider version of a wave you have
+ *   learned to read is an escalation, an unfamiliar mix is a different
+ *   wave.
+ *
+ * Widening deliberately does NOT wait for the authored specs to run out.
+ * It used to, and that made the cap inert for the whole mid-game - every
+ * authored formation is at most `AUTHORED_CEILING` wide, so raising the
+ * ramp changed nothing until the tail began cycling some thirty waves in,
+ * and a player quick enough to clear four enemies simply coasted until
+ * then. Tying it to the cap instead means the ramp is what escalates the
+ * mid-game, and the authored waves are still authored right up until the
+ * point the ramp asks for more than anyone wrote.
  */
 export function waveSpecFor(waveNumber: number): WaveSpec {
   const index = combatWaveIndex(waveNumber);
@@ -155,11 +190,12 @@ export function waveSpecFor(waveNumber: number): WaveSpec {
       ? 0
       : Math.floor((index - AUTHORED_SPECS.length) / TAIL_SPECS.length) + 1;
 
-  // Grow by repeating the formation's own archetypes rather than splicing
-  // in new ones: a wider version of a wave you've learned to read is an
-  // escalation, an unfamiliar mix is a different wave.
+  // Two independent reasons to widen: the ramp has outgrown the authored
+  // material, or the tail is on a repeat pass. Whichever asks for more wins.
+  const extraSlots = Math.max(cycles, cap - AUTHORED_CEILING);
+
   const archetypes = [...base.archetypes];
-  for (let i = 0; i < cycles && archetypes.length < cap; i++) {
+  for (let i = 0; i < extraSlots && archetypes.length < cap; i++) {
     archetypes.push(base.archetypes[i % base.archetypes.length]);
   }
 

@@ -158,6 +158,16 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   you at wave 15 stops meaning anything). Past the authored material the ladder
   cycles its hardest stretch, widening formations and tightening gaps, so an
   endless run escalates rather than plateauing or running dry.
+- **`maxConcurrent` both TRIMS and WIDENS a formation, and that's the whole
+  difficulty curve.** Below `AUTHORED_CEILING` (the widest formation anyone
+  authored) it trims: the ramp opens at 2, so wave 3's authored trio arrives as
+  a pair. Above it, `waveSpecFor` adds slots by repeating the formation's own
+  archetypes. Widening does *not* wait for the authored specs to run out - it
+  used to, which made the cap inert for the entire mid-game, because every
+  authored formation already fitted inside it and nothing changed until the
+  tail began cycling ~30 waves in. It adds the same *number* of slots to every
+  formation rather than filling each to the cap, so a wave authored as a lone
+  bulwark still reads as a lull deep into a run.
 - **`gameLevels.ts` is source material, not a sequence.** Its 7 bundles are
   read through the ladders it exports (`CURRICULUM_LADDER`, `WAVE_PLAN_LADDER`,
   `BACKDROP_LADDER`, `BOSS_ROSTER`). Nothing indexes `GAME_LEVELS` to decide
@@ -168,7 +178,7 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   long ladder, so its opener plays exactly once and the run moves on - which is
   what looping was there to arrange).
 - **The run clock is the game's only resource, and it is EARNED BACK.**
-  `timeRemainingMs` starts at 45s (+ More Time) and drains continuously, but
+  `timeRemainingMs` starts at 50s (+ More Time) and drains continuously, but
   clearing a wave pays time back: a flat `WAVE_CLEAR_BONUS_MS` plus
   `WAVE_CLEAR_PER_KILL_BONUS_MS` per qualifying kill, and `BOSS_CLEAR_BONUS_MS`
   for surviving a boss. That's what makes a long run possible at all - as a
@@ -178,11 +188,21 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   callers report that, never the nominal figure, so the HUD can't promise time
   the player didn't get.
 - **The clock's ceiling is RELATIVE to the player's starting clock**
-  (`startingTimeMs + BANKABLE_HEADROOM_MS`), not a flat number. A flat 75s cap
-  sat exactly at base + a maxed More Time, which pinned a fully upgraded player
-  to the ceiling from wave 1, silently discarded every payout, and turned More
-  Time into "start at the cap" rather than an upgrade that keeps paying. Keep it
-  relative if you retune either number.
+  (`startingTimeMs + BANKABLE_HEADROOM_MS`), not a flat number. A flat cap at
+  base + a maxed More Time pinned a fully upgraded player to the ceiling from
+  wave 1, silently discarded every payout, and turned More Time into "start at
+  the cap" rather than an upgrade that keeps paying. Keep it relative if you
+  retune either number.
+- **A strong player reaching the ceiling is the design, not a bug.** No single
+  flat-plus-per-kill payout can break even for both a 6.5s-per-problem child
+  and a 3.2s one - the rate that keeps the slow player alive necessarily
+  overpays the quick one, who then climbs to the ceiling and sits there. The
+  ceiling is the valve on that surplus. What matters is *when*: it used to
+  arrive at wave 6 of a ~30-wave run, leaving most of the run with an inert
+  clock and no feedback for good play. If you want to remove the dead feeling
+  rather than delay it, the fix is to give the surplus somewhere else to go
+  (score, currency) - not to shrink the payout, which just re-walls the
+  youngest players.
 - **Leaking an enemy costs the bonus as well as the penalty.** A wave that
   clears because everything landed pays much less than one answered out, which
   is what stops standing still being a free way to skip a wave you can't
@@ -261,11 +281,22 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   is 1, rising to 2 at Lv.4 - which is the point at which a bomb finally
   answers a bulwark or an unshielded sentinel outright. It still skips shielded
   enemies entirely.
-- **Balance numbers are placeholders** - skill costs, knockback distances, fall
-  speeds, the 45s starting clock and every wave/boss payout, the 30s bankable
-  headroom, the 5s impact penalty, boss surviveSec/comboToDefeat, the boss
-  timer-cut amounts. None of this has been tuned via real play; expect
-  to need to adjust based on feedback, not treat as final.
+- **The pacing numbers are tuned against a SIMULATION, not against children.**
+  `runtime/balanceSim.ts` drives the real `tick`/`handleInputAction` with
+  modelled players (a think-time and an accuracy per player) and reports where
+  runs end; `balanceReport.test.ts` prints it (opt-in:
+  `BALANCE_REPORT=1 npx jest balanceReport`). The
+  run clock, its ceiling, the wave payouts, the impact penalty,
+  `GLOBAL_FALL_SPEED_MULTIPLIER` and the concurrency ramp were all set from it,
+  and they interact - re-run the harness after touching any one of them rather
+  than reasoning about it alone. Current measured medians, un-upgraded:
+  ~wave 10 for a slow K player, ~20 for a typical G1, ~28 for a quick G3.
+  The player model is the assumption to argue with; the numbers only mean as
+  much as it does, and no real child has played this yet.
+- **Still untuned placeholders**: skill costs and the currency rate (a weak
+  run earns ~55, against 60 for one More Time level - so the shop is roughly
+  two runs per early upgrade, which nobody has checked is right), knockback
+  distances, boss surviveSec/comboToDefeat, the boss timer-cut amounts.
 - **A boss fight can still be arithmetically unwinnable by endurance**, and
   that's deliberate: walk in with less clock than its `surviveSec` and the
   combo is the only way out. Wave-clear payouts make that recoverable rather
