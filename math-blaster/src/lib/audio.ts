@@ -47,6 +47,24 @@ export const sfx = {
   close: () => tone(420, 0.12, 'triangle', 0.08),
   miss: () => tone(160, 0.15, 'sawtooth', 0.06, 0, 90),
   impact: () => tone(110, 0.25, 'sawtooth', 0.1, 0, 55),
+  /** A shot that bounced - deliberately dull and short, so it reads as
+   * "that went nowhere" rather than as either success or failure. */
+  shieldBlock: () => tone(240, 0.07, 'square', 0.07, 0, 200),
+  shieldBreak: () => {
+    tone(880, 0.07, 'triangle', 0.09);
+    tone(1320, 0.1, 'triangle', 0.07, 0.05);
+  },
+  /** One layer down, more to go - resolves upward but doesn't land. */
+  layerBreak: () => tone(560, 0.1, 'square', 0.07, 0, 760),
+  /** Pitches up with the combo, so a run you're building is audible
+   * without having to look at the pip row. */
+  combo: (step: number) => tone(520 + Math.min(step, 8) * 70, 0.08, 'square', 0.08),
+  comboBreak: () => tone(330, 0.16, 'triangle', 0.07, 0, 190),
+  phaseChange: () => {
+    tone(220, 0.16, 'sawtooth', 0.08);
+    tone(330, 0.18, 'sawtooth', 0.07, 0.1);
+  },
+  waveIncoming: () => tone(180, 0.12, 'triangle', 0.05),
   skill: () => {
     tone(500, 0.08, 'square', 0.08);
     tone(760, 0.1, 'square', 0.08, 0.08);
@@ -86,6 +104,33 @@ function handleGameEvent(event: GameEvent) {
     case 'hit-incorrect':
     case 'hit-invalid':
       sfx.miss();
+      break;
+    case 'shield-blocked':
+      sfx.shieldBlock();
+      break;
+    case 'shield-broken':
+      sfx.shieldBreak();
+      break;
+    case 'enemy-layer-broken':
+    case 'enemy-split':
+      sfx.layerBreak();
+      break;
+    case 'boss-combo':
+      sfx.combo(event.combo);
+      break;
+    case 'boss-combo-broken':
+      sfx.comboBreak();
+      break;
+    case 'boss-phase-changed':
+    case 'boss-shield-raised':
+      sfx.phaseChange();
+      break;
+    case 'boss-shield-dropped':
+    case 'boss-finale-started':
+      sfx.shieldBreak();
+      break;
+    case 'wave-incoming':
+      sfx.waveIncoming();
       break;
     case 'time-lost':
       sfx.impact();

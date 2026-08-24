@@ -28,6 +28,9 @@
   let countdownValue = $state(3);
   let muted = $state(isMuted());
   let finalScore = $state(0);
+  /** How the last boss fight ended, so the stage-clear screen can tell the
+   * player whether they outlasted it or mastered it. */
+  let lastBossDefeat = $state<{ by: 'survival' | 'mastery'; bestCombo: number } | null>(null);
 
   const input = new InputManager();
   let stageWrapperEl: HTMLDivElement | undefined = $state();
@@ -45,6 +48,11 @@
   });
   const secondsRemaining = $derived(Math.max(0, Math.ceil(runtime.timeRemainingMs / 1000)));
   const timeLow = $derived(runtime.timeRemainingMs <= 10000);
+  const bossPhaseName = $derived.by(() => {
+    if (!isBossPhase) return '';
+    return currentLevelDef.boss?.phases[runtime.boss!.phaseIndex]?.name ?? '';
+  });
+  const surviveSeconds = $derived(isBossPhase ? Math.max(0, Math.ceil(runtime.boss!.surviveRemainingMs / 1000)) : 0);
 
   function skillLevel(id: string): number {
     return profile.skillProgress[id] ?? 0;
@@ -60,6 +68,9 @@
 
   function handleFlowEvent(event: GameEvent) {
     switch (event.type) {
+      case 'boss-defeated':
+        lastBossDefeat = { by: event.by, bestCombo: event.bestCombo };
+        break;
       case 'stage-cleared':
         phase = 'stageClear';
         break;
@@ -68,6 +79,11 @@
         break;
       case 'game-over':
         endRun('gameover');
+        break;
+      case 'level-started':
+        // Cleared here rather than on stage-clear, which fires *after*
+        // the boss-defeated event it needs to survive long enough to show.
+        lastBossDefeat = null;
         break;
       case 'currency-earned':
         savePlayerProfile(profile);
@@ -186,6 +202,8 @@
       <ul class="howto">
         <li>🎯 Exact answers deal big damage</li>
         <li>👍 Close and partial answers still help - no penalties for trying</li>
+        <li>🛡 Shielded enemies only break on an exact answer</li>
+        <li>⚡ Beat a boss by outlasting it - or by nailing its combo</li>
         <li>⏱ Race the clock - enemies that get through cost you time</li>
         <li>💰 Defeat enemies to earn currency for permanent upgrades</li>
       </ul>
@@ -204,7 +222,16 @@
         <div class="stage-world">{currentLevelDef.world}</div>
         <div class="stage-name">{stageName}</div>
         {#if isBossPhase}
-          <div class="bar boss"><div class="fill" style="width:{(runtime.boss!.hp / runtime.boss!.maxHp) * 100}%"></div></div>
+          <div class="bar boss">
+            <div class="fill" style="width:{(runtime.boss!.surviveRemainingMs / runtime.boss!.surviveTotalMs) * 100}%"></div>
+          </div>
+          <div class="boss-status">
+            <span class="survive">🛡 Survive {surviveSeconds}s</span>
+            <span class="combo" class:hot={runtime.boss!.combo > 0}>
+              ⚡ {runtime.boss!.combo}/{runtime.boss!.comboRequired}
+            </span>
+          </div>
+          {#if bossPhaseName}<div class="boss-phase">{runtime.boss!.inFinale ? 'FINAL ATTACK' : bossPhaseName}</div>{/if}
         {:else}
           <div class="bar level"><div class="fill" style="width:{(runtime.enemiesDefeated / currentLevelDef.enemiesToClear) * 100}%"></div></div>
           <div class="stage-progress">{runtime.enemiesDefeated}/{currentLevelDef.enemiesToClear} defeated</div>
@@ -238,6 +265,13 @@
         <div class="overlay">
           <h2>Stage Clear! 🎉</h2>
           <p>{currentLevelDef.name} complete.</p>
+          {#if lastBossDefeat}
+            <p class="next-up">
+              {lastBossDefeat.by === 'mastery'
+                ? `Mastered it - ${lastBossDefeat.bestCombo} exact answers in a row! ⚡`
+                : `You outlasted it. Best combo: ${lastBossDefeat.bestCombo} 🛡`}
+            </p>
+          {/if}
           {#if nextStageName}<p class="next-up">Next up: {nextStageName}</p>{/if}
           <button class="big-btn" onclick={continueRun}>Continue ▶</button>
         </div>
@@ -433,6 +467,24 @@
   .stage-progress {
     font-size: 11px;
     font-weight: 700;
+  }
+  .boss-status {
+    display: flex;
+    gap: 10px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .boss-status .combo {
+    opacity: 0.6;
+  }
+  .boss-status .combo.hot {
+    opacity: 1;
+    color: #a21caf;
+  }
+  .boss-phase {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    opacity: 0.75;
   }
   .bar {
     width: 100%;

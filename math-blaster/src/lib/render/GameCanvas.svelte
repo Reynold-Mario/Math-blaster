@@ -4,7 +4,7 @@
   import type { StageTheme } from '../levels/LevelDefinition';
   import { SPRITES } from '../sprites';
   import { drawSprite, spriteSize } from './spriteCanvas';
-  import { resolveTarget, type Target } from '../targeting';
+  import { resolveTarget, weakPointXPct, type Target } from '../targeting';
   import { gameEvents, type GameEvent } from '../events';
 
   // Fixed logical resolution the whole scene is drawn at; the canvas
@@ -80,6 +80,22 @@
   const COLOR_PARTIAL = '#fdba74';
   const COLOR_MISS = '#fca5a5';
   const COLOR_INFO = '#bae6fd';
+  const COLOR_SHIELD = '#67e8f9';
+  const COLOR_COMBO = '#f0abfc';
+
+  /** A banner shown across the top for a beat - phase changes and wave
+   * warnings need to be readable without competing with the hit floats
+   * that cluster around wherever the player is aiming. */
+  let bannerText = '';
+  let bannerColor = COLOR_INFO;
+  let bannerUntilMs = 0;
+  const BANNER_DURATION_MS = 1400;
+
+  function pushBanner(text: string, color: string) {
+    bannerText = text;
+    bannerColor = color;
+    bannerUntilMs = performance.now() + BANNER_DURATION_MS;
+  }
 
   function handleGameEvent(event: GameEvent) {
     switch (event.type) {
@@ -100,6 +116,42 @@
         pushFloat(event.xPct, event.y, 'Miss', COLOR_MISS);
         break;
       case 'hit-invalid':
+        break;
+      case 'shield-blocked':
+        pushFloat(event.xPct, event.y, 'BLOCKED', COLOR_SHIELD);
+        break;
+      case 'shield-broken':
+        pushFloat(event.xPct, event.y, 'SHIELD DOWN!', COLOR_SHIELD);
+        flashTarget(event.targetId);
+        break;
+      case 'enemy-layer-broken':
+        pushFloat(event.xPct, event.y, `${event.layersRemaining} LEFT`, COLOR_PARTIAL);
+        break;
+      case 'enemy-split':
+        pushFloat(event.xPct, event.y, 'SPLIT!', COLOR_PARTIAL);
+        break;
+      case 'wave-incoming':
+        pushBanner(`WAVE ${event.index + 1}`, COLOR_INFO);
+        break;
+      case 'boss-phase-changed':
+        pushBanner(event.name.toUpperCase(), COLOR_MISS);
+        triggerShake();
+        break;
+      case 'boss-shield-raised':
+        pushBanner('SHIELD UP - HIT THE WEAK POINT', COLOR_SHIELD);
+        break;
+      case 'boss-combo':
+        pushFloat(50, 26, `COMBO ${event.combo}/${event.required}`, COLOR_COMBO);
+        break;
+      case 'boss-combo-broken':
+        if (event.lostCombo > 1) pushFloat(50, 26, 'COMBO LOST', COLOR_MISS);
+        break;
+      case 'boss-timer-cut':
+        pushFloat(50, 20, `-${(event.amountMs / 1000).toFixed(1)}s`, COLOR_EXACT);
+        break;
+      case 'boss-finale-started':
+        pushBanner('FINAL ATTACK!', COLOR_MISS);
+        triggerShake();
         break;
       case 'impact-avoided':
         pushFloat(50, 78, 'Dodged!', COLOR_INFO);
@@ -232,6 +284,48 @@
     return active ? 'brightness(2.2) saturate(0.4)' : '';
   }
 
+  /** A translucent bubble around whatever is still shielded. Drawn rather
+   * than sprited so it works for every enemy silhouette and for both
+   * bosses without needing new pixel art. */
+  function drawShieldBubble(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    size: { width: number; height: number },
+    nowMs: number
+  ) {
+    const pulse = 0.55 + 0.25 * Math.sin(nowMs / 180);
+    ctx.save();
+    ctx.strokeStyle = COLOR_SHIELD;
+    ctx.globalAlpha = pulse;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, size.width / 2 + 7, size.height / 2 + 7, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = pulse * 0.16;
+    ctx.fillStyle = COLOR_SHIELD;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /** One pip per remaining layer, so "this one needs two more answers" is
+   * visible before the player commits to a target rather than only after
+   * they've spent a shot on it. */
+  function drawLayerPips(ctx: CanvasRenderingContext2D, cx: number, y: number, remaining: number, total: number) {
+    const pip = 5;
+    const gap = 3;
+    const totalW = total * pip + (total - 1) * gap;
+    let x = cx - totalW / 2;
+    for (let i = 0; i < total; i++) {
+      ctx.fillStyle = i < remaining ? '#fbbf24' : 'rgba(0,0,0,0.3)';
+      ctx.fillRect(x, y, pip, pip);
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, pip - 1, pip - 1);
+      x += pip + gap;
+    }
+  }
+
   function drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemyInstance, target: Target, nowMs: number) {
     const x = px(enemy.xPct, LOGICAL_W);
     const y = px(enemy.y, LOGICAL_H);
@@ -243,8 +337,12 @@
     if (enemy.hp < enemy.maxHp) {
       drawHpBar(ctx, x, y - 10, 40, 6, enemy.hp / enemy.maxHp, false);
     }
+    if (enemy.layersTotal > 1) {
+      drawLayerPips(ctx, x, y - 19, enemy.layersRemaining, enemy.layersTotal);
+    }
 
     drawSprite(ctx, sprite, x, y, pixel, { centerX: true, filter: flashFilter(isFlashing(enemy.uid, nowMs)) });
+    if (enemy.shielded) drawShieldBubble(ctx, x, y + size.height / 2, size, nowMs);
 
     if (enemy.frozen) {
       ctx.save();
@@ -260,6 +358,47 @@
     if (isTargeted) drawReticle(ctx, x, y + size.height / 2, size, nowMs);
   }
 
+  /** The combo track, drawn as pips under the survive bar. This is the
+   * second win condition, so it needs to be as legible as the first. */
+  function drawComboPips(ctx: CanvasRenderingContext2D, cx: number, y: number, combo: number, required: number) {
+    const pip = 6;
+    const gap = 4;
+    const totalW = required * pip + (required - 1) * gap;
+    let x = cx - totalW / 2;
+    for (let i = 0; i < required; i++) {
+      ctx.fillStyle = i < combo ? COLOR_COMBO : 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.arc(x + pip / 2, y + pip / 2, pip / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      x += pip + gap;
+    }
+  }
+
+  /** The exposed weak point: the only place a shielded boss can be hurt,
+   * and the reason its position matters. Drawn from the same
+   * weakPointXPct() the targeting rules use, so what the player aims at is
+   * exactly what they see. */
+  function drawWeakPoint(ctx: CanvasRenderingContext2D, boss: BossState, targeted: boolean, nowMs: number) {
+    const x = px(weakPointXPct(boss), LOGICAL_W);
+    const y = px(BOSS_Y_PCT, LOGICAL_H) + spriteSize(SPRITES[boss.sprite], 7).height / 2;
+    const pulse = 5 + 2.5 * Math.sin(nowMs / 120);
+
+    ctx.save();
+    ctx.fillStyle = '#f87171';
+    ctx.strokeStyle = '#fef08a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    if (targeted) drawReticle(ctx, x, y - 10, { width: 20, height: 20 }, nowMs);
+  }
+
   function drawBoss(ctx: CanvasRenderingContext2D, boss: BossState, target: Target, nowMs: number) {
     const x = px(boss.xPct, LOGICAL_W);
     const y = px(BOSS_Y_PCT, LOGICAL_H);
@@ -268,11 +407,48 @@
     const size = spriteSize(sprite, pixel);
     const isTargeted = target.kind === 'boss';
 
-    drawHpBar(ctx, x, y - 14, 96, 9, boss.hp / boss.maxHp, true);
+    // The bar is the survive clock, not health - it drains toward the
+    // player winning rather than toward the boss dying.
+    drawHpBar(ctx, x, y - 22, 96, 9, boss.surviveRemainingMs / boss.surviveTotalMs, true);
+    drawComboPips(ctx, x, y - 10, boss.combo, boss.comboRequired);
+
     drawSprite(ctx, sprite, x, y, pixel, { centerX: true, filter: flashFilter(isFlashing('boss', nowMs)) });
+
+    if (!boss.vulnerable) {
+      drawShieldBubble(ctx, x, y + size.height / 2, size, nowMs);
+      drawWeakPoint(ctx, boss, target.kind === 'boss-weak-point', nowMs);
+    }
+
     drawLabel(ctx, x, y + size.height + 8, boss.problem.displayText, true);
 
     if (isTargeted) drawReticle(ctx, x, y + size.height / 2, size, nowMs);
+  }
+
+  function drawBanner(ctx: CanvasRenderingContext2D, nowMs: number) {
+    if (nowMs > bannerUntilMs || !bannerText) return;
+    const remaining = (bannerUntilMs - nowMs) / BANNER_DURATION_MS;
+
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, remaining * 2.5);
+    ctx.font = labelFont(11);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const boxW = ctx.measureText(bannerText).width + 18;
+    const boxH = 22;
+    const x = LOGICAL_W / 2 - boxW / 2;
+    const y = 6;
+
+    ctx.fillStyle = 'rgba(20, 33, 61, 0.85)';
+    ctx.strokeStyle = bannerColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, boxW, boxH, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = bannerColor;
+    ctx.fillText(bannerText, LOGICAL_W / 2, y + boxH / 2 + 1);
+    ctx.restore();
   }
 
   function drawPlayer(ctx: CanvasRenderingContext2D, player: PlayerState) {
@@ -387,6 +563,7 @@
     for (const enemy of runtime.enemies) drawEnemy(ctx, enemy, target, nowMs);
     drawPlayer(ctx, runtime.player);
     drawFloatTexts(ctx, nowMs);
+    drawBanner(ctx, nowMs);
 
     ctx.restore();
   }

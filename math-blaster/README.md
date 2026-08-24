@@ -7,10 +7,11 @@ between "real" gameplay.
 
 ## What this is
 
-You pilot a ship along the bottom of the screen while enemies carrying math
-problems fall toward you (or, during a boss fight, a boss drifts overhead
-firing problems of its own). Your horizontal position *is* your aim — line
-up under a target, type the number you think is the answer, and fire.
+You pilot a ship along the bottom of the screen while formations of enemies
+carrying math problems descend toward you (or, during a boss fight, a boss
+drifts overhead firing problems of its own). Your horizontal position *is*
+your aim — line up under a target, type the number you think is the answer,
+and fire.
 
 The game grades answers on a spectrum, not just right/wrong:
 
@@ -46,22 +47,70 @@ still making genuine mastery matter for how well a run goes.
 - **Incremental-style meta-progression.** You earn currency from every
   defeated enemy and spend it between runs on permanent upgrades — the
   loop is meant to reward repeated play, not just a single sitting.
+- **Enemies are threats to read, not health bars to drain.** What makes
+  one enemy harder than another is how it moves, how many problems it
+  takes, and whether it will accept anything less than an exact answer —
+  never just a bigger number attached to the same behaviour.
 
 ## Core gameplay loop
 
 1. **Line up.** Drag, tap the ◀▶ buttons, or use arrow keys to move under
-   a falling enemy or the boss.
+   a descending enemy or the boss.
 2. **Type and fire.** Type your answer on the keypad and hit FIRE.
-3. **Survive the clock.** You have 30 seconds (plus any skill bonuses) —
+3. **Read the wave.** Enemies arrive as formations, not a random trickle,
+   and each kind behaves differently — see below.
+4. **Survive the clock.** You have 30 seconds (plus any skill bonuses) —
    not lives. Letting an enemy reach the bottom costs a chunk of that
    time, unless Dodge fully avoids it or Armor softens it.
-4. **Clear the level.** Defeat enough enemies to trigger that world's
+5. **Clear the level.** Defeat enough enemies to trigger that world's
    boss — a rapid-fire fight drawing on everything the level (and every
    level before it) has taught, ending in a climactic authored finale
    problem.
-5. **Bank currency, spend it.** Between runs, the skill tree shop is where
+6. **Bank currency, spend it.** Between runs, the skill tree shop is where
    currency earned from kills becomes permanent upgrades — for the *next*
    run, not the current one.
+
+## Enemies
+
+Every enemy is an *archetype* — a distinct set of behaviours, not a
+recoloured sprite:
+
+| Enemy | Behaviour |
+|---|---|
+| **Drifter** | Falls straight down its lane. The baseline. |
+| **Weaver** | Sine-weaves across lanes, so you have to lead it. |
+| **Diver** | Hangs back near the top, then commits and accelerates hard. |
+| **Bulwark** | Takes two problems, not one — a fresh question appears when you break its first layer. |
+| **Sentinel** | Two layers *behind a shield*. Only an exact answer strips the shield, and that costs the whole shot. |
+| **Splitter** | Breaks into two fast-weaving spores when destroyed. The debris doesn't count toward clearing the level. |
+
+Enemies descend far slower than the difficulty numbers alone would
+suggest — with this much to read on screen, time to think is the thing
+that makes the variety playable rather than chaotic. A single global
+brake (`GLOBAL_FALL_SPEED_MULTIPLIER`) scales every enemy's descent, so
+overall pacing can be tuned in one place without disturbing the relative
+difficulty between levels.
+
+## Boss fights
+
+Bosses have no health bar. A fight ends one of two ways:
+
+- **Outlast it.** Survive the fight's timer and the boss goes down.
+  Every correct answer shortens that timer, so close and partial answers
+  still make real progress toward the win.
+- **Master it.** Land a run of consecutive *exact* answers — five to
+  seven depending on the boss — and the fight ends immediately. Anything
+  less than exact resets the run to zero. This is the one place in the
+  game that asks for mastery rather than effort, and it pays accordingly.
+
+Fights move through **phases** as their timer drains, each with its own
+drift speed, reinforcements, and shield behaviour. Past the opening
+phase a boss periodically raises a **shield**: its body becomes immune,
+and the only way through is a **weak point** that appears off-centre and
+moves every time the shield goes up. Hitting it takes tighter positioning
+*and* an exact answer, and it takes the biggest chunk off the clock in
+the game. For the last stretch the shield drops for good, reinforcements
+go berserk, and the authored finale problem appears.
 
 ## World / level structure
 
@@ -95,8 +144,9 @@ extend to K–12 without any engine changes.
 ## Current status
 
 **Fully playable:** the entire loop above — movement/targeting, all six
-answer verdicts, timer-based survival with Dodge/Armor, currency and the
-Base skill tree shop, all four worlds and three boss fights.
+answer verdicts, all six enemy archetypes, wave-based spawning, timer-based
+survival with Dodge/Armor, currency and the Base skill tree shop, all four
+worlds and three phased boss fights with both win conditions.
 
 **Built but not yet wired into the session flow:**
 - Grade selection — the data and unlock logic exist (`gradeTree.ts`); a
@@ -107,9 +157,16 @@ Base skill tree shop, all four worlds and three boss fights.
 - Gamepad input — the input system is built to support it cleanly
   whenever it's added, but no gamepad code exists yet.
 
-**Not yet tuned:** skill costs, damage numbers, fall speeds, the 30-second
-timer, and the 5-second impact penalty are all reasonable placeholders,
-not numbers validated by real play.
+**Not yet tuned:** skill costs, damage numbers, fall speeds, wave gaps, the
+30-second timer, the 5-second impact penalty, and every boss's survive
+duration and combo requirement are all reasonable placeholders, not numbers
+validated by real play.
+
+**Worth knowing:** the 30-second clock covers the *whole run*, not each
+stage. Reach a boss with less time left than its survive duration and
+outlasting it is arithmetically impossible — the combo becomes your only
+way out. That's deliberate, but it's the first thing to revisit if runs
+feel unfair rather than tight.
 
 ## Tech stack
 

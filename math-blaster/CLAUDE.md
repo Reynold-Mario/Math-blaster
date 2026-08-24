@@ -16,8 +16,15 @@ lib/math/          MathValue, ProblemDefinition, evaluator - pure, no game state
                     evaluator classifies exact/equivalent/close/partial/incorrect/
                     invalid. It has NO opinion on damage or consequences.
 
-lib/levels/         LevelDefinition (curriculum + arcade difficulty + progression +
-                    embedded boss rules, kept as separate dimensions on purpose),
+lib/levels/         enemyArchetypes.ts = the LEAF module: sprite-kind vocabulary,
+                    the archetype registry (movement/layers/shield/split), and
+                    pure stepMovement(). Everything else here depends on it.
+                    waves.ts (formation shapes + WavePlan traversal, fully
+                    deterministic - no Math.random, so a wave index always
+                    builds the same formation),
+                    LevelDefinition (curriculum + arcade difficulty + wave plan +
+                    progression + embedded boss rules incl. BossPhase, kept as
+                    separate dimensions on purpose),
                     gameLevels.ts (the actual 7 authored levels, K-3),
                     gradeTree.ts (K-3 curriculum-unlock nodes, built on SkillTree),
                     problemGenerators.ts (generated + authored problems)
@@ -33,7 +40,9 @@ lib/runtime/         RuntimeState (resets every run) vs PlayerProfile (currency 
                     (unlike the pure layers above) - that's deliberate, matches
                     how Svelte's $state gets consumed.
 
-lib/combat.ts        Takes an AnswerResult, decides damage/reinforcement/defeat.
+lib/combat.ts        Takes an AnswerResult, decides damage/shield/layer/
+                    reinforcement/defeat for grunts, and timer-cut/combo/
+                    shield outcomes for bosses. Bosses have no hp to damage.
 lib/targeting.ts     resolveTarget() - single source of truth for "what's the
                     player lined up on", used by BOTH the canvas reticle and
                     gameFlow's fire resolution. Never duplicate this logic.
@@ -64,7 +73,31 @@ instead of events - stop, that's the exact coupling this structure exists to avo
 - **Targeting is positional.** Player moves horizontally along the bottom; you
   must line up under an enemy (or the boss) to hit it. `resolveTarget()` picks
   the nearest-to-impact aligned enemy, falling back to the boss only when
-  nothing else is aligned.
+  nothing else is aligned. A *shielded* boss also exposes a weak point, which
+  outranks its body and answers to a tighter tolerance
+  (`WEAK_POINT_TOLERANCE_PCT`). `weakPointXPct()` is exported so the renderer
+  draws the marker in exactly the spot targeting tests against.
+- **`GLOBAL_FALL_SPEED_MULTIPLIER` is the one knob for descent pacing.**
+  Applied in `spawnEnemy()` on top of the level's authored `fallSpeed` range
+  and the archetype's own `speedMultiplier`, so it reaches wave spawns, boss
+  adds and splitter debris alike. Tune global pacing here, not by editing ten
+  authored ranges - that reshapes the between-level difficulty curve as a side
+  effect. `gameFlow.test.ts` pins the wiring for both spawn paths.
+- **Enemies are archetypes, not sprites.** Slime/bat/robot used to be purely
+  cosmetic. Now `EnemyArchetype` owns movement (straight/weave/dive), how many
+  *layers* (= separate problems) it takes to kill, whether it starts shielded,
+  whether it splits on death, and whether the kill counts toward the level
+  quota. `EnemyInstance.hp` is the CURRENT LAYER's health, not the whole
+  enemy's - emptying a layer mints a fresh problem instead of killing it.
+- **A shield is a gate, not a damage reduction.** Only exact/equivalent strips
+  one, and doing so consumes the whole shot (no damage lands that turn). This
+  is the one place in the game where "close" genuinely isn't good enough.
+- **Spawning is wave-based.** Levels author a `WavePlan` of formations
+  (line/vee/column/pincer/scatter) with explicit gaps, instead of the old
+  random per-enemy trickle. Plans loop from `loopFrom` (not index 0), so the
+  introductory wave plays once and a long level escalates rather than resetting
+  to its own tutorial. Formations are deterministic on purpose - that's what
+  makes a level learnable and `buildFormation` testable.
 - **Survival is timer-based, not lives.** `RuntimeState.timeRemainingMs` starts
   at 30s (+ More Time / Health Pool skill bonuses) and ticks down continuously.
   Enemy impacts cut into it: **Dodge** is a chance to fully negate the penalty;
@@ -79,7 +112,22 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   phase auto-starts once `enemiesToClear` is hit. Its problems are drawn from a
   *cumulative* scope (this level's curriculum + every earlier one), weighted
   progressively harder as the fight goes on, culminating in an authored finale
-  problem once boss HP drops below 15%.
+  problem for the last 15% of the survive timer.
+- **Bosses have NO health bar.** Don't add one back. A fight ends one of two
+  ways: the player outlasts `surviveSec`, or lands `comboToDefeat` consecutive
+  exact/equivalent answers (the mastery route - anything less than exact resets
+  the combo to 0). Good answers *cut the survive clock*, so the two routes are
+  the same activity at different intensities rather than separate systems -
+  that's what `BOSS_CUT_*_MS` in combat.ts replaced the old damage percentages
+  with. `BossState.defeatedBy` records which route won.
+- **Boss phases are gated on elapsed survive time, not damage** (there is none
+  to gate on). `phaseIndexForProgress()` normalises `BossPhase.weight` into
+  proportions of the fight. Entering a phase deliberately reopens the boss and
+  resets its shield window, so a phase change is a window rather than an
+  ambush - tests that set up a shield state must let the phase change land
+  first or it overwrites them.
+- **Boss adds are ordinary enemies.** Shooting one no longer damages the boss
+  (it used to). They matter because they threaten the run clock, nothing else.
 - **Partial credit uses place-value digit matching** (ones/tens/etc. compared by
   position), not "contains these digits somewhere" - e.g. 24 vs 42 scores zero
   matching digits despite sharing digits, because place value is the point.
@@ -111,11 +159,27 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   starting time instead (keeping its enemy-HP-increase trade-off). If you see
   references to "bonus lives" anywhere, that's stale.
 - **Balance numbers are placeholders** - skill costs, damage percentages, fall
-  speeds, the 30s timer, the 5s impact penalty. None of this has been tuned via
-  real play; expect to need to adjust based on feedback, not treat as final.
+  speeds, the 30s timer, the 5s impact penalty, boss surviveSec/comboToDefeat,
+  the boss timer-cut amounts. None of this has been tuned via real play; expect
+  to need to adjust based on feedback, not treat as final.
+- **The run clock is still global, not per-stage.** `timeRemainingMs` is set
+  once in `resetRun()` and never refilled between stages - a run is meant to be
+  short, with death expected and currency banked for the next attempt. This
+  interacts with boss survive timers on purpose: enter a fight with less clock
+  left than `surviveSec` and the endurance route is arithmetically impossible,
+  leaving the combo as the only way out. That's a feature, not an oversight -
+  don't "fix" it by refilling the clock per stage without deciding that's the
+  design you want.
+- **Freeze does not pause a boss's survive clock.** Freezing the adds buys
+  breathing room; stalling the fight it's meant to win would make the skill a
+  self-nerf during exactly the moment you'd want it.
 - **Only 4 of 7 levels have unique art direction** in the sense of a distinct
   boss sprite - Grade 2's boss ("Hundred Hydra") reuses the boss1 sprite with a
   different name/theme/scope, since only two boss sprites exist in `sprites.ts`.
+- **Shields, weak points and layer pips are drawn, not sprited.** GameCanvas
+  composes them from canvas primitives so they work over every silhouette
+  without new pixel art. If you add archetype-specific art later, that's where
+  it goes - not into new EnemyInstance fields.
 
 ## Conventions worth keeping
 
