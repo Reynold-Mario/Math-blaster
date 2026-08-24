@@ -34,11 +34,18 @@ export const WAVE_BOSS_INTERVAL = 5;
 
 /** Waves spent on one curriculum before the run steps up to the next. */
 const WAVES_PER_CURRICULUM = 4;
-/** Waves spent on one backdrop rung. Deliberately not equal to
- * WAVES_PER_CURRICULUM, so the look and the maths don't change in
- * lockstep and the backdrop reads as travel rather than as a label for
- * what you're being asked. */
+/**
+ * Waves spent travelling between two backdrop rungs.
+ *
+ * Deliberately not equal to WAVES_PER_CURRICULUM, so the look and the maths
+ * don't change in lockstep - the backdrop reads as distance travelled
+ * rather than as a label for what you're being asked.
+ */
 const WAVES_PER_BACKDROP = 3;
+/** How far the backdrop darkens during a boss wave. The authored boss
+ * palettes still override this entirely; this is what a *generated* boss
+ * wave gets when its roster entry didn't author one. */
+const BOSS_BACKDROP_DARKEN = 0.22;
 
 // --- Difficulty ramp. The authored bundles ran from [8,12] fall speed and
 // 3 concurrent up to [13,18] and 5; the ramp reproduces that curve across
@@ -205,10 +212,89 @@ export function bossRulesFor(waveNumber: number, scope: Curriculum[]): BossRules
   };
 }
 
-/** The backdrop for this wave. A step per rung for now; it becomes a
- * continuous transition so the backdrop reads as distance travelled. */
+// --- Backdrop interpolation. Progress is the one thing a player can't
+// read off the HUD at a glance - a wave number tells you where you are but
+// not how far you've come. The backdrop is what carries that, which is why
+// it moves continuously rather than switching between palettes: a set
+// change reads as "somewhere else", a gradient reads as travel. ---
+
+function clampByte(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+/** Parses #rgb or #rrggbb. Returns null for anything else, so a malformed
+ * authored palette degrades to "don't interpolate" rather than to black. */
+function parseHex(hex: string): [number, number, number] | null {
+  const raw = hex.trim().replace('#', '');
+  if (raw.length === 3) {
+    const [r, g, b] = raw.split('').map((c) => parseInt(c + c, 16));
+    return [r, g, b].some(Number.isNaN) ? null : [r, g, b];
+  }
+  if (raw.length === 6) {
+    const parts = [raw.slice(0, 2), raw.slice(2, 4), raw.slice(4, 6)].map((c) => parseInt(c, 16));
+    return parts.some(Number.isNaN) ? null : [parts[0], parts[1], parts[2]];
+  }
+  return null;
+}
+
+function toHex(rgb: [number, number, number]): string {
+  return `#${rgb.map((c) => clampByte(c).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Blends two colours. Falls back to whichever end is parseable rather
+ * than inventing one, so a bad palette can never paint the scene black. */
+function mixColor(from: string, to: string, t: number): string {
+  const a = parseHex(from);
+  const b = parseHex(to);
+  if (!a) return to;
+  if (!b) return from;
+  return toHex([lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]);
+}
+
+function darken(hex: string, amount: number): string {
+  const rgb = parseHex(hex);
+  if (!rgb) return hex;
+  return toHex([rgb[0] * (1 - amount), rgb[1] * (1 - amount), rgb[2] * (1 - amount)]);
+}
+
+/**
+ * The backdrop for this wave: a continuous blend along the palette ladder,
+ * so consecutive waves are never quite the same colour and a player can
+ * see how far they've come.
+ *
+ * Holds at the last rung rather than wrapping. A long run should look like
+ * it ended up somewhere, not like it went round in a circle - and wrapping
+ * would put the opening garden back on screen at wave 90, which reads as
+ * losing progress.
+ *
+ * `name` comes from whichever rung is nearer, so the backdrop always has a
+ * sensible label even mid-blend.
+ */
 export function backdropForWave(waveNumber: number): Backdrop {
-  return rungFor(BACKDROP_LADDER, waveNumber, WAVES_PER_BACKDROP);
+  const position = Math.max(0, waveNumber - 1) / WAVES_PER_BACKDROP;
+  const index = Math.min(Math.floor(position), BACKDROP_LADDER.length - 1);
+  const next = Math.min(index + 1, BACKDROP_LADDER.length - 1);
+  const t = index === next ? 0 : position - index;
+
+  const from = BACKDROP_LADDER[index];
+  const to = BACKDROP_LADDER[next];
+  const blended: Backdrop = {
+    name: t < 0.5 ? from.name : to.name,
+    sky1: mixColor(from.sky1, to.sky1, t),
+    sky2: mixColor(from.sky2, to.sky2, t),
+    ground: mixColor(from.ground, to.ground, t),
+  };
+
+  // A boss wave whose roster entry authored no backdrop of its own still
+  // needs to look like an event, so it darkens where it is rather than
+  // jumping to somewhere unrelated.
+  if (!isBossWave(waveNumber)) return blended;
+  return {
+    name: blended.name,
+    sky1: darken(blended.sky1, BOSS_BACKDROP_DARKEN),
+    sky2: darken(blended.sky2, BOSS_BACKDROP_DARKEN),
+    ground: darken(blended.ground, BOSS_BACKDROP_DARKEN),
+  };
 }
 
 /** The default curriculum ladder - every authored curriculum, easiest

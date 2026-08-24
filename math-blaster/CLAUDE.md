@@ -122,6 +122,15 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   removed, so a wave cannot stall. Reinforcements are capped per wave
   (`MAX_REINFORCEMENTS_PER_WAVE`) precisely because they extend the board a
   player has to clear before moving on.
+- **The backdrop is how progress is shown, and it moves every wave.**
+  `backdropForWave()` blends continuously along `BACKDROP_LADDER` rather than
+  switching between palettes - a set change reads as "somewhere else", a
+  gradient reads as travel, and the wave number already covers "where am I".
+  It holds at the last rung instead of wrapping (putting the opening garden
+  back on screen at wave 90 would read as losing progress), and a boss wave
+  with no authored palette of its own darkens where it is rather than jumping
+  somewhere unrelated. Colour parsing falls back to an unblended end rather
+  than to black, so a malformed palette can't paint the scene out.
 - **`waveProgression.ts` is the only place a wave number becomes anything.**
   Formation, fall speed, concurrency, curriculum, boss, backdrop - all of it
   from `waveNumber`, all pure and deterministic. Wave 12 must be wave 12 every
