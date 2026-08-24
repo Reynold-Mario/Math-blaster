@@ -72,6 +72,9 @@ export type GameEvent =
   | { type: 'time-gained'; amountMs: number; remainingMs: number }
   | { type: 'impact-avoided' }
   | { type: 'currency-earned'; amount: number; total: number }
+  /** A new furthest-wave record. Persisted, because it's the ceiling on
+   * where a future run may start. */
+  | { type: 'wave-record'; waveNumber: number }
   | { type: 'skill-used'; skill: string }
   /** The run's only ending. There is no victory event: the wave sequence
    * is endless, so a run finishes when the clock does and nowhere else. */

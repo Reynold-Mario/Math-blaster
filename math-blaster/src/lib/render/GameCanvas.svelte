@@ -147,6 +147,10 @@
       case 'time-gained':
         pushFloat(50, 70, `+${(event.amountMs / 1000).toFixed(1)}s`, COLOR_EXACT);
         break;
+      case 'wave-record':
+        // Nothing drawn: it fires on nearly every wave of a good run, and
+        // the wave number in the HUD already says how far they've got.
+        break;
       case 'boss-defeated':
         // The stage-clear screen used to report how a fight was won. There
         // isn't one any more, so the banner has to carry it.

@@ -143,6 +143,10 @@ function handleGameEvent(event: GameEvent) {
       // No cue of its own: a refill only ever lands alongside a wave-clear
       // or a boss-defeated, both of which already sound.
       break;
+    case 'wave-record':
+      // Silent: it fires on nearly every wave of a good run, so a cue here
+      // would just be a second wave-clear sound.
+      break;
     case 'skill-used':
     case 'impact-avoided':
       sfx.skill();

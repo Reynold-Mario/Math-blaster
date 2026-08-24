@@ -112,6 +112,89 @@ function spawnUntil(
   return state.enemies.find((e) => e.archetype === archetype)!;
 }
 
+describe('starting a run further in', () => {
+  it('starts at wave 1 by default', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile);
+    expect(state.waveNumber).toBe(1);
+  });
+
+  it('starts wherever it is told to', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile, 11);
+    expect(state.waveNumber).toBe(11);
+  });
+
+  it('drops straight into a boss when started on a boss wave', () => {
+    // The whole reason a checkpoint lands on a multiple of the interval.
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile, WAVE_BOSS_INTERVAL);
+    tickUntil(state, profile, () => state.boss !== null, 'the boss');
+    expect(state.runPhase).toBe('boss');
+  });
+
+  it('refuses a nonsense start wave rather than breaking the run', () => {
+    for (const requested of [0, -3, 0.5]) {
+      const state = createInitialRuntimeState();
+      const profile = createEmptyProfile();
+      resetRun(state, profile, requested);
+      expect(state.waveNumber).toBe(1);
+    }
+  });
+
+  it('gives a skipped-to run the same clock as any other', () => {
+    // Starting at wave 20 must not also mean starting with wave 20's worth
+    // of banked time, or the skip would be a double reward.
+    const early = createInitialRuntimeState();
+    const lateState = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(early, profile, 1);
+    resetRun(lateState, profile, 20);
+    expect(lateState.timeRemainingMs).toBe(early.timeRemainingMs);
+  });
+});
+
+describe('the reached-wave record', () => {
+  it('records the wave a run starts on', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile, 9);
+    expect(profile.highestWaveReached).toBe(9);
+    expect(eventsOfType('wave-record')).toHaveLength(1);
+  });
+
+  it('records each new wave as the run advances', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile);
+    tickUntil(state, profile, () => state.enemies.length > 0, 'the first wave');
+    for (const enemy of [...state.enemies]) destroy(state, profile, enemy);
+    tickUntil(state, profile, () => state.waveNumber === 2, 'wave 2');
+
+    expect(profile.highestWaveReached).toBe(2);
+  });
+
+  it('never lowers the record by starting an earlier run', () => {
+    const profile = createEmptyProfile();
+    profile.highestWaveReached = 30;
+    const state = createInitialRuntimeState();
+    resetRun(state, profile, 1);
+    expect(profile.highestWaveReached).toBe(30);
+  });
+
+  it('only announces an actual record, not every wave', () => {
+    const profile = createEmptyProfile();
+    profile.highestWaveReached = 30;
+    const state = createInitialRuntimeState();
+    events = [];
+    resetRun(state, profile, 5);
+    expect(eventsOfType('wave-record')).toHaveLength(0);
+  });
+});
+
 describe('grade scoping', () => {
   /** Collects the problems a run at this grade actually puts on screen,
    * across enough waves to walk the whole ladder and past its end. */

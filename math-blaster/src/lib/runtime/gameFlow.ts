@@ -246,7 +246,7 @@ export function resetRun(state: RuntimeState, profile: PlayerProfile, fromWave =
   state.player.movingRight = false;
   state.skillCooldowns = {};
   state.freezeUntilMs = 0;
-  beginWave(state, Math.max(1, Math.floor(fromWave)));
+  advanceToWave(state, profile, Math.max(1, Math.floor(fromWave)));
 }
 
 /**
@@ -268,6 +268,22 @@ export function beginWave(state: RuntimeState, waveNumber: number): void {
   state.spawnTimer = 0;
   state.waveBreatherSec = WAVE_BREATHER_SEC;
   gameEvents.emit({ type: 'wave-announced', waveNumber, isBoss: isBossWave(waveNumber) });
+}
+
+/**
+ * Starts a wave and reports having reached it, so the profile's ceiling on
+ * where a run may begin tracks waves *arrived at*. Arriving is the proof
+ * the player can get there; surviving is a different question.
+ *
+ * Kept separate from `beginWave` so tests (and anything that wants to set
+ * up a wave without granting progress) can still use the plain version.
+ */
+function advanceToWave(state: RuntimeState, profile: PlayerProfile, waveNumber: number): void {
+  beginWave(state, waveNumber);
+  if (waveNumber > profile.highestWaveReached) {
+    profile.highestWaveReached = waveNumber;
+    gameEvents.emit({ type: 'wave-record', waveNumber });
+  }
 }
 
 /** The breather has elapsed: send in whatever this wave is. */
@@ -294,7 +310,7 @@ function onWaveCleared(state: RuntimeState, profile: PlayerProfile): void {
     released: state.waveSize,
     bonusMs,
   });
-  beginWave(state, state.waveNumber + 1);
+  advanceToWave(state, profile, state.waveNumber + 1);
 }
 
 // --- Spawning ---
@@ -634,7 +650,7 @@ function onBossDefeated(state: RuntimeState, profile: PlayerProfile, cause: 'sur
   state.bossRules = null;
   // Straight on to the next wave. No stage-clear screen, no Continue
   // button, no victory - the run only ends when the clock does.
-  beginWave(state, state.waveNumber + 1);
+  advanceToWave(state, profile, state.waveNumber + 1);
 }
 
 /**

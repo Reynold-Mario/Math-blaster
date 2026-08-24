@@ -41,14 +41,23 @@
     defense: '🛡 Defense',
     firing: '🎯 Firing',
     active: '⚡ Active Abilities',
+    progression: '🚩 Progression',
   };
-  const CATEGORY_ORDER: BaseSkillCategory[] = ['economy', 'movement', 'defense', 'firing', 'active'];
+  const CATEGORY_ORDER: BaseSkillCategory[] = [
+    'economy',
+    'movement',
+    'defense',
+    'firing',
+    'active',
+    'progression',
+  ];
   const CATEGORY_BRIGHT: Record<BaseSkillCategory, string> = {
     economy: 'var(--marquee-yellow)',
     movement: 'var(--accent-blue)',
     defense: 'var(--accent-green)',
     firing: 'var(--marquee-red)',
     active: 'var(--accent-pink)',
+    progression: '#a78bfa',
   };
   const ROOT_COLOR = '#f4d35e';
   const NODE_ICON: Record<string, string> = {
@@ -56,6 +65,8 @@
     'branch-economy': '💰',
     'branch-movement': '🏃',
     'branch-defense': '🛡',
+    'branch-progression': '🚩',
+    checkpoint: '🚩',
     'branch-firing': '🎯',
     'branch-active': '⚡',
     bounty: '💰',
@@ -116,6 +127,8 @@
         return `+${effect.bonusPerKill} currency per kill`;
       case 'moreTime':
         return `+${(effect.bonusMs / 1000).toFixed(0)}s start time`;
+      case 'checkpoint':
+        return effect.startWave <= 1 ? 'Start from wave 1' : `Start from wave ${effect.startWave}`;
     }
   }
 
