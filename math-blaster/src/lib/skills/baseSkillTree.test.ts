@@ -35,6 +35,7 @@ const SKILLS_OPENED_BY_GATE: Record<BaseSkillCategory, string[]> = {
   defense: ['dodge'],
   firing: ['pierce', 'burn', 'fire-rate'],
   active: ['bomb', 'freeze'],
+  progression: ['checkpoint'],
 };
 
 describe('tree shape', () => {

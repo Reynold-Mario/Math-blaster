@@ -290,8 +290,11 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
 - New `GameEvent` variants: add the type, then update both `GameCanvas.svelte`'s
   and `audio.ts`'s event handlers (they interpret independently; neither should
   need the other to know a new event exists).
-- Persisted localStorage key in use: `pixelMathBlaster.profile.v1` (currency +
-  skill progress). Bump the version suffix if you change its shape incompatibly.
+- Persisted localStorage key in use: `pixelMathBlaster.profile.v1` (currency,
+  skill progress, selected grade, furthest wave reached). Every field added
+  since v1 has been additive with a validated fallback, which is why the suffix
+  hasn't moved - bump it only for a change that makes an old profile *wrong*
+  rather than incomplete.
   There is no leaderboard/high-score persistence - a run ends at a "Play Again"
   / "Skill Tree" choice, nothing is saved beyond the profile. The end-of-run
   screen reports the wave reached, which is the number that means something in

@@ -1,6 +1,6 @@
 import type { SkillNode } from './SkillTree';
 
-export type BaseSkillCategory = 'economy' | 'movement' | 'defense' | 'firing' | 'active';
+export type BaseSkillCategory = 'economy' | 'movement' | 'defense' | 'firing' | 'active' | 'progression';
 
 /**
  * What a Base-tree node actually grants at a given level. Each node
@@ -26,7 +26,11 @@ export type BaseSkillEffect =
   | { kind: 'bomb'; cooldownSec: number; layersStripped: number }
   | { kind: 'freeze'; cooldownSec: number; durationSec: number }
   | { kind: 'bounty'; bonusPerKill: number }
-  | { kind: 'moreTime'; bonusMs: number };
+  | { kind: 'moreTime'; bonusMs: number }
+  /** The wave a run may start from, for free, forever. Unlike every other
+   * effect this one changes nothing *during* a run - it changes where a run
+   * begins, which is why it sits in its own category. */
+  | { kind: 'checkpoint'; startWave: number };
 
 /** id of the single free root node every other node ultimately branches
  * from - see skillsRoot below. */
@@ -39,6 +43,7 @@ export const BASE_SKILL_BRANCH_IDS: Record<BaseSkillCategory, string> = {
   defense: 'branch-defense',
   firing: 'branch-firing',
   active: 'branch-active',
+  progression: 'branch-progression',
 };
 
 const BRANCH_ID_SET = new Set(Object.values(BASE_SKILL_BRANCH_IDS));
@@ -68,7 +73,7 @@ function withInstallments(totalCostPerLevel: number[], installmentsPerLevel = 3)
 /**
  * Shape of the tree. Nothing hangs off the root directly except the five
  * branch gates - one per (already colour-coded) category. Buying the free
- * root therefore reveals five choices, not ten skills; a category's
+ * root therefore reveals six choices, not eleven skills; a category's
  * skills only appear once the player has paid to open that branch:
  *
  *   skills-root
@@ -85,9 +90,17 @@ function withInstallments(totalCostPerLevel: number[], installmentsPerLevel = 3)
  *   |  |- pierce
  *   |  |- burn
  *   |  '- fire-rate
- *   '- branch-active ..... 60
- *      |- bomb
- *      '- freeze
+ *   |- branch-active ..... 60
+ *   |  |- bomb
+ *   |  '- freeze
+ *   '- branch-progression  35
+ *      '- checkpoint
+ *
+ * Progression is the odd one out: every other branch changes how a run
+ * *plays*, that one changes where a run *starts*. It's kept separate rather
+ * than filed under Economy precisely so that difference is visible in the
+ * shop - buying into it is a decision about skipping content, not about
+ * getting stronger.
  *
  * The point is pacing: the player picks ONE branch to invest in at a
  * time, so the shop never dumps every node on them at once. Gates are a
@@ -321,6 +334,37 @@ const freeze: SkillNode<BaseSkillEffect> = {
   }),
 };
 
+// --- Progression ---
+// The only branch that doesn't touch how a run plays. A player who has got
+// good at the early waves shouldn't have to replay them to reach a boss;
+// this is the permanent, free-forever way past them.
+
+const progressionBranch = branchGate(
+  'progression',
+  'Progression',
+  'Opens the Progression branch: start a run further in, instead of replaying waves you have already mastered.',
+  35
+);
+
+/**
+ * Where a run may begin. Levels land on multiples of the boss interval on
+ * purpose - each one puts a boss immediately in reach, which is the actual
+ * thing a player is buying.
+ *
+ * Capped at 3 levels: past wave 15 the point stops being "skip the grind"
+ * and starts being "skip the game". What the skill grants is also always
+ * clamped by how far the player has actually reached - see runSetup.ts.
+ */
+const checkpoint: SkillNode<BaseSkillEffect> = {
+  id: 'checkpoint',
+  name: 'Checkpoint',
+  description: 'Start a run at a later wave, for free, every time - never further than you have already reached.',
+  maxLevel: 3,
+  costPerLevel: withInstallments([120, 200, 320]),
+  prerequisites: behindGate('progression'),
+  effectAtLevel: (level) => ({ kind: 'checkpoint', startWave: level <= 0 ? 1 : level * 5 }),
+};
+
 /** Each category leads with its branch gate, followed by the skills that
  * gate opens - this order is also the sibling order the radial diagram
  * lays branches out in. */
@@ -330,6 +374,7 @@ export const BASE_SKILL_CATEGORIES: Record<BaseSkillCategory, SkillNode<BaseSkil
   defense: [defenseBranch, dodge, armor],
   firing: [firingBranch, pierce, burn, fireRate],
   active: [activeBranch, bomb, freeze],
+  progression: [progressionBranch, checkpoint],
 };
 
 /** Every node in the Base tree, including the free root trunk and the

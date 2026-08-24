@@ -154,10 +154,18 @@ instead of looping back to the opening garden.
 
 ## Progression systems
 
-**Base Skill Tree** — combat/economy upgrades, purchased with currency
-between runs: Economy (Bounty, More Time), Movement (Player Speed, Enemy
-Slowdown), Defense (Dodge, Armor), Firing (Piercing Shots,
-Burn, Firing Speed), and two unlockable Active Abilities (Freeze, Bomb).
+**Base Skill Tree** — upgrades purchased with currency between runs:
+Economy (Bounty, More Time), Movement (Player Speed, Enemy Slowdown),
+Defense (Dodge, Armor), Firing (Piercing Shots, Burn, Firing Speed), two
+unlockable Active Abilities (Freeze, Bomb), and Progression (Checkpoint).
+
+**Getting back to a boss** — Progression is the odd branch out: everything
+else changes how a run plays, Checkpoint changes where a run *starts*. Three
+levels put your free starting wave at 5, 10, then 15 — each one a boss wave.
+On top of that, the pre-run screen sells a one-off skip further ahead,
+charged every run so it never becomes the default. Both are capped by the
+furthest wave you have actually reached, so skipping only ever skips ground
+you have already covered.
 Multi-level skills render as a chain of nodes in the shop — the next
 level only becomes visible once the previous one is bought, and a node
 gated behind another skill (like Armor needing Dodge) stays invisible

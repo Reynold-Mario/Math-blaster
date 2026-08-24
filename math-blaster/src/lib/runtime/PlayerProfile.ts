@@ -17,6 +17,13 @@ export interface PlayerProfile {
   /** The grade whose curriculum a run draws on. Locally chosen for now;
    * see `gradeSource.ts` for where it will come from instead. */
   selectedGrade: GradeLevel;
+  /**
+   * The furthest wave this player has ever started. It is the hard ceiling
+   * on where a run may begin - neither the Checkpoint skill nor a paid skip
+   * can put a player into a wave they have never seen, so skipping only
+   * ever skips ground already covered.
+   */
+  highestWaveReached: number;
 }
 
 // Still v1: every field added since has been additive with a validated
@@ -31,7 +38,13 @@ function isGrade(value: unknown): value is GradeLevel {
 }
 
 export function createEmptyProfile(): PlayerProfile {
-  return { currency: 0, skillProgress: {}, skillSubProgress: {}, selectedGrade: DEFAULT_GRADE };
+  return {
+    currency: 0,
+    skillProgress: {},
+    skillSubProgress: {},
+    selectedGrade: DEFAULT_GRADE,
+    highestWaveReached: 1,
+  };
 }
 
 export function loadPlayerProfile(): PlayerProfile {
@@ -50,6 +63,13 @@ export function loadPlayerProfile(): PlayerProfile {
       // one carrying a grade that has since been removed, both load as the
       // default instead of putting the run in an unauthored curriculum.
       selectedGrade: isGrade(parsed.selectedGrade) ? parsed.selectedGrade : DEFAULT_GRADE,
+      // Floored at 1 and integer-coerced: this value gates what a player is
+      // allowed to skip to, so a corrupted or hand-edited profile must not
+      // be able to unlock arbitrary waves.
+      highestWaveReached:
+        typeof parsed.highestWaveReached === 'number' && Number.isFinite(parsed.highestWaveReached)
+          ? Math.max(1, Math.floor(parsed.highestWaveReached))
+          : 1,
     };
   } catch {
     return createEmptyProfile();

@@ -7,6 +7,15 @@
   import type { RuntimeState } from './runtime/RuntimeState';
   import type { PlayerProfile } from './runtime/PlayerProfile';
   import { loadPlayerProfile, savePlayerProfile } from './runtime/PlayerProfile';
+  import {
+    checkpointWave,
+    freeStartWave,
+    maxStartWave,
+    nextSkipTarget,
+    purchaseSkip,
+    skipCost,
+    startsOnBoss,
+  } from './runtime/runSetup';
   import type { GradeLevel } from './levels/gradeTree';
   import { installSkillTreeDebugTools } from './runtime/devTools';
   import { purchaseNextInstallment, type SkillNode } from './skills/SkillTree';
@@ -26,6 +35,9 @@
   /** How far the run got, for the end-of-run readout. The wave number is
    * the score that actually means something in an endless run. */
   let finalWave = $state(1);
+  /** The wave the next run will begin on. Seeded from the Checkpoint skill
+   * when the run-setup screen opens, then raised by any paid skips. */
+  let startWave = $state(1);
 
   const input = new InputManager();
   let stageWrapperEl: HTMLDivElement | undefined = $state();
@@ -47,6 +59,9 @@
   const waveCleared = $derived(Math.max(0, runtime.waveSize - waveRemaining));
   const waveProgressPct = $derived(runtime.waveSize > 0 ? (waveCleared / runtime.waveSize) * 100 : 0);
   const incoming = $derived(runtime.waveBreatherSec > 0);
+  const skipTarget = $derived(nextSkipTarget(profile, startWave));
+  const skipPrice = $derived(skipTarget === null ? 0 : skipCost(startWave, skipTarget));
+  const canAffordSkip = $derived(skipTarget !== null && profile.currency >= skipPrice);
   const surviveSeconds = $derived(isBossPhase ? Math.max(0, Math.ceil(runtime.boss!.surviveRemainingMs / 1000)) : 0);
 
   function skillLevel(id: string): number {
@@ -68,6 +83,9 @@
         endRun();
         break;
       case 'currency-earned':
+      case 'wave-record':
+        // Both change what persists - currency banked, and how far a future
+        // run may start from - so both are worth writing out mid-run.
         savePlayerProfile(profile);
         break;
       default:
@@ -95,8 +113,26 @@
     profile.selectedGrade = grade;
     savePlayerProfile(profile);
   }
+  /** Leaving the shop picks a starting wave rather than starting the run:
+   * where a run begins is a decision about the run, not a purchase. */
+  function goToRunSetup() {
+    startWave = freeStartWave(profile);
+    phase = 'runSetup';
+  }
+  /** Spends currency to push the starting wave one boss interval further,
+   * charged this run only. */
+  function buySkip() {
+    const target = nextSkipTarget(profile, startWave);
+    if (target === null) return;
+    const purchase = purchaseSkip(profile, startWave, target);
+    if (!purchase) return;
+    profile.currency = purchase.profile.currency;
+    startWave = purchase.startWave;
+    savePlayerProfile(profile);
+  }
   function startRun() {
-    resetRun(runtime, profile);
+    resetRun(runtime, profile, startWave);
+    savePlayerProfile(profile);
     countdownValue = 3;
     phase = 'countdown';
   }
@@ -193,10 +229,41 @@
   {:else if phase === 'skillTree'}
     <SkillTreeScreen
       profile={profile}
-      onPlay={startRun}
+      onPlay={goToRunSetup}
       onPurchase={purchaseSkill}
       onSelectGrade={selectGrade}
     />
+  {:else if phase === 'runSetup'}
+    <div class="boot">
+      <h2 class="setup-title">Ready?</h2>
+      <div class="setup-panel">
+        <div class="setup-row">
+          <span class="setup-label">Starting wave</span>
+          <span class="setup-value">{startWave}{startsOnBoss(startWave) ? ' · BOSS' : ''}</span>
+        </div>
+        <p class="setup-note">
+          {#if checkpointWave(profile) <= 1}
+            Buy Checkpoint in the shop to start later runs further in.
+          {:else if freeStartWave(profile) < checkpointWave(profile)}
+            Checkpoint is ready for wave {checkpointWave(profile)} — reach it once and it's yours free.
+          {:else}
+            Checkpoint gets you to wave {freeStartWave(profile)} free, every run.
+          {/if}
+        </p>
+        {#if skipTarget !== null}
+          <button class="skip-btn" disabled={!canAffordSkip} onclick={buySkip}>
+            Skip to wave {skipTarget} · 💰 {skipPrice}
+          </button>
+          <p class="setup-note">Charged this run only — you keep the Checkpoint wave for free.</p>
+        {:else}
+          <p class="setup-note">
+            Wave {maxStartWave(profile)} is as far as you have reached — get further to skip further.
+          </p>
+        {/if}
+      </div>
+      <button class="big-btn" onclick={startRun}>Play ▶</button>
+      <button class="big-btn" onclick={goToSkillTree}>◀ Skill Tree</button>
+    </div>
   {:else}
     <div class="hud">
       <div class="hud-left">
@@ -374,6 +441,56 @@
     transform: translateY(3px);
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
   }
+  .setup-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(14px, 4vw, 20px);
+    margin: 0;
+  }
+  .setup-panel {
+    background: var(--panel);
+    border: 3px solid var(--ink);
+    border-radius: 12px;
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    min-width: 260px;
+  }
+  .setup-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .setup-label {
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0.8;
+  }
+  .setup-value {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 15px;
+  }
+  .setup-note {
+    margin: 0;
+    font-size: 12px;
+    text-align: center;
+    opacity: 0.85;
+  }
+  .skip-btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    padding: 10px 14px;
+    border: 3px solid var(--ink);
+    border-radius: 8px;
+    background: var(--marquee-yellow);
+    cursor: pointer;
+  }
+  .skip-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
   .currency-note {
     font-family: 'Press Start 2P', monospace;
     font-size: 11px;
