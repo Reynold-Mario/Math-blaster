@@ -30,7 +30,39 @@ import { findBaseSkillNode } from '../skills/baseSkillTree';
 const IMPACT_LINE_PCT = 86;
 // Likewise its BOSS_Y_PCT - where boss hit effects should appear.
 const BOSS_FX_Y_PCT = 12;
-const BASE_TIMER_MS = 30000;
+// --- The run clock. Time is the only resource this game spends, and the
+// only thing that ends a run. It used to be a single budget set once at the
+// start and drained to zero, which made the game unfinishable the moment a
+// boss was more than a few waves away: a fully upgraded clock ran out
+// around wave 4.
+//
+// So the clock is now earned back. Clearing a wave pays a flat amount plus
+// a per-kill share, and the cap means those payouts bank into *surviving
+// the next wave* rather than accumulating into a cushion that makes the
+// rest of the run free. A player who keeps clearing waves keeps playing;
+// one who starts leaking enemies loses the bonus and the clock together.
+//
+// All placeholders - none of this has been tuned against real play. ---
+
+const BASE_TIMER_MS = 45000;
+/**
+ * How far above a player's *starting* clock earned time can bank.
+ *
+ * The ceiling is relative rather than absolute on purpose. A flat cap of
+ * 75s would sit exactly at base + a maxed More Time, so a fully upgraded
+ * player would begin every run pinned to it - every wave-clear payout
+ * silently discarded, and More Time reduced to "start at the ceiling"
+ * rather than an upgrade that keeps paying. Relative to the start, every
+ * player gets the same bankable slack and More Time raises both ends.
+ */
+const BANKABLE_HEADROOM_MS = 30000;
+/** Paid for clearing an ordinary wave, before per-kill share. */
+const WAVE_CLEAR_BONUS_MS = 12000;
+/** Paid per qualifying kill in the cleared wave. An enemy that got through
+ * costs the player this as well as the impact penalty. */
+const WAVE_CLEAR_PER_KILL_BONUS_MS = 1500;
+/** Paid for surviving a boss wave, whichever route won it. */
+const BOSS_CLEAR_BONUS_MS = 25000;
 const BASE_IMPACT_TIME_PENALTY_MS = 5000;
 const BASE_CURRENCY_PER_KILL = 5;
 const BASE_PLAYER_SPEED_PCT_PER_SEC = 55;
@@ -154,6 +186,11 @@ function startingTimeMs(profile: PlayerProfile): number {
   return BASE_TIMER_MS + (moreTime.kind === 'moreTime' ? moreTime.bonusMs : 0);
 }
 
+/** The most the clock can hold for this player. */
+function maxTimeMs(profile: PlayerProfile): number {
+  return startingTimeMs(profile) + BANKABLE_HEADROOM_MS;
+}
+
 // --- Setup ---
 
 export function createInitialRuntimeState(): RuntimeState {
@@ -231,12 +268,18 @@ function openWave(state: RuntimeState, profile: PlayerProfile): void {
  * either answered or it crosses the impact line and is removed, so there
  * is no state in which a wave can stall forever.
  */
-function onWaveCleared(state: RuntimeState): void {
+function onWaveCleared(state: RuntimeState, profile: PlayerProfile): void {
+  const bonusMs = addRunTime(
+    state,
+    profile,
+    WAVE_CLEAR_BONUS_MS + state.enemiesDefeatedThisWave * WAVE_CLEAR_PER_KILL_BONUS_MS
+  );
   gameEvents.emit({
     type: 'wave-cleared',
     waveNumber: state.waveNumber,
     defeated: state.enemiesDefeatedThisWave,
     released: state.waveSize,
+    bonusMs,
   });
   beginWave(state, state.waveNumber + 1);
 }
@@ -568,6 +611,7 @@ function onBossDefeated(state: RuntimeState, profile: PlayerProfile, cause: 'sur
   }
 
   state.enemies = [];
+  addRunTime(state, profile, BOSS_CLEAR_BONUS_MS);
   gameEvents.emit({
     type: 'boss-defeated',
     by: cause,
@@ -807,6 +851,23 @@ function updateEnemyMovement(state: RuntimeState, profile: PlayerProfile, dt: nu
 }
 
 /**
+ * Adds time to the run clock, capped. Every payout goes through here so the
+ * cap can't be bypassed by a new one forgetting about it.
+ *
+ * Returns what was actually granted, which is less than `amountMs` once the
+ * clock is near the cap - the caller reports that rather than the nominal
+ * figure, so the HUD never promises time the player didn't get.
+ */
+function addRunTime(state: RuntimeState, profile: PlayerProfile, amountMs: number): number {
+  if (amountMs <= 0) return 0;
+  const granted = Math.min(amountMs, maxTimeMs(profile) - state.timeRemainingMs);
+  if (granted <= 0) return 0;
+  state.timeRemainingMs += granted;
+  gameEvents.emit({ type: 'time-gained', amountMs: granted, remainingMs: state.timeRemainingMs });
+  return granted;
+}
+
+/**
  * Dodge is a full negation (triggers -> no time lost at all). Armor only
  * reduces the penalty's *magnitude* when it lands - the two are
  * independent mechanics now, not combined into one avoidance roll.
@@ -840,7 +901,7 @@ function updateWavePhase(state: RuntimeState, profile: PlayerProfile, dt: number
   // Waves are discrete: an empty board IS the end of the wave. Nothing
   // else releases enemies while one is running, so there's no ambiguity
   // about which wave just ended.
-  if (state.enemies.length === 0) onWaveCleared(state);
+  if (state.enemies.length === 0) onWaveCleared(state, profile);
 }
 
 function updateBossDrift(state: RuntimeState, dt: number): void {

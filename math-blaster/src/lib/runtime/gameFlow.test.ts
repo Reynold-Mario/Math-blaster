@@ -1,4 +1,4 @@
-import { createInitialRuntimeState, beginWave, tick, handleInputAction } from './gameFlow';
+import { createInitialRuntimeState, beginWave, resetRun, tick, handleInputAction } from './gameFlow';
 import { createEmptyProfile, type PlayerProfile } from './PlayerProfile';
 import type { RuntimeState, EnemyInstance } from './RuntimeState';
 import { gameEvents, type GameEvent } from '../events';
@@ -110,6 +110,222 @@ function spawnUntil(
   tickUntil(state, profile, () => state.enemies.some((e) => e.archetype === archetype), `a ${archetype} to spawn`);
   return state.enemies.find((e) => e.archetype === archetype)!;
 }
+
+describe('the run clock', () => {
+  /**
+   * Plays the current wave out to its end, answering everything correctly -
+   * and, on a boss wave, letting the survive clock run down to finish the
+   * fight. Deliberately does NOT reset the run clock the way `tickUntil`
+   * does: these tests are about the clock, so nothing may top it up behind
+   * their back.
+   */
+  function clearWave(state: RuntimeState, profile: PlayerProfile): void {
+    const wave = state.waveNumber;
+    for (let i = 0; i < 900; i++) {
+      for (const enemy of [...state.enemies]) {
+        for (let shot = 0; shot < 8 && state.enemies.includes(enemy); shot++) {
+          shootExactly(state, profile, enemy);
+        }
+      }
+      // Take the endurance route on a boss wave rather than answering it out.
+      if (state.boss) state.boss.surviveRemainingMs = Math.min(state.boss.surviveRemainingMs, 40);
+      tick(state, profile, 1 / 30);
+      if (state.waveNumber !== wave) return;
+    }
+    throw new Error(`wave ${wave} never ended`);
+  }
+
+  it('starts a run on the base clock plus the More Time bonus only', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile);
+    expect(state.timeRemainingMs).toBe(45000);
+  });
+
+  it('pays time back for clearing a wave', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile);
+
+    // Spend the clock down first, so the payout has room to land and isn't
+    // silently swallowed by the cap.
+    state.timeRemainingMs = 20000;
+    const before = state.timeRemainingMs;
+    clearWave(state, profile);
+
+    expect(state.timeRemainingMs).toBeGreaterThan(before);
+    const cleared = eventsOfType('wave-cleared');
+    expect(cleared).toHaveLength(1);
+    expect(cleared[0].bonusMs).toBeGreaterThan(0);
+    expect(eventsOfType('time-gained')).toHaveLength(1);
+  });
+
+  it('pays a wave answered out more than one let through', () => {
+    // Leaking has to cost the bonus, not just the impact penalty - otherwise
+    // standing still would be a free way to skip a wave you can't answer.
+    //
+    // Both runs hold their clock at a fixed value every tick, so the only
+    // thing being compared is the payout itself: the drain rate and the
+    // impact penalties would otherwise muddy it (and are covered separately
+    // by the impact tests).
+    function payoutFor(answer: boolean): number {
+      events = [];
+      const state = createInitialRuntimeState();
+      const profile = createEmptyProfile();
+      resetRun(state, profile);
+
+      for (let i = 0; i < 900 && state.waveNumber === 1; i++) {
+        state.timeRemainingMs = 40000;
+        if (answer) {
+          for (const enemy of [...state.enemies]) {
+            for (let shot = 0; shot < 8 && state.enemies.includes(enemy); shot++) {
+              shootExactly(state, profile, enemy);
+            }
+          }
+        }
+        tick(state, profile, 1 / 30);
+      }
+
+      const cleared = eventsOfType('wave-cleared');
+      expect(cleared).toHaveLength(1);
+      return cleared[0].bonusMs;
+    }
+
+    const answered = payoutFor(true);
+    const leaked = payoutFor(false);
+
+    expect(leaked).toBeLessThan(answered);
+    expect(eventsOfType('time-lost').length).toBeGreaterThan(0);
+  });
+
+  it('never lets the clock exceed its ceiling', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile);
+
+    for (let wave = 0; wave < 6; wave++) {
+      clearWave(state, profile);
+      expect(state.timeRemainingMs).toBeLessThanOrEqual(75000);
+    }
+  });
+
+  it('keeps the ceiling above the starting clock, so More Time never goes dead', () => {
+    // A flat ceiling would sit exactly at base + a maxed More Time, pinning a
+    // fully upgraded player to it from wave 1 and silently discarding every
+    // payout for the rest of the run.
+    const maxed = createEmptyProfile();
+    maxed.skillProgress = { 'skills-root': 1, 'branch-economy': 1, 'more-time': 5 };
+
+    const state = createInitialRuntimeState();
+    resetRun(state, maxed);
+    const start = state.timeRemainingMs;
+    expect(start).toBeGreaterThan(45000);
+
+    // Spend a little, then clear a wave: the payout has to actually land.
+    state.timeRemainingMs = start - 5000;
+    clearWave(state, maxed);
+    expect(eventsOfType('wave-cleared')[0].bonusMs).toBeGreaterThan(0);
+    expect(state.timeRemainingMs).toBeGreaterThan(start - 5000);
+  });
+
+  it('reports what a capped payout actually granted, not what it offered', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile);
+    // Near the ceiling, so the payout cannot land in full. (It can't be
+    // pinned exactly: the clock drains while the wave is being played, which
+    // is itself the reason the granted figure has to be measured, not assumed.)
+    // 75s is base 45s + the 30s of bankable headroom, with no More Time bought.
+    state.timeRemainingMs = 74000;
+
+    clearWave(state, profile);
+
+    const granted = eventsOfType('wave-cleared')[0].bonusMs;
+    expect(state.timeRemainingMs).toBe(75000);
+    // The flat part of the payout alone is 12s; the event must not claim it.
+    expect(granted).toBeLessThan(12000);
+  });
+
+  it('pays out for surviving a boss wave', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile);
+    beginWave(state, WAVE_BOSS_INTERVAL);
+    state.timeRemainingMs = 20000;
+    events = [];
+
+    tickUntil(state, profile, () => state.boss !== null, 'the boss');
+    state.timeRemainingMs = 20000;
+    state.boss!.surviveRemainingMs = 40;
+    events = [];
+
+    for (let i = 0; i < 200 && state.boss; i++) tick(state, profile, 1 / 30);
+
+    expect(eventsOfType('boss-defeated')).toHaveLength(1);
+    expect(eventsOfType('time-gained').length).toBeGreaterThan(0);
+    expect(state.timeRemainingMs).toBeGreaterThan(20000);
+  });
+});
+
+describe('game over', () => {
+  // The fail condition had no coverage at all before the clock became the
+  // thing a run is actually built around.
+  it('ends the run when the clock drains', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile);
+    state.timeRemainingMs = 100;
+
+    for (let i = 0; i < 20 && state.timeRemainingMs > 0; i++) tick(state, profile, 1 / 30);
+
+    expect(state.timeRemainingMs).toBe(0);
+    expect(eventsOfType('game-over')).toHaveLength(1);
+  });
+
+  it('ends the run when an impact empties the clock', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile);
+    tickUntil(state, profile, () => state.enemies.length > 0, 'a formation');
+
+    state.timeRemainingMs = 1000;
+    for (const enemy of state.enemies) enemy.y = 99;
+    tick(state, profile, 1 / 30);
+
+    expect(state.timeRemainingMs).toBe(0);
+    expect(eventsOfType('game-over')).toHaveLength(1);
+  });
+
+  it('emits game-over exactly once when several enemies land together', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile);
+    // A wave wide enough that more than one can cross the line at once.
+    beginWave(state, 3);
+    tickUntil(state, profile, () => state.enemies.length > 1, 'a wide formation');
+
+    state.timeRemainingMs = 1000;
+    for (const enemy of state.enemies) enemy.y = 99;
+    events = [];
+    tick(state, profile, 1 / 30);
+
+    expect(eventsOfType('game-over')).toHaveLength(1);
+  });
+
+  it('stops simulating once the clock is gone', () => {
+    const state = createInitialRuntimeState();
+    const profile = createEmptyProfile();
+    resetRun(state, profile);
+    state.timeRemainingMs = 0;
+    const wave = state.waveNumber;
+
+    events = [];
+    for (let i = 0; i < 60; i++) tick(state, profile, 1 / 30);
+
+    expect(state.waveNumber).toBe(wave);
+    expect(events).toHaveLength(0);
+  });
+});
 
 describe('wave spawning', () => {
   it('releases the whole formation at once rather than a trickle', () => {

@@ -138,11 +138,28 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   `WavePlan` has no `loopFrom` any more (each plan is one stretch of a single
   long ladder, so its opener plays exactly once and the run moves on - which is
   what looping was there to arrange).
-- **Survival is timer-based, not lives.** `RuntimeState.timeRemainingMs` starts
-  at 30s (+ the More Time skill bonus) and ticks down continuously.
-  Enemy impacts cut into it: **Dodge** is a chance to fully negate the penalty;
-  **Armor** reduces the penalty's magnitude when it isn't dodged. These are
-  independent rolls, not combined into one "avoidance chance" (an earlier,
+- **The run clock is the game's only resource, and it is EARNED BACK.**
+  `timeRemainingMs` starts at 45s (+ More Time) and drains continuously, but
+  clearing a wave pays time back: a flat `WAVE_CLEAR_BONUS_MS` plus
+  `WAVE_CLEAR_PER_KILL_BONUS_MS` per qualifying kill, and `BOSS_CLEAR_BONUS_MS`
+  for surviving a boss. That's what makes a long run possible at all - as a
+  drain-only budget it ran out around wave 4 and no player ever saw a boss.
+  Every payout goes through `addRunTime()`, so the ceiling can't be bypassed by
+  a new one forgetting about it, and it returns what was *actually* granted -
+  callers report that, never the nominal figure, so the HUD can't promise time
+  the player didn't get.
+- **The clock's ceiling is RELATIVE to the player's starting clock**
+  (`startingTimeMs + BANKABLE_HEADROOM_MS`), not a flat number. A flat 75s cap
+  sat exactly at base + a maxed More Time, which pinned a fully upgraded player
+  to the ceiling from wave 1, silently discarded every payout, and turned More
+  Time into "start at the cap" rather than an upgrade that keeps paying. Keep it
+  relative if you retune either number.
+- **Leaking an enemy costs the bonus as well as the penalty.** A wave that
+  clears because everything landed pays much less than one answered out, which
+  is what stops standing still being a free way to skip a wave you can't
+  answer. Enemy impacts cut the clock: **Dodge** is a chance to fully negate the
+  penalty; **Armor** reduces the penalty's magnitude when it isn't dodged. These
+  are independent rolls, not combined into one "avoidance chance" (an earlier,
   wrong interpretation - see git history/conversation if curious why it changed).
 - **Currency is separate from score.** `score` is the per-run arcade number shown
   on the HUD and end-of-run screen only - it isn't persisted. `PlayerProfile.currency`
@@ -217,18 +234,15 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   answers a bulwark or an unshielded sentinel outright. It still skips shielded
   enemies entirely.
 - **Balance numbers are placeholders** - skill costs, knockback distances, fall
-  speeds, the 30s timer, the 5s impact penalty, boss surviveSec/comboToDefeat,
-  the boss timer-cut amounts. None of this has been tuned via real play; expect
+  speeds, the 45s starting clock and every wave/boss payout, the 30s bankable
+  headroom, the 5s impact penalty, boss surviveSec/comboToDefeat, the boss
+  timer-cut amounts. None of this has been tuned via real play; expect
   to need to adjust based on feedback, not treat as final.
-- **The run clock is still set once and never refilled.** `timeRemainingMs`
-  comes from `resetRun()` and only ever drains. With a boss now on wave 5 this
-  is the live problem rather than a design stance: a fully upgraded 60s clock
-  reaches about wave 4, so nothing gets to a boss. Refilling it on a wave clear
-  is the intended next change - `onWaveCleared` is where it goes, and
-  `wave-cleared` already carries `defeated`/`released` for exactly that.
-  The interaction with boss survive timers is deliberate and worth keeping:
-  enter a fight with less clock left than `surviveSec` and the endurance route
-  is arithmetically impossible, leaving the combo as the only way out.
+- **A boss fight can still be arithmetically unwinnable by endurance**, and
+  that's deliberate: walk in with less clock than its `surviveSec` and the
+  combo is the only way out. Wave-clear payouts make that recoverable rather
+  than a dead end, which is the point - don't "fix" it by topping the clock up
+  when a boss starts.
 - **Freeze does not pause a boss's survive clock.** Freezing the adds buys
   breathing room; stalling the fight it's meant to win would make the skill a
   self-nerf during exactly the moment you'd want it.

@@ -162,16 +162,19 @@ worlds and three phased boss fights with both win conditions.
 - Gamepad input — the input system is built to support it cleanly
   whenever it's added, but no gamepad code exists yet.
 
-**Not yet tuned:** skill costs, knockback distances, fall speeds, wave gaps, the
-30-second timer, the 5-second impact penalty, and every boss's survive
-duration and combo requirement are all reasonable placeholders, not numbers
-validated by real play.
+**Not yet tuned:** skill costs, knockback distances, fall speeds, wave gaps,
+the starting clock and every wave/boss time payout, the 5-second impact
+penalty, and every boss's survive duration and combo requirement are all
+reasonable placeholders, not numbers validated by real play.
 
-**Worth knowing:** the 30-second clock covers the *whole run*, not each
-stage. Reach a boss with less time left than its survive duration and
-outlasting it is arithmetically impossible — the combo becomes your only
-way out. That's deliberate, but it's the first thing to revisit if runs
-feel unfair rather than tight.
+**Worth knowing:** the clock covers the *whole run*, and you earn it back
+by clearing waves — a flat bonus plus a share per enemy actually defeated,
+up to a ceiling a little above where you started. Letting enemies through
+costs you the bonus as well as the impact, so a run lasts exactly as long
+as you keep answering. Reach a boss with less time left than its survive
+duration and outlasting it is arithmetically impossible — the combo becomes
+your only way out. That's deliberate, but it's the first thing to revisit
+if runs feel unfair rather than tight.
 
 ## Tech stack
 
