@@ -11,17 +11,16 @@
     getInstallmentsPaid,
     installmentsForNextLevel,
     nextInstallmentCost,
-    purchaseNextInstallment,
     type SkillNode,
   } from './SkillTree';
   import type { PlayerProfile } from '../runtime/PlayerProfile';
-  import { savePlayerProfile } from '../runtime/PlayerProfile';
 
   interface Props {
     profile: PlayerProfile;
     onPlay: () => void;
+    onPurchase: (node: SkillNode<BaseSkillEffect>) => void;
   }
-  let { profile, onPlay }: Props = $props();
+  let { profile, onPlay, onPurchase }: Props = $props();
 
   const CATEGORY_LABELS: Record<BaseSkillCategory, string> = {
     economy: '💰 Economy',
@@ -261,12 +260,7 @@
   }
 
   function purchase(pip: Pip) {
-    const result = purchaseNextInstallment(pip.node, profile.skillProgress, profile.skillSubProgress, profile.currency);
-    if (!result) return;
-    profile.skillProgress = result.progress;
-    profile.skillSubProgress = result.subProgress;
-    profile.currency -= result.pointsSpent;
-    savePlayerProfile(profile);
+    onPurchase(pip.node);
     activePipKey = null;
   }
 </script>
