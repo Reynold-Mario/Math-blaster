@@ -52,8 +52,9 @@ export type GameEvent =
   | { type: 'wave-incoming'; waveNumber: number; count: number }
   /** The board emptied, which is what ends a wave. `defeated` counts the
    * qualifying kills; anything in `released` that isn't in `defeated` got
-   * through and cost the player clock instead. */
-  | { type: 'wave-cleared'; waveNumber: number; defeated: number; released: number }
+   * through and cost the player clock instead. `bonusMs` is what the clear
+   * actually paid, already clamped to the clock's ceiling. */
+  | { type: 'wave-cleared'; waveNumber: number; defeated: number; released: number; bonusMs: number }
   /** A good answer shortened the fight. The boss analogue of a damage
    * number, in the units a boss actually runs on. */
   | { type: 'boss-timer-cut'; amountMs: number; remainingMs: number }
@@ -65,6 +66,10 @@ export type GameEvent =
   | { type: 'boss-defeated'; by: BossDefeatCause; bestCombo: number; waveNumber: number }
   | { type: 'boss-finale-started' }
   | { type: 'time-lost'; amountMs: number; remainingMs: number }
+  /** Time added back to the run clock - the counterpart to `time-lost`, and
+   * the thing that makes a long run possible at all. `amountMs` is what was
+   * granted after the cap, not what was offered. */
+  | { type: 'time-gained'; amountMs: number; remainingMs: number }
   | { type: 'impact-avoided' }
   | { type: 'currency-earned'; amount: number; total: number }
   | { type: 'skill-used'; skill: string }

@@ -139,6 +139,10 @@ function handleGameEvent(event: GameEvent) {
     case 'time-lost':
       sfx.impact();
       break;
+    case 'time-gained':
+      // No cue of its own: a refill only ever lands alongside a wave-clear
+      // or a boss-defeated, both of which already sound.
+      break;
     case 'skill-used':
     case 'impact-avoided':
       sfx.skill();
