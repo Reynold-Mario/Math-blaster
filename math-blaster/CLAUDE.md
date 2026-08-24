@@ -95,9 +95,14 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   `topicsForGrade()` instead of the flat array.
 - **Gamepad isn't implemented.** `InputManager` has a doc-comment constraint
   (dedicated buttons per action category, never overloaded) for whenever it is.
-- **Base skill tree prerequisites are mostly flat.** Only Armor requires Dodge
-  Lv.1. The engine supports arbitrary chains; more weren't added because doing
-  so without being asked felt like inventing content.
+- **Base skill tree unlocks through five branch gates.** The free root reveals
+  only the five category gates (`branch-economy`/`-movement`/`-defense`/`-firing`
+  /`-active` in `baseSkillTree.ts`), each a one-click purchase that opens just
+  that category's skills - the player picks one branch at a time instead of
+  being shown eleven skills at once. Gates carry a `{ kind: 'branch' }` effect
+  that grants nothing; they exist purely to pace the shop. Armor behind Dodge
+  Lv.1 is the only skill-to-skill chain. `baseSkillTree.test.ts` pins down what
+  is reachable at each stage - update it if you rewire prerequisites.
 - **Grades 4-5 don't exist.** Would need fraction/decimal problem *generation*
   (the evaluator already supports fraction/decimal `MathValue`s - the generator
   in `problemGenerators.ts` only ever produces integers).

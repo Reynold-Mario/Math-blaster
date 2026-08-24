@@ -1,8 +1,10 @@
 <script lang="ts">
   import {
+    BASE_SKILL_BRANCH_IDS,
     BASE_SKILL_NODES,
     BASE_SKILL_NODE_CATEGORY,
     BASE_SKILL_ROOT_ID,
+    isBranchGateId,
     type BaseSkillCategory,
     type BaseSkillEffect,
   } from './baseSkillTree';
@@ -40,6 +42,11 @@
   const ROOT_COLOR = '#f4d35e';
   const NODE_ICON: Record<string, string> = {
     'skills-root': '🌟',
+    'branch-economy': '💰',
+    'branch-movement': '🏃',
+    'branch-defense': '🛡',
+    'branch-firing': '🎯',
+    'branch-active': '⚡',
     bounty: '💰',
     'more-time': '⏱',
     'player-speed': '🏃',
@@ -60,10 +67,23 @@
     return category ? CATEGORY_BRIGHT[category] : '#94a3b8';
   }
 
+  /** A 1-level node has no meaningful "Level 1/1" to show: the root is
+   * the trunk and the five gates are branches, not upgrades. */
+  function levelLabel(node: SkillNode<BaseSkillEffect>, level: number): string {
+    if (node.maxLevel > 1) return `Level ${level}/${node.maxLevel}`;
+    return isBranchGateId(node.id) ? 'Branch' : 'Trunk';
+  }
+
+  function branchOpen(category: BaseSkillCategory): boolean {
+    return getLevel(profile.skillProgress, BASE_SKILL_BRANCH_IDS[category]) > 0;
+  }
+
   function describeEffect(effect: BaseSkillEffect): string {
     switch (effect.kind) {
       case 'root':
-        return 'Unlocks the rest of the tree.';
+        return 'Opens the five skill branches.';
+      case 'branch':
+        return effect.opened ? 'Branch open - its skills are for sale.' : 'Opens this branch of skills.';
       case 'playerSpeed':
         return `Move speed ×${effect.multiplier.toFixed(2)}`;
       case 'enemySpeed':
@@ -140,6 +160,11 @@
    * invests, instead of showing the whole potential tree up front. */
   function pipVisible(pip: Pip): boolean {
     if (pip.parentKey === null) return true;
+    // Anything already owned stays on the diagram even when its parent
+    // isn't bought: a profile saved before the branch gates existed has
+    // skills bought straight off the root, and hiding those would lose
+    // sight of upgrades the player still has (and still benefits from).
+    if (pipPurchased(pip)) return true;
     const parent = ALL_PIPS.get(pip.parentKey);
     return parent !== undefined && pipPurchased(parent);
   }
@@ -268,21 +293,22 @@
 {#snippet pipBox(entry: LaidOutPip)}
   {@const pip = entry.pip}
   {@const purchased = pipPurchased(pip)}
-  {@const maxed = purchased && pip.level === pip.node.maxLevel}
+  {@const maxed = purchased && pip.node.maxLevel > 1 && pip.level === pip.node.maxLevel}
   {@const installments = purchased ? null : installmentsForNextLevel(pip.node, profile.skillProgress)}
   {@const paid = purchased ? 0 : getInstallmentsPaid(profile.skillSubProgress, pip.node.id)}
   <button
     type="button"
     class="pip-box"
     class:root={pip.node.id === BASE_SKILL_ROOT_ID}
+    class:branch={isBranchGateId(pip.node.id)}
     class:purchased
     class:maxed
     style="--pip-color: {nodeColor(pip.node)}"
     onclick={() => onPipClick(pip)}
-    aria-label="{pip.node.name}, level {pip.level} of {pip.node.maxLevel}"
+    aria-label="{pip.node.name}, {levelLabel(pip.node, pip.level)}"
   >
     <span class="pip-icon">{NODE_ICON[pip.node.id] ?? '❓'}</span>
-    <span class="pip-level">{pip.level}</span>
+    {#if pip.node.maxLevel > 1}<span class="pip-level">{pip.level}</span>{/if}
     {#if maxed}<span class="max-badge">✦</span>{/if}
     {#if installments && installments.length > 1}
       <span class="installment-dots">
@@ -307,13 +333,15 @@
       <span class="popover-icon">{NODE_ICON[node.id] ?? '❓'}</span>
       <div class="popover-title">
         <strong>{node.name}</strong>
-        <span class="popover-level">Level {pip.level}/{node.maxLevel}</span>
+        <span class="popover-level">{levelLabel(node, pip.level)}</span>
       </div>
     </div>
     <p class="popover-desc">{node.description}</p>
     {#if purchased}
       <p class="popover-next">{describeEffect(node.effectAtLevel(pip.level))}</p>
-      {#if pip.level === node.maxLevel}
+      {#if node.maxLevel === 1}
+        <p class="popover-owned">✓ Unlocked</p>
+      {:else if pip.level === node.maxLevel}
         <p class="popover-maxed">✦ Fully upgraded ✦</p>
       {:else}
         <p class="popover-owned">✓ Owned</p>
@@ -338,9 +366,9 @@
 
   <div class="legend">
     {#each CATEGORY_ORDER as category}
-      <span class="legend-item">
+      <span class="legend-item" class:locked={!branchOpen(category)}>
         <span class="legend-dot" style="background: {CATEGORY_BRIGHT[category]}"></span>
-        {CATEGORY_LABELS[category]}
+        {CATEGORY_LABELS[category]}{branchOpen(category) ? '' : ' 🔒'}
       </span>
     {/each}
   </div>
@@ -424,6 +452,14 @@
     gap: 5px;
     opacity: 0.85;
   }
+  /* A branch the player hasn't paid to open yet - its skills aren't on
+   * the diagram at all, so say so rather than leaving a gap. */
+  .legend-item.locked {
+    opacity: 0.4;
+  }
+  .legend-item.locked .legend-dot {
+    background: #94a3b8 !important;
+  }
   .legend-dot {
     width: 8px;
     height: 8px;
@@ -489,6 +525,20 @@
     width: 76px;
     height: 76px;
     border-width: 4px;
+  }
+  /* Branch gates sit between the root and the skills in the hierarchy
+   * and read that way: bigger than a skill bead, and once open they get
+   * an inner ring instead of a level number. */
+  .pip-box.branch {
+    width: 68px;
+    height: 68px;
+    border-width: 4px;
+  }
+  .pip-box.branch .pip-icon {
+    font-size: 25px;
+  }
+  .pip-box.branch.purchased {
+    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.25), inset 0 0 0 3px rgba(255, 255, 255, 0.6);
   }
   .pip-box.purchased,
   .pip-box.maxed {
