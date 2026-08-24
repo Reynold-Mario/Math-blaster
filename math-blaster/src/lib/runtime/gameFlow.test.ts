@@ -153,6 +153,48 @@ describe('wave spawning', () => {
   });
 });
 
+describe('knockback', () => {
+  /** A guess that lands as `close` on this problem: one off the answer. */
+  function nearMiss(target: EnemyInstance): string {
+    return String(toNumber(target.problem.answer) + 1);
+  }
+
+  it('shoves an enemy back up the screen on a close answer', () => {
+    const { state, profile } = startAt('k1');
+    const enemy = spawnUntil(state, profile, 'drifter');
+    tickUntil(state, profile, () => enemy.y > 20, 'the enemy to descend');
+    const before = enemy.y;
+
+    shoot(state, profile, enemy.xPct, nearMiss(enemy));
+
+    expect(enemy.y).toBeLessThan(before);
+    expect(state.enemies).toContain(enemy);
+    expect(eventsOfType('enemy-knockback')).toHaveLength(1);
+  });
+
+  it('does not move an enemy on an exact answer - it removes it', () => {
+    const { state, profile } = startAt('k1');
+    const enemy = spawnUntil(state, profile, 'drifter');
+
+    shootExactly(state, profile, enemy);
+
+    expect(state.enemies).not.toContain(enemy);
+    expect(eventsOfType('enemy-knockback')).toHaveLength(0);
+  });
+
+  it('never pushes an enemy past the ceiling, however many times it lands', () => {
+    // Otherwise a player parked under one enemy could shove it far enough
+    // off-screen that it effectively stops existing.
+    const { state, profile } = startAt('k1');
+    const enemy = spawnUntil(state, profile, 'drifter');
+
+    for (let i = 0; i < 20; i++) shoot(state, profile, enemy.xPct, nearMiss(enemy));
+
+    expect(state.enemies).toContain(enemy);
+    expect(enemy.y).toBeGreaterThan(-20);
+  });
+});
+
 describe('multi-problem enemies', () => {
   it('survives its first exact answer and presents a fresh problem', () => {
     const { state, profile } = startAt('g2b');
@@ -164,7 +206,6 @@ describe('multi-problem enemies', () => {
 
     expect(state.enemies).toContain(bulwark);
     expect(bulwark.layersRemaining).toBe(1);
-    expect(bulwark.hp).toBe(bulwark.maxHp);
     expect(bulwark.problem.id).not.toBe(firstProblem);
     expect(eventsOfType('enemy-layer-broken')).toHaveLength(1);
   });
@@ -182,15 +223,17 @@ describe('multi-problem enemies', () => {
 });
 
 describe('shielded enemies', () => {
-  it('deflects a wrong answer without taking damage', () => {
+  it('deflects a wrong answer without letting anything through', () => {
     const { state, profile } = startAt('l3');
     const sentinel = spawnUntil(state, profile, 'sentinel');
     expect(sentinel.shielded).toBe(true);
+    const startY = sentinel.y;
 
     shoot(state, profile, sentinel.xPct, '99999');
 
     expect(sentinel.shielded).toBe(true);
-    expect(sentinel.hp).toBe(sentinel.maxHp);
+    expect(sentinel.layersRemaining).toBe(2);
+    expect(sentinel.y).toBe(startY);
     expect(eventsOfType('shield-blocked')).toHaveLength(1);
   });
 
@@ -202,7 +245,6 @@ describe('shielded enemies', () => {
     expect(sentinel.shielded).toBe(false);
     expect(eventsOfType('shield-broken')).toHaveLength(1);
     // Breaking through costs the shot - the layer underneath is untouched.
-    expect(sentinel.hp).toBe(sentinel.maxHp);
     expect(sentinel.layersRemaining).toBe(2);
 
     shootExactly(state, profile, sentinel);

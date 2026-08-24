@@ -18,7 +18,7 @@ export type BossSpriteKind = 'boss1' | 'boss2';
 
 /** How an enemy travels down the screen. Since aiming *is* horizontal
  * position, movement is the main lever on how hard something is to hit -
- * not how much health it has. */
+ * there is no health to make it tougher with instead. */
 export type EnemyMovement =
   /** Straight down the lane it spawned in. */
   | 'straight'
@@ -43,11 +43,12 @@ export interface EnemyArchetype {
   sprite: GruntKind;
   movement: EnemyMovement;
   /**
-   * How many problems must be worked through to destroy it. Each broken
-   * layer mints a *fresh* problem rather than just draining a longer
-   * health bar - a 2-layer enemy is two questions, which is the point.
-   * Partial and close answers still chip the current layer, so partial
-   * credit keeps meaning what it always meant.
+   * How many problems must be worked through to destroy it, and the whole
+   * of its durability - there is no health behind a layer. Each answered
+   * layer mints a *fresh* problem, so a 2-layer enemy is two questions,
+   * which is the point. Only exact/equivalent clears one; close and
+   * partial answers knock the enemy back up the screen instead, so they
+   * can never accumulate into a kill.
    */
   layers: number;
   /** Multiplies the level's authored fallSpeed range. */

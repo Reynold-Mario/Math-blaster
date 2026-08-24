@@ -14,13 +14,16 @@ export type BaseSkillEffect =
   | { kind: 'branch'; category: BaseSkillCategory; opened: boolean }
   | { kind: 'playerSpeed'; multiplier: number }
   | { kind: 'enemySpeed'; multiplier: number }
-  | { kind: 'health'; bonusTimeMs: number; enemyHpMultiplier: number }
   | { kind: 'dodge'; chance: number }
-  | { kind: 'armor'; damageReduction: number }
+  /** Blunts the *time* an impact costs. There is no damage in this game to
+   * reduce - the run clock is the only thing an impact touches. */
+  | { kind: 'armor'; penaltyReduction: number }
   | { kind: 'pierce'; chance: number }
   | { kind: 'burn'; chance: number; slowMultiplier: number; durationSec: number }
   | { kind: 'fireRate'; cooldownSec: number }
-  | { kind: 'bomb'; cooldownSec: number; damage: number }
+  /** Bombs answer layers outright rather than dealing damage - enemies
+   * have no health for a blast to eat into. */
+  | { kind: 'bomb'; cooldownSec: number; layersStripped: number }
   | { kind: 'freeze'; cooldownSec: number; durationSec: number }
   | { kind: 'bounty'; bonusPerKill: number }
   | { kind: 'moreTime'; bonusMs: number };
@@ -65,7 +68,7 @@ function withInstallments(totalCostPerLevel: number[], installmentsPerLevel = 3)
 /**
  * Shape of the tree. Nothing hangs off the root directly except the five
  * branch gates - one per (already colour-coded) category. Buying the free
- * root therefore reveals five choices, not eleven skills; a category's
+ * root therefore reveals five choices, not ten skills; a category's
  * skills only appear once the player has paid to open that branch:
  *
  *   skills-root
@@ -76,9 +79,8 @@ function withInstallments(totalCostPerLevel: number[], installmentsPerLevel = 3)
  *   |  |- player-speed
  *   |  '- enemy-slowdown
  *   |- branch-defense .... 40
- *   |  |- dodge
- *   |  |   '- armor
- *   |  '- health-pool
+ *   |  '- dodge
+ *   |      '- armor
  *   |- branch-firing ..... 40
  *   |  |- pierce
  *   |  |- burn
@@ -159,6 +161,10 @@ const bounty: SkillNode<BaseSkillEffect> = {
   effectAtLevel: (level) => ({ kind: 'bounty', bonusPerKill: level * 5 }),
 };
 
+// The only starting-time node now. It absorbed the value of the old
+// "Health Pool" (a Defense node that granted clock time in exchange for
+// tougher enemies) - with enemy health gone there was nothing left for
+// that trade to be made of, so the time went here and the node went away.
 const moreTime: SkillNode<BaseSkillEffect> = {
   id: 'more-time',
   name: 'More Time',
@@ -166,7 +172,7 @@ const moreTime: SkillNode<BaseSkillEffect> = {
   maxLevel: 5,
   costPerLevel: withInstallments([60, 90, 130, 180, 240]),
   prerequisites: behindGate('economy'),
-  effectAtLevel: (level) => ({ kind: 'moreTime', bonusMs: level * 5000 }),
+  effectAtLevel: (level) => ({ kind: 'moreTime', bonusMs: level * 6000 }),
 };
 
 // --- Movement ---
@@ -205,7 +211,7 @@ const enemySlowdown: SkillNode<BaseSkillEffect> = {
 const defenseBranch = branchGate(
   'defense',
   'Defense',
-  "Opens the Defense branch: dodge impacts, blunt the ones you can't, or just take more of them.",
+  "Opens the Defense branch: dodge impacts outright, or blunt the ones you can't.",
   40
 );
 
@@ -226,21 +232,7 @@ const armor: SkillNode<BaseSkillEffect> = {
   maxLevel: 5,
   costPerLevel: withInstallments([70, 100, 140, 190, 250]),
   prerequisites: [{ nodeId: 'dodge', requiredLevel: 1 }],
-  effectAtLevel: (level) => ({ kind: 'armor', damageReduction: level * 0.06 }),
-};
-
-const healthPool: SkillNode<BaseSkillEffect> = {
-  id: 'health-pool',
-  name: 'Health Pool',
-  description: 'A second, riskier path to more starting time - enemies get a little tougher too.',
-  maxLevel: 5,
-  costPerLevel: withInstallments([80, 110, 150, 200, 260]),
-  prerequisites: behindGate('defense'),
-  effectAtLevel: (level) => ({
-    kind: 'health',
-    bonusTimeMs: level * 3000,
-    enemyHpMultiplier: 1 + level * 0.08,
-  }),
+  effectAtLevel: (level) => ({ kind: 'armor', penaltyReduction: level * 0.06 }),
 };
 
 // --- Firing ---
@@ -298,17 +290,20 @@ const activeBranch = branchGate(
   60
 );
 
+// Levels buy a shorter cooldown first and a second layer last: stripping
+// two layers at once is what finally makes a bomb answer a bulwark or a
+// sentinel outright, so it's the top of the node rather than the entry.
 const bomb: SkillNode<BaseSkillEffect> = {
   id: 'bomb',
   name: 'Bomb',
-  description: 'An area-clearing blast that damages every enemy on screen.',
+  description: 'An area-clearing blast that answers a layer on every unshielded enemy at once.',
   maxLevel: 5,
   costPerLevel: withInstallments([100, 140, 180, 230, 290]),
   prerequisites: behindGate('active'),
   effectAtLevel: (level) => ({
     kind: 'bomb',
     cooldownSec: level === 0 ? Infinity : 33 - level * 3,
-    damage: level === 0 ? 0 : 32 + level * 8,
+    layersStripped: level === 0 ? 0 : level >= 4 ? 2 : 1,
   }),
 };
 
@@ -332,7 +327,7 @@ const freeze: SkillNode<BaseSkillEffect> = {
 export const BASE_SKILL_CATEGORIES: Record<BaseSkillCategory, SkillNode<BaseSkillEffect>[]> = {
   economy: [economyBranch, bounty, moreTime],
   movement: [movementBranch, playerSpeed, enemySlowdown],
-  defense: [defenseBranch, dodge, armor, healthPool],
+  defense: [defenseBranch, dodge, armor],
   firing: [firingBranch, pierce, burn, fireRate],
   active: [activeBranch, bomb, freeze],
 };

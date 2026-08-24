@@ -32,7 +32,7 @@ function skillIdsOf(category: BaseSkillCategory): string[] {
 const SKILLS_OPENED_BY_GATE: Record<BaseSkillCategory, string[]> = {
   economy: ['bounty', 'more-time'],
   movement: ['player-speed', 'enemy-slowdown'],
-  defense: ['dodge', 'health-pool'],
+  defense: ['dodge'],
   firing: ['pierce', 'burn', 'fire-rate'],
   active: ['bomb', 'freeze'],
 };

@@ -200,8 +200,8 @@
       <h1 class="title">Pixel Math<br />Blaster</h1>
       <p class="tagline">Drag or use ◀▶ to line up, type the answer, hit FIRE!</p>
       <ul class="howto">
-        <li>🎯 Exact answers deal big damage</li>
-        <li>👍 Close and partial answers still help - no penalties for trying</li>
+        <li>🎯 Only an exact answer takes an enemy out</li>
+        <li>👍 Close answers shove it back up the screen - no penalty for trying</li>
         <li>🛡 Shielded enemies only break on an exact answer</li>
         <li>⚡ Beat a boss by outlasting it - or by nailing its combo</li>
         <li>⏱ Race the clock - enemies that get through cost you time</li>

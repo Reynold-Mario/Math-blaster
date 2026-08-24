@@ -40,9 +40,9 @@ lib/runtime/         RuntimeState (resets every run) vs PlayerProfile (currency 
                     (unlike the pure layers above) - that's deliberate, matches
                     how Svelte's $state gets consumed.
 
-lib/combat.ts        Takes an AnswerResult, decides damage/shield/layer/
+lib/combat.ts        Takes an AnswerResult, decides knockback/shield/layer/
                     reinforcement/defeat for grunts, and timer-cut/combo/
-                    shield outcomes for bosses. Bosses have no hp to damage.
+                    shield outcomes for bosses. NOTHING has hp to damage.
 lib/targeting.ts     resolveTarget() - single source of truth for "what's the
                     player lined up on", used by BOTH the canvas reticle and
                     gameFlow's fire resolution. Never duplicate this logic.
@@ -65,7 +65,7 @@ App.svelte           Arcade cabinet chrome (marquee/bezel/scanlines) around Game
 ```
 
 **Do not collapse these layers.** If you're tempted to have `evaluator.ts` decide
-damage, or `gameFlow.ts` call `sfx.*()` directly, or `GameCanvas` read game rules
+consequences, or `gameFlow.ts` call `sfx.*()` directly, or `GameCanvas` read game rules
 instead of events - stop, that's the exact coupling this structure exists to avoid.
 
 ## Core mechanics
@@ -83,15 +83,33 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   adds and splitter debris alike. Tune global pacing here, not by editing ten
   authored ranges - that reshapes the between-level difficulty curve as a side
   effect. `gameFlow.test.ts` pins the wiring for both spawn paths.
+- **NOTHING in this game has health.** Not the player, not bosses, not enemies.
+  This is a hard invariant, not a current state of affairs - if you find yourself
+  adding an hp field, a damage number, a max-health stat or a health bar to
+  anything, stop. Every consequence in the game is expressed in *time* or in
+  *questions answered*. `EnemyInstance` has no `hp`/`maxHp`; `GruntTarget` is
+  `{ layersRemaining, shielded }` and that is the whole of an enemy's durability.
 - **Enemies are archetypes, not sprites.** Slime/bat/robot used to be purely
   cosmetic. Now `EnemyArchetype` owns movement (straight/weave/dive), how many
   *layers* (= separate problems) it takes to kill, whether it starts shielded,
   whether it splits on death, and whether the kill counts toward the level
-  quota. `EnemyInstance.hp` is the CURRENT LAYER's health, not the whole
-  enemy's - emptying a layer mints a fresh problem instead of killing it.
-- **A shield is a gate, not a damage reduction.** Only exact/equivalent strips
-  one, and doing so consumes the whole shot (no damage lands that turn). This
-  is the one place in the game where "close" genuinely isn't good enough.
+  quota. A **layer IS a question**, not a health pool with a question painted on
+  it: only exact/equivalent clears one, and clearing a non-final layer mints a
+  fresh problem instead of killing the enemy.
+- **Close and partial answers knock enemies back up the screen** rather than
+  chipping anything. `KNOCKBACK_CLOSE_PCT` (18) is deliberately larger than
+  `KNOCKBACK_PARTIAL_MAX_PCT` (11), so a close answer out-pushes *any* partial
+  one no matter how many digits that partial matched - a player is never
+  rewarded for guessing digits over reasoning toward the answer. The reward for
+  a near-miss is time, which is the only resource a run spends.
+  `combat.test.ts` pins the close-beats-every-partial property and the fact that
+  repeated close answers can never accumulate into a kill (which is exactly what
+  half-damage used to do).
+- **A shield is a gate, not a reduction.** Only exact/equivalent strips one, and
+  doing so consumes the whole shot (nothing else lands that turn - not a layer,
+  not a knockback). This is the one place in the game where "close" earns
+  literally nothing. Shields are *not* health: they are an exactness gate, which
+  is why they survive the no-health rule.
 - **Spawning is wave-based.** Levels author a `WavePlan` of formations
   (line/vee/column/pincer/scatter) with explicit gaps, instead of the old
   random per-enemy trickle. Plans loop from `loopFrom` (not index 0), so the
@@ -99,7 +117,7 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   to its own tutorial. Formations are deterministic on purpose - that's what
   makes a level learnable and `buildFormation` testable.
 - **Survival is timer-based, not lives.** `RuntimeState.timeRemainingMs` starts
-  at 30s (+ More Time / Health Pool skill bonuses) and ticks down continuously.
+  at 30s (+ the More Time skill bonus) and ticks down continuously.
   Enemy impacts cut into it: **Dodge** is a chance to fully negate the penalty;
   **Armor** reduces the penalty's magnitude when it isn't dodged. These are
   independent rolls, not combined into one "avoidance chance" (an earlier,
@@ -119,7 +137,7 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   the combo to 0). Good answers *cut the survive clock*, so the two routes are
   the same activity at different intensities rather than separate systems -
   that's what `BOSS_CUT_*_MS` in combat.ts replaced the old damage percentages
-  with. `BossState.defeatedBy` records which route won.
+  with (bosses lost their health long before grunts did). `BossState.defeatedBy` records which route won.
 - **Boss phases are gated on elapsed survive time, not damage** (there is none
   to gate on). `phaseIndexForProgress()` normalises `BossPhase.weight` into
   proportions of the fight. Entering a phase deliberately reopens the boss and
@@ -147,18 +165,25 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   only the five category gates (`branch-economy`/`-movement`/`-defense`/`-firing`
   /`-active` in `baseSkillTree.ts`), each a one-click purchase that opens just
   that category's skills - the player picks one branch at a time instead of
-  being shown eleven skills at once. Gates carry a `{ kind: 'branch' }` effect
+  being shown ten skills at once. Gates carry a `{ kind: 'branch' }` effect
   that grants nothing; they exist purely to pace the shop. Armor behind Dodge
   Lv.1 is the only skill-to-skill chain. `baseSkillTree.test.ts` pins down what
   is reachable at each stage - update it if you rewire prerequisites.
 - **Grades 4-5 don't exist.** Would need fraction/decimal problem *generation*
   (the evaluator already supports fraction/decimal `MathValue`s - the generator
   in `problemGenerators.ts` only ever produces integers).
-- **Health Pool's meaning changed mid-project**: originally granted bonus lives;
-  when lives were replaced by the timer, it was repurposed to grant bonus
-  starting time instead (keeping its enemy-HP-increase trade-off). If you see
-  references to "bonus lives" anywhere, that's stale.
-- **Balance numbers are placeholders** - skill costs, damage percentages, fall
+- **Health Pool is gone.** It granted bonus lives, then (when lives became the
+  timer) bonus starting time in exchange for tougher enemies. Once enemy health
+  was removed there was nothing left for that trade to be made of, so its time
+  value was folded into `more-time` (now `level * 6000`) and the node was
+  deleted. Legacy profiles may still carry `health-pool` levels; nothing reads
+  them, which is why the storage key stayed at `v1`. If you see references to
+  "bonus lives", "Health Pool" or `enemyHpMultiplier` anywhere, they're stale.
+- **The `bomb` skill strips layers, it doesn't deal damage.** `layersStripped`
+  is 1, rising to 2 at Lv.4 - which is the point at which a bomb finally
+  answers a bulwark or an unshielded sentinel outright. It still skips shielded
+  enemies entirely.
+- **Balance numbers are placeholders** - skill costs, knockback distances, fall
   speeds, the 30s timer, the 5s impact penalty, boss surviveSec/comboToDefeat,
   the boss timer-cut amounts. None of this has been tuned via real play; expect
   to need to adjust based on feedback, not treat as final.

@@ -6,40 +6,69 @@ function result(verdict: AnswerResult['verdict'], extra: Partial<AnswerResult> =
 }
 
 function grunt(overrides: Partial<GruntTarget> = {}): GruntTarget {
-  return { hp: 10, maxHp: 10, layersRemaining: 1, shielded: false, ...overrides };
+  return { layersRemaining: 1, shielded: false, ...overrides };
+}
+
+/** A partial result matching `hits` of `total` digit positions. */
+function partial(hits: number, total: number): AnswerResult {
+  return result('partial', {
+    digitMatch: {
+      guessDigits: '',
+      answerDigits: '9'.repeat(total),
+      matches: Array.from({ length: total }, (_, i) => i < hits),
+    },
+  });
 }
 
 describe('resolveGruntHit', () => {
-  it('deals full hp damage and defeats a single-layer enemy on an exact answer', () => {
+  it('answers the layer and defeats a single-layer enemy on an exact answer', () => {
     const outcome = resolveGruntHit(result('exact'), grunt(), 0);
-    expect(outcome.damage).toBe(10);
+    expect(outcome.layerBroken).toBe(true);
     expect(outcome.defeated).toBe(true);
+    expect(outcome.knockbackPct).toBe(0);
     expect(outcome.missStreak).toBe(0);
   });
 
-  it('deals half damage on a close answer', () => {
-    expect(resolveGruntHit(result('close'), grunt(), 0).damage).toBe(5);
-  });
-
-  it('scales partial damage by the fraction of matching digits', () => {
-    const digitMatch = { guessDigits: '4', answerDigits: '24', matches: [false, true] };
-    const outcome = resolveGruntHit(result('partial', { digitMatch }), grunt(), 0);
-    // round(10 * 0.7 * 0.5) = 4
-    expect(outcome.damage).toBe(4);
-  });
-
-  it('deals zero damage and does not defeat on incorrect or invalid', () => {
-    const outcome = resolveGruntHit(result('incorrect'), grunt(), 0);
-    expect(outcome.damage).toBe(0);
+  it('knocks back on a close answer instead of answering the layer', () => {
+    const outcome = resolveGruntHit(result('close'), grunt(), 0);
+    expect(outcome.knockbackPct).toBeGreaterThan(0);
+    expect(outcome.layerBroken).toBe(false);
     expect(outcome.defeated).toBe(false);
   });
 
-  it('never reports the target as defeated below zero remaining hp', () => {
-    expect(resolveGruntHit(result('exact'), grunt({ hp: 1 }), 0).defeated).toBe(true);
+  it('scales partial knockback by the fraction of matching digits', () => {
+    const none = resolveGruntHit(partial(0, 2), grunt(), 0).knockbackPct;
+    const half = resolveGruntHit(partial(1, 2), grunt(), 0).knockbackPct;
+    const all = resolveGruntHit(partial(2, 2), grunt(), 0).knockbackPct;
+    expect(none).toBe(0);
+    expect(half).toBeGreaterThan(none);
+    expect(all).toBeGreaterThan(half);
+  });
+
+  // The whole point of the two ceilings: however many digits a partial
+  // answer matched, being *close* is still worth more than being partly
+  // right, so a player is never rewarded for guessing digits over
+  // reasoning toward the answer.
+  it('always rewards a close answer more than any partial one', () => {
+    const close = resolveGruntHit(result('close'), grunt(), 0).knockbackPct;
+    for (let total = 1; total <= 4; total++) {
+      for (let hits = 0; hits <= total; hits++) {
+        expect(resolveGruntHit(partial(hits, total), grunt(), 0).knockbackPct).toBeLessThan(close);
+      }
+    }
+  });
+
+  it('does nothing at all on incorrect or invalid', () => {
+    for (const verdict of ['incorrect', 'invalid'] as const) {
+      const outcome = resolveGruntHit(result(verdict), grunt(), 0);
+      expect(outcome.knockbackPct).toBe(0);
+      expect(outcome.layerBroken).toBe(false);
+      expect(outcome.defeated).toBe(false);
+    }
   });
 
   describe('layers', () => {
-    it('breaks a layer without defeating a multi-layer enemy', () => {
+    it('answers a layer without defeating a multi-layer enemy', () => {
       const outcome = resolveGruntHit(result('exact'), grunt({ layersRemaining: 2 }), 0);
       expect(outcome.layerBroken).toBe(true);
       expect(outcome.defeated).toBe(false);
@@ -51,32 +80,32 @@ describe('resolveGruntHit', () => {
       expect(outcome.defeated).toBe(true);
     });
 
-    it('does not break a layer when the damage leaves hp behind', () => {
-      const outcome = resolveGruntHit(result('close'), grunt({ hp: 10, maxHp: 10, layersRemaining: 2 }), 0);
-      expect(outcome.damage).toBe(5);
-      expect(outcome.layerBroken).toBe(false);
-    });
-
-    it('does not treat a zero-damage answer as breaking an already-empty layer', () => {
-      const outcome = resolveGruntHit(result('incorrect'), grunt({ hp: 0 }), 0);
-      expect(outcome.layerBroken).toBe(false);
-      expect(outcome.defeated).toBe(false);
+    // With no hp to chip away at, close answers can never accumulate into
+    // a kill the way half-damage used to - this is the regression guard on
+    // health not creeping back in.
+    it('never answers a layer through repeated close answers', () => {
+      for (let i = 0; i < 10; i++) {
+        const outcome = resolveGruntHit(result('close'), grunt({ layersRemaining: 1 }), 0);
+        expect(outcome.layerBroken).toBe(false);
+        expect(outcome.defeated).toBe(false);
+      }
     });
   });
 
   describe('shields', () => {
-    it('blocks everything short of an exact answer, dealing no damage', () => {
+    it('blocks everything short of an exact answer, with no knockback', () => {
       const outcome = resolveGruntHit(result('close'), grunt({ shielded: true }), 0);
       expect(outcome.blocked).toBe(true);
       expect(outcome.shieldBroken).toBe(false);
-      expect(outcome.damage).toBe(0);
+      expect(outcome.knockbackPct).toBe(0);
     });
 
-    it('breaks on an exact answer without also dealing damage that shot', () => {
+    it('breaks on an exact answer without also answering a layer that shot', () => {
       const outcome = resolveGruntHit(result('exact'), grunt({ shielded: true }), 0);
       expect(outcome.blocked).toBe(false);
       expect(outcome.shieldBroken).toBe(true);
-      expect(outcome.damage).toBe(0);
+      expect(outcome.knockbackPct).toBe(0);
+      expect(outcome.layerBroken).toBe(false);
       expect(outcome.defeated).toBe(false);
     });
 
