@@ -10,7 +10,7 @@ import {
   waveSpecFor,
   DEFAULT_CURRICULUM_LADDER,
 } from './waveProgression';
-import { BOSS_ROSTER } from './gameLevels';
+import { BACKDROP_LADDER, BOSS_ROSTER } from './gameLevels';
 import { enemyArchetype } from './enemyArchetypes';
 
 /**
@@ -188,21 +188,77 @@ describe('curriculum ladder', () => {
 });
 
 describe('backdrop', () => {
-  it('always resolves to a palette', () => {
+  /** #rrggbb -> channel triple, for measuring how far a blend has moved. */
+  function rgb(hex: string): [number, number, number] {
+    expect(hex).toMatch(/^#[0-9a-f]{6}$/);
+    return [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16),
+    ];
+  }
+
+  function distance(a: string, b: string): number {
+    const [ar, ag, ab] = rgb(a);
+    const [br, bg, bb] = rgb(b);
+    return Math.abs(ar - br) + Math.abs(ag - bg) + Math.abs(ab - bb);
+  }
+
+  it('always resolves to a full, well-formed palette', () => {
     for (const wave of WAVES) {
       const backdrop = backdropForWave(wave);
-      expect(backdrop.sky1).toMatch(/^#/);
-      expect(backdrop.sky2).toMatch(/^#/);
-      expect(backdrop.ground).toMatch(/^#/);
+      rgb(backdrop.sky1);
+      rgb(backdrop.sky2);
+      rgb(backdrop.ground);
+      expect(backdrop.name.length).toBeGreaterThan(0);
     }
   });
 
-  it('changes as the run goes on, so it reads as progress', () => {
-    const looks = new Set(WAVES.slice(0, 40).map((w) => backdropForWave(w).sky1));
-    expect(looks.size).toBeGreaterThan(1);
+  it('starts on the authored opening palette', () => {
+    expect(backdropForWave(1)).toMatchObject({
+      sky1: BACKDROP_LADDER[0].sky1,
+      sky2: BACKDROP_LADDER[0].sky2,
+      ground: BACKDROP_LADDER[0].ground,
+    });
+  });
+
+  it('moves every single wave, so progress is always visible', () => {
+    // A step function would leave consecutive waves identical, which is the
+    // difference between "somewhere else" and "further along".
+    for (let wave = 1; wave < 20; wave++) {
+      if (isBossWave(wave) || isBossWave(wave + 1)) continue;
+      expect(backdropForWave(wave)).not.toEqual(backdropForWave(wave + 1));
+    }
+  });
+
+  it('travels in small steps rather than snapping between palettes', () => {
+    // The whole point of interpolating: no single wave should jump the full
+    // distance between two authored looks.
+    const rungGap = distance(BACKDROP_LADDER[0].sky1, BACKDROP_LADDER[1].sky1);
+    for (let wave = 1; wave < 20; wave++) {
+      if (isBossWave(wave) || isBossWave(wave + 1)) continue;
+      const step = distance(backdropForWave(wave).sky1, backdropForWave(wave + 1).sky1);
+      expect(step).toBeLessThan(rungGap);
+    }
+  });
+
+  it('works its way through every authored look', () => {
+    const names = new Set(WAVES.map((w) => backdropForWave(w).name));
+    for (const rung of BACKDROP_LADDER) expect(names).toContain(rung.name);
   });
 
   it('settles rather than cycling back to the opening look', () => {
+    // Wrapping would put the opening garden back on screen at wave 90,
+    // which reads as losing progress.
     expect(backdropForWave(DEEP)).toEqual(backdropForWave(DEEP + 50));
+    expect(backdropForWave(DEEP).sky1).not.toBe(BACKDROP_LADDER[0].sky1);
+  });
+
+  it('darkens a boss wave so it reads as an event', () => {
+    const boss = backdropForWave(WAVE_BOSS_INTERVAL);
+    const before = backdropForWave(WAVE_BOSS_INTERVAL - 1);
+    const sum = (hex: string) => rgb(hex).reduce((a, b) => a + b, 0);
+    expect(sum(boss.sky1)).toBeLessThan(sum(before.sky1));
+    expect(sum(boss.ground)).toBeLessThan(sum(before.ground));
   });
 });
