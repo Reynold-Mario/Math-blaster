@@ -4,6 +4,8 @@
  * subscribe and interpret them. Nothing in this file knows about sound
  * effects, colors, or sprites.
  */
+import type { BossDefeatCause } from './runtime/RuntimeState';
+
 /** Identifies what a hit landed on - an enemy's uid, or the boss (which
  * isn't an EnemyInstance and has no uid of its own). Lets a presentation
  * layer flash the exact sprite that was hit rather than guessing from
@@ -29,10 +31,27 @@ export type GameEvent =
     }
   | { type: 'hit-incorrect'; xPct: number; y: number; targetId: HitTargetId }
   | { type: 'hit-invalid'; xPct: number; y: number; targetId: HitTargetId }
+  /** A shot that never landed: it bounced off an intact shield, whether
+   * a sentinel's or a boss's. Distinct from a miss - the answer may well
+   * have been right, it just wasn't right *enough*. */
+  | { type: 'shield-blocked'; xPct: number; y: number; targetId: HitTargetId }
+  | { type: 'shield-broken'; xPct: number; y: number; targetId: HitTargetId }
+  /** One layer of a multi-layer enemy emptied, revealing a fresh problem.
+   * The enemy is still alive - see `enemy-defeated` for the last layer. */
+  | { type: 'enemy-layer-broken'; xPct: number; y: number; layersRemaining: number }
   | { type: 'enemy-defeated'; xPct: number; y: number; kind: string }
+  | { type: 'enemy-split'; xPct: number; y: number; count: number }
   | { type: 'reinforcement-spawned'; xPct: number }
-  | { type: 'boss-hit'; damage: number; bossHpPct: number }
-  | { type: 'boss-defeated' }
+  | { type: 'wave-incoming'; index: number; count: number }
+  /** A good answer shortened the fight. The boss analogue of a damage
+   * number, in the units a boss actually runs on. */
+  | { type: 'boss-timer-cut'; amountMs: number; remainingMs: number }
+  | { type: 'boss-phase-changed'; phaseIndex: number; name: string }
+  | { type: 'boss-shield-raised'; weakPointXPct: number }
+  | { type: 'boss-shield-dropped' }
+  | { type: 'boss-combo'; combo: number; required: number }
+  | { type: 'boss-combo-broken'; lostCombo: number }
+  | { type: 'boss-defeated'; by: BossDefeatCause; bestCombo: number }
   | { type: 'boss-finale-started' }
   | { type: 'time-lost'; amountMs: number; remainingMs: number }
   | { type: 'impact-avoided' }

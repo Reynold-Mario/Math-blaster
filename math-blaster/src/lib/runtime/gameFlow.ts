@@ -1,26 +1,61 @@
 import type { RuntimeState, EnemyInstance } from './RuntimeState';
 import type { PlayerProfile } from './PlayerProfile';
-import type { GruntKind } from '../levels/LevelDefinition';
+import type { BossPhase, Curriculum } from '../levels/LevelDefinition';
+import type { EnemyArchetypeId } from '../levels/enemyArchetypes';
+import type { ProblemDefinition } from '../math/ProblemDefinition';
 import type { AnswerResult } from '../math/evaluator';
 import type { InputAction } from '../input/InputManager';
 
 import { GAME_LEVELS } from '../levels/gameLevels';
+import { phaseIndexForProgress } from '../levels/LevelDefinition';
+import { enemyArchetype, stepMovement, clampLane, GLOBAL_FALL_SPEED_MULTIPLIER } from '../levels/enemyArchetypes';
+import { buildFormation, waveAt, nextWaveIndex } from '../levels/waves';
 import { generateProblem, generateBossProblem, buildAuthoredProblem } from '../levels/problemGenerators';
 import { evaluateAnswer } from '../math/evaluator';
-import { resolveGruntHit, resolveBossHit } from '../combat';
-import { resolveTarget, ALIGNMENT_TOLERANCE_PCT } from '../targeting';
+import { resolveGruntHit, resolveBossAnswer } from '../combat';
+import { resolveTarget, ALIGNMENT_TOLERANCE_PCT, weakPointXPct } from '../targeting';
 import { gameEvents } from '../events';
 import { currentEffect } from '../skills/SkillTree';
 import { findBaseSkillNode } from '../skills/baseSkillTree';
 
 // Must match GameCanvas.svelte's own IMPACT_LINE_PCT constant.
 const IMPACT_LINE_PCT = 86;
+// Likewise its BOSS_Y_PCT - where boss hit effects should appear.
+const BOSS_FX_Y_PCT = 12;
 const BASE_TIMER_MS = 30000;
 const BASE_IMPACT_TIME_PENALTY_MS = 5000;
 const BASE_CURRENCY_PER_KILL = 5;
 const BASE_PLAYER_SPEED_PCT_PER_SEC = 55;
-const BOSS_DRIFT_SPEED_PCT_PER_SEC = 14;
-const FINALE_HP_THRESHOLD = 0.15;
+
+/** Delay before a stage's first wave, so the countdown doesn't hand the
+ * player a formation already halfway down the screen. */
+const OPENING_WAVE_DELAY_SEC = 1.2;
+/** How long to wait before retrying a wave that couldn't be released
+ * because the screen was already at maxConcurrent. */
+const WAVE_RETRY_DELAY_SEC = 0.7;
+/** Horizontal spread of the minis a splitter breaks into. */
+const SPLIT_SPREAD_PCT = 9;
+
+/** The fight enters its finale when this fraction of the survive timer is
+ * left - the boss drops its shield for good and goes berserk. */
+const FINALE_REMAINING_THRESHOLD = 0.15;
+/** Adds come in this much faster once the finale starts. */
+const FINALE_ADD_INTERVAL_MULTIPLIER = 0.55;
+/** How far off-centre a weak point can sit. Kept inside the boss sprite's
+ * own width so the marker always reads as part of the boss. */
+const WEAK_POINT_MIN_OFFSET_PCT = 8;
+const WEAK_POINT_MAX_OFFSET_PCT = 16;
+
+/** Ending a fight on a combo instead of the clock is the mastery route,
+ * and it pays like one. */
+const MASTERY_SCORE_BONUS = 250;
+const MASTERY_CURRENCY_BONUS = 40;
+/** Score for a good answer against a boss - bosses award no per-kill
+ * score of their own, so this is the fight's whole scoring surface. */
+const BOSS_ANSWER_SCORE = 15;
+/** Each add a bomb clears during a boss fight is worth this much off the
+ * survive clock. */
+const BOMB_BOSS_CUT_PER_ADD_MS = 1200;
 
 function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -30,6 +65,28 @@ function randRange(min: number, max: number): number {
 }
 function currentLevel(state: RuntimeState) {
   return GAME_LEVELS[state.stageIndex];
+}
+function currentBossRules(state: RuntimeState) {
+  return currentLevel(state).boss!;
+}
+function currentBossPhase(state: RuntimeState): BossPhase {
+  return currentBossRules(state).phases[state.boss!.phaseIndex];
+}
+
+/** Which arcade knobs apply right now - a boss fight governs its adds with
+ * its own difficulty block rather than the level's. */
+function activeArcadeDifficulty(state: RuntimeState) {
+  return state.stagePhase === 'boss' ? currentBossRules(state).arcadeDifficulty : currentLevel(state).arcadeDifficulty;
+}
+
+/** Where a newly spawned or re-layered enemy's problem comes from. During
+ * a boss fight even the adds draw from the boss's cumulative scope, so
+ * the whole fight reviews everything learned so far. */
+function problemForCurrentPhase(state: RuntimeState): ProblemDefinition {
+  if (state.stagePhase === 'boss' && state.boss) {
+    return generateBossProblem(currentBossRules(state).scope, state.boss.progress);
+  }
+  return generateProblem(currentLevel(state).curriculum);
 }
 
 // --- Skill-effect lookups. Skill levels now live on PlayerProfile (they
@@ -90,6 +147,7 @@ export function createInitialRuntimeState(): RuntimeState {
     boss: null,
     enemiesDefeated: 0,
     spawnTimer: 0,
+    waveIndex: 0,
     missStreak: 0,
     skillCooldowns: {},
     freezeUntilMs: 0,
@@ -111,9 +169,9 @@ export function setupStage(state: RuntimeState, stageIndex: number): void {
   state.missStreak = 0;
   state.player.inputBuffer = '';
   state.player.fireCooldownRemainingMs = 0;
-  const level = currentLevel(state);
-  state.spawnTimer = randRange(level.arcadeDifficulty.spawnInterval[0], level.arcadeDifficulty.spawnInterval[1]);
-  gameEvents.emit({ type: 'level-started', stageId: level.id });
+  state.waveIndex = 0;
+  state.spawnTimer = OPENING_WAVE_DELAY_SEC;
+  gameEvents.emit({ type: 'level-started', stageId: currentLevel(state).id });
 }
 
 /** Called by the Svelte layer once the player dismisses a "stage clear"
@@ -127,63 +185,112 @@ export function advanceToNextStage(state: RuntimeState): void {
 
 let uidCounter = 0;
 
-function spawnGrunt(state: RuntimeState, profile: PlayerProfile, mini: boolean): void {
-  const level = currentLevel(state);
-  const problem = generateProblem(level.curriculum);
-  const baseMaxHp = mini ? 60 : 100;
+interface SpawnOptions {
+  archetype: EnemyArchetypeId;
+  xPct: number;
+  y: number;
+  curriculum?: Curriculum;
+}
+
+/** Builds one enemy from its archetype. Everything mechanical - sprite,
+ * layers, shield, speed - is read from the archetype here and then never
+ * looked up again during a hit, so an instance is self-describing. */
+function spawnEnemy(state: RuntimeState, profile: PlayerProfile, options: SpawnOptions): EnemyInstance {
+  const archetype = enemyArchetype(options.archetype);
+  const problem = options.curriculum ? generateProblem(options.curriculum) : problemForCurrentPhase(state);
+  const baseMaxHp = archetype.mini ? 60 : 100;
   const maxHp = Math.round(baseMaxHp * currentEnemyHpMultiplier(profile));
-  const [minSpeed, maxSpeed] = level.arcadeDifficulty.fallSpeed;
-  state.enemies.push({
+  const [minSpeed, maxSpeed] = activeArcadeDifficulty(state).fallSpeed;
+  const lane = clampLane(options.xPct);
+
+  const enemy: EnemyInstance = {
     uid: ++uidCounter,
-    kind: level.grunt,
-    mini,
+    archetype: archetype.id,
+    kind: archetype.sprite,
+    mini: archetype.mini,
     problem,
     hp: maxHp,
     maxHp,
-    xPct: randInt(10, 90),
-    y: 0,
-    speed: randRange(minSpeed, maxSpeed) * currentEnemySpeedMultiplier(profile),
+    layersRemaining: archetype.layers,
+    layersTotal: archetype.layers,
+    shielded: archetype.shielded,
+    xPct: lane,
+    anchorXPct: lane,
+    wavePhase: Math.random(),
+    y: options.y,
+    speed:
+      randRange(minSpeed, maxSpeed) *
+      archetype.speedMultiplier *
+      GLOBAL_FALL_SPEED_MULTIPLIER *
+      currentEnemySpeedMultiplier(profile),
     frozen: false,
     burnUntilMs: 0,
-  });
+  };
+  state.enemies.push(enemy);
+  return enemy;
 }
 
-function spawnBossAdd(state: RuntimeState, profile: PlayerProfile): void {
-  const bossRules = currentLevel(state).boss!;
-  const boss = state.boss!;
-  const problem = generateBossProblem(bossRules.scope, boss.progress);
-  const addKind: GruntKind = bossRules.sprite === 'boss1' ? 'slime' : 'robot';
-  const maxHp = Math.round(100 * currentEnemyHpMultiplier(profile));
-  const [minSpeed, maxSpeed] = bossRules.arcadeDifficulty.fallSpeed;
-  state.enemies.push({
-    uid: ++uidCounter,
-    kind: addKind,
-    mini: true,
-    problem,
-    hp: maxHp,
-    maxHp,
-    xPct: randInt(10, 90),
-    y: 0,
-    speed: randRange(minSpeed, maxSpeed) * currentEnemySpeedMultiplier(profile),
-    frozen: false,
-    burnUntilMs: 0,
-  });
+function hasRoom(state: RuntimeState): boolean {
+  return state.enemies.length < activeArcadeDifficulty(state).maxConcurrent;
 }
 
-function tryReinforce(state: RuntimeState, profile: PlayerProfile): void {
+/**
+ * Releases the next authored wave. A wave is all-or-most-of-it at once -
+ * that's what makes it read as a formation rather than a trickle - but it
+ * still respects maxConcurrent, and defers rather than advancing the plan
+ * when the screen is already full, so a backed-up player never silently
+ * skips content.
+ */
+function releaseWave(state: RuntimeState, profile: PlayerProfile): void {
   const level = currentLevel(state);
-  if (state.enemies.length >= level.arcadeDifficulty.maxConcurrent) return;
-  spawnGrunt(state, profile, true);
-  const spawned = state.enemies[state.enemies.length - 1];
+  if (!hasRoom(state)) {
+    state.spawnTimer = WAVE_RETRY_DELAY_SEC;
+    return;
+  }
+
+  const spec = waveAt(level.waves, state.waveIndex);
+  const slots = buildFormation(spec, state.waveIndex);
+  let released = 0;
+  for (const slot of slots) {
+    if (!hasRoom(state)) break;
+    spawnEnemy(state, profile, { archetype: slot.archetype, xPct: slot.xPct, y: slot.y, curriculum: level.curriculum });
+    released++;
+  }
+
+  gameEvents.emit({ type: 'wave-incoming', index: state.waveIndex, count: released });
+  state.waveIndex = nextWaveIndex(level.waves, state.waveIndex);
+  state.spawnTimer = spec.gapSec;
+}
+
+function spawnBossAdd(state: RuntimeState, profile: PlayerProfile): EnemyInstance {
+  const phase = currentBossPhase(state);
+  return spawnEnemy(state, profile, { archetype: phase.addArchetype, xPct: randInt(12, 88), y: 0 });
+}
+
+/** The consequence of the combat layer asking for a reinforcement. What
+ * arrives depends on where we are: a level sends in a spore, a boss calls
+ * whatever its current phase calls. */
+function tryReinforce(state: RuntimeState, profile: PlayerProfile): void {
+  if (!hasRoom(state)) return;
+  const spawned =
+    state.stagePhase === 'boss'
+      ? spawnBossAdd(state, profile)
+      : spawnEnemy(state, profile, { archetype: 'spore', xPct: randInt(12, 88), y: 0 });
   gameEvents.emit({ type: 'reinforcement-spawned', xPct: spawned.xPct });
 }
 
-function tryReinforceBossAdd(state: RuntimeState, profile: PlayerProfile): void {
-  const bossRules = currentLevel(state).boss!;
-  if (state.enemies.length >= bossRules.arcadeDifficulty.maxConcurrent) return;
-  spawnBossAdd(state, profile);
-  const spawned = state.enemies[state.enemies.length - 1];
-  gameEvents.emit({ type: 'reinforcement-spawned', xPct: spawned.xPct });
+/** Splitter debris. Spawned at the parent's position so the split reads as
+ * one thing becoming two, and deliberately not counted toward the level
+ * quota (see the archetype's countsTowardClear). */
+function spawnSplit(state: RuntimeState, profile: PlayerProfile, parent: EnemyInstance, count: number): void {
+  let spawned = 0;
+  for (let i = 0; i < count; i++) {
+    if (!hasRoom(state)) break;
+    const offset = (i - (count - 1) / 2) * SPLIT_SPREAD_PCT * 2;
+    spawnEnemy(state, profile, { archetype: 'spore', xPct: parent.xPct + offset, y: parent.y });
+    spawned++;
+  }
+  if (spawned > 0) gameEvents.emit({ type: 'enemy-split', xPct: parent.xPct, y: parent.y, count: spawned });
 }
 
 // --- Combat resolution ---
@@ -219,19 +326,22 @@ function emitHitEvent(result: AnswerResult, xPct: number, y: number, damage: num
   }
 }
 
-function awardCurrency(profile: PlayerProfile): void {
-  const amount = BASE_CURRENCY_PER_KILL + currentBountyBonus(profile);
+function awardCurrency(profile: PlayerProfile, multiplier = 1): void {
+  const amount = Math.max(1, Math.round((BASE_CURRENCY_PER_KILL + currentBountyBonus(profile)) * multiplier));
   profile.currency += amount;
   gameEvents.emit({ type: 'currency-earned', amount, total: profile.currency });
 }
 
-function removeEnemyAndScore(state: RuntimeState, profile: PlayerProfile, enemy: EnemyInstance): void {
+function destroyEnemy(state: RuntimeState, profile: PlayerProfile, enemy: EnemyInstance): void {
+  const archetype = enemyArchetype(enemy.archetype);
   state.enemies = state.enemies.filter((e) => e.uid !== enemy.uid);
-  state.score += 10;
-  awardCurrency(profile);
+  state.score += Math.round(10 * archetype.bountyMultiplier);
+  awardCurrency(profile, archetype.bountyMultiplier);
   gameEvents.emit({ type: 'enemy-defeated', xPct: enemy.xPct, y: enemy.y, kind: enemy.kind });
 
-  if (state.stagePhase === 'level') {
+  if (archetype.splitsInto > 0) spawnSplit(state, profile, enemy, archetype.splitsInto);
+
+  if (state.stagePhase === 'level' && archetype.countsTowardClear) {
     state.enemiesDefeated++;
     if (state.enemiesDefeated >= currentLevel(state).enemiesToClear) startBossPhase(state, profile);
   }
@@ -245,23 +355,50 @@ function applyHitToEnemy(
 ): { defeated: boolean } {
   const outcome = resolveGruntHit(result, enemy, state.missStreak);
   state.missStreak = outcome.missStreak;
-  emitHitEvent(result, enemy.xPct, enemy.y, outcome.damage, enemy.uid);
-  enemy.hp = Math.max(0, enemy.hp - outcome.damage);
 
-  if (outcome.damage > 0) {
-    const burn = currentEffect(findBaseSkillNode('burn')!, profile.skillProgress);
-    if (burn.kind === 'burn' && burn.chance > 0 && Math.random() < burn.chance) {
-      enemy.burnUntilMs = performance.now() + burn.durationSec * 1000;
+  if (outcome.blocked) {
+    // Show the shield, not the verdict - the answer never reached the
+    // enemy, so reporting it as a hit or a miss would both be wrong.
+    gameEvents.emit({ type: 'shield-blocked', xPct: enemy.xPct, y: enemy.y, targetId: enemy.uid });
+  } else if (outcome.shieldBroken) {
+    enemy.shielded = false;
+    enemy.problem = problemForCurrentPhase(state);
+    gameEvents.emit({ type: 'shield-broken', xPct: enemy.xPct, y: enemy.y, targetId: enemy.uid });
+  } else {
+    emitHitEvent(result, enemy.xPct, enemy.y, outcome.damage, enemy.uid);
+    enemy.hp = Math.max(0, enemy.hp - outcome.damage);
+
+    if (outcome.damage > 0) {
+      const burn = currentEffect(findBaseSkillNode('burn')!, profile.skillProgress);
+      if (burn.kind === 'burn' && burn.chance > 0 && Math.random() < burn.chance) {
+        enemy.burnUntilMs = performance.now() + burn.durationSec * 1000;
+      }
+    }
+
+    if (outcome.layerBroken && !outcome.defeated) {
+      enemy.layersRemaining -= 1;
+      enemy.hp = enemy.maxHp;
+      enemy.problem = problemForCurrentPhase(state);
+      gameEvents.emit({
+        type: 'enemy-layer-broken',
+        xPct: enemy.xPct,
+        y: enemy.y,
+        layersRemaining: enemy.layersRemaining,
+      });
     }
   }
 
-  const defeated = outcome.defeated;
-  if (defeated) removeEnemyAndScore(state, profile, enemy);
+  if (outcome.defeated) destroyEnemy(state, profile, enemy);
   if (outcome.reinforce) tryReinforce(state, profile);
-  return { defeated };
+  return { defeated: outcome.defeated };
 }
 
-function resolveEnemyShot(state: RuntimeState, profile: PlayerProfile, primary: EnemyInstance, result: AnswerResult): void {
+function resolveEnemyShot(
+  state: RuntimeState,
+  profile: PlayerProfile,
+  primary: EnemyInstance,
+  result: AnswerResult
+): void {
   const primaryXPct = primary.xPct;
   const primaryY = primary.y;
   const { defeated } = applyHitToEnemy(state, profile, primary, result);
@@ -274,94 +411,163 @@ function resolveEnemyShot(state: RuntimeState, profile: PlayerProfile, primary: 
   }
 }
 
+// --- Boss phase ---
+
 function refreshBossProblem(state: RuntimeState): void {
   const boss = state.boss!;
-  const bossRules = currentLevel(state).boss!;
   boss.problem = boss.inFinale
-    ? buildAuthoredProblem(bossRules.finaleProblem)
-    : generateBossProblem(bossRules.scope, boss.progress);
+    ? buildAuthoredProblem(currentBossRules(state).finaleProblem)
+    : generateBossProblem(currentBossRules(state).scope, boss.progress);
 }
 
-/** Applies boss-hp damage bookkeeping, checks for defeat/finale
- * threshold. Returns false once the boss is defeated (and already
- * cleaned up), so callers know not to continue with a refresh/reinforce
- * step. */
-function checkBossHpAndAdvance(state: RuntimeState): boolean {
-  const boss = state.boss!;
-  boss.progress = 1 - boss.hp / boss.maxHp;
-
-  if (boss.hp <= 0) {
-    onBossDefeated(state);
-    return false;
-  }
-  if (!boss.inFinale && boss.hp / boss.maxHp <= FINALE_HP_THRESHOLD) {
-    boss.inFinale = true;
-    state.enemies = [];
-    gameEvents.emit({ type: 'boss-finale-started' });
-  }
-  return true;
+function rollWeakPointOffset(): number {
+  const magnitude = randRange(WEAK_POINT_MIN_OFFSET_PCT, WEAK_POINT_MAX_OFFSET_PCT);
+  return Math.random() < 0.5 ? -magnitude : magnitude;
 }
 
-function resolveBossAddShot(state: RuntimeState, profile: PlayerProfile, add: EnemyInstance, result: AnswerResult): void {
+function raiseBossShield(state: RuntimeState, phase: BossPhase): void {
   const boss = state.boss!;
-  const outcome = resolveBossHit(result, boss, boss.missStreak);
-  boss.missStreak = outcome.missStreak;
-  emitHitEvent(result, add.xPct, add.y, outcome.damage, 'boss');
-  boss.hp = Math.max(0, boss.hp - outcome.damage);
-
-  const progressed = result.verdict !== 'incorrect' && result.verdict !== 'invalid';
-  if (progressed) {
-    state.enemies = state.enemies.filter((e) => e.uid !== add.uid);
-    awardCurrency(profile);
-  }
-
-  const stillAlive = checkBossHpAndAdvance(state);
-  if (stillAlive && progressed) refreshBossProblem(state);
-  if (stillAlive && outcome.reinforce) tryReinforceBossAdd(state, profile);
+  boss.vulnerable = false;
+  boss.stateRemainingMs = phase.shieldedSec * 1000;
+  boss.weakPointOffsetPct = rollWeakPointOffset();
+  gameEvents.emit({ type: 'boss-shield-raised', weakPointXPct: weakPointXPct(boss) });
 }
 
-function resolveBossDirectShot(state: RuntimeState, profile: PlayerProfile, result: AnswerResult): void {
+function dropBossShield(state: RuntimeState, phase: BossPhase): void {
   const boss = state.boss!;
-  const outcome = resolveBossHit(result, boss, boss.missStreak);
-  boss.missStreak = outcome.missStreak;
-  emitHitEvent(result, boss.xPct, 12, outcome.damage, 'boss');
-  boss.hp = Math.max(0, boss.hp - outcome.damage);
+  boss.vulnerable = true;
+  boss.stateRemainingMs = phase.vulnerableSec * 1000;
+  gameEvents.emit({ type: 'boss-shield-dropped' });
+}
 
-  const progressed = result.verdict !== 'incorrect' && result.verdict !== 'invalid';
-  const stillAlive = checkBossHpAndAdvance(state);
-  if (stillAlive && progressed) refreshBossProblem(state);
-  if (stillAlive && outcome.reinforce) tryReinforceBossAdd(state, profile);
+function enterBossPhase(state: RuntimeState, phaseIndex: number): void {
+  const boss = state.boss!;
+  const phase = currentBossRules(state).phases[phaseIndex];
+  boss.phaseIndex = phaseIndex;
+  boss.driftSpeed = phase.driftSpeed;
+  // Every phase opens with the boss exposed, so a phase change is a
+  // window rather than an ambush.
+  boss.vulnerable = true;
+  boss.stateRemainingMs = phase.vulnerableSec * 1000;
+  gameEvents.emit({ type: 'boss-phase-changed', phaseIndex, name: phase.name });
 }
 
 function startBossPhase(state: RuntimeState, profile: PlayerProfile): void {
-  const bossRules = currentLevel(state).boss;
-  if (!bossRules) {
+  const rules = currentLevel(state).boss;
+  if (!rules) {
     advanceStageOrEndRun(state);
     return;
   }
   state.stagePhase = 'boss';
   state.enemies = [];
+  state.missStreak = 0;
+
+  const surviveTotalMs = rules.surviveSec * 1000;
+  const openingPhase = rules.phases[0];
   state.boss = {
-    name: bossRules.name,
-    sprite: bossRules.sprite,
-    hp: Math.round(bossRules.hp * currentEnemyHpMultiplier(profile)),
-    maxHp: Math.round(bossRules.hp * currentEnemyHpMultiplier(profile)),
+    name: rules.name,
+    sprite: rules.sprite,
+    surviveRemainingMs: surviveTotalMs,
+    surviveTotalMs,
+    combo: 0,
+    comboRequired: rules.comboToDefeat,
+    bestCombo: 0,
+    phaseIndex: 0,
+    vulnerable: true,
+    stateRemainingMs: openingPhase.vulnerableSec * 1000,
+    weakPointOffsetPct: 0,
     xPct: 50,
     driftDirection: 1,
-    driftSpeed: BOSS_DRIFT_SPEED_PCT_PER_SEC,
-    problem: generateBossProblem(bossRules.scope, 0),
+    driftSpeed: openingPhase.driftSpeed,
+    problem: generateBossProblem(rules.scope, 0),
     progress: 0,
     missStreak: 0,
     inFinale: false,
+    defeatedBy: null,
   };
-  state.spawnTimer = randRange(bossRules.arcadeDifficulty.spawnInterval[0], bossRules.arcadeDifficulty.spawnInterval[1]);
+  state.spawnTimer = randRange(openingPhase.addInterval[0], openingPhase.addInterval[1]);
+  gameEvents.emit({ type: 'boss-phase-changed', phaseIndex: 0, name: openingPhase.name });
 }
 
-function onBossDefeated(state: RuntimeState): void {
+function onBossDefeated(state: RuntimeState, profile: PlayerProfile, cause: 'survival' | 'mastery'): void {
+  const boss = state.boss!;
+  boss.defeatedBy = cause;
+
+  if (cause === 'mastery') {
+    state.score += MASTERY_SCORE_BONUS;
+    profile.currency += MASTERY_CURRENCY_BONUS;
+    gameEvents.emit({ type: 'currency-earned', amount: MASTERY_CURRENCY_BONUS, total: profile.currency });
+  }
+
   state.enemies = [];
+  gameEvents.emit({ type: 'boss-defeated', by: cause, bestCombo: Math.max(boss.bestCombo, boss.combo) });
   state.boss = null;
-  gameEvents.emit({ type: 'boss-defeated' });
   advanceStageOrEndRun(state);
+}
+
+/**
+ * One answer aimed at the boss - at its body, or at the weak point its
+ * shield exposes. Damage bookkeeping is gone entirely: what a good answer
+ * buys is time off the survive clock and a step along the combo, either of
+ * which can end the fight.
+ */
+function resolveBossShot(
+  state: RuntimeState,
+  profile: PlayerProfile,
+  result: AnswerResult,
+  atWeakPoint: boolean
+): void {
+  const boss = state.boss!;
+  const fxX = atWeakPoint ? weakPointXPct(boss) : boss.xPct;
+  const outcome = resolveBossAnswer(
+    result,
+    { comboRequired: boss.comboRequired, vulnerable: boss.vulnerable },
+    boss.combo,
+    boss.missStreak,
+    atWeakPoint
+  );
+  boss.missStreak = outcome.missStreak;
+
+  if (outcome.blocked) {
+    gameEvents.emit({ type: 'shield-blocked', xPct: fxX, y: BOSS_FX_Y_PCT, targetId: 'boss' });
+    if (outcome.reinforce) tryReinforce(state, profile);
+    return;
+  }
+
+  emitHitEvent(result, fxX, BOSS_FX_Y_PCT, outcome.surviveCutMs, 'boss');
+
+  if (outcome.shieldBroken) {
+    dropBossShield(state, currentBossPhase(state));
+    gameEvents.emit({ type: 'shield-broken', xPct: fxX, y: BOSS_FX_Y_PCT, targetId: 'boss' });
+  }
+
+  if (outcome.comboBroken) gameEvents.emit({ type: 'boss-combo-broken', lostCombo: boss.combo });
+  boss.combo = outcome.combo;
+  boss.bestCombo = Math.max(boss.bestCombo, boss.combo);
+  if (boss.combo > 0) gameEvents.emit({ type: 'boss-combo', combo: boss.combo, required: boss.comboRequired });
+
+  if (outcome.surviveCutMs > 0) {
+    boss.surviveRemainingMs = Math.max(0, boss.surviveRemainingMs - outcome.surviveCutMs);
+    boss.progress = 1 - boss.surviveRemainingMs / boss.surviveTotalMs;
+    state.score += BOSS_ANSWER_SCORE;
+    gameEvents.emit({
+      type: 'boss-timer-cut',
+      amountMs: outcome.surviveCutMs,
+      remainingMs: boss.surviveRemainingMs,
+    });
+  }
+
+  if (outcome.masteryAchieved) {
+    onBossDefeated(state, profile, 'mastery');
+    return;
+  }
+  if (boss.surviveRemainingMs <= 0) {
+    onBossDefeated(state, profile, 'survival');
+    return;
+  }
+
+  if (outcome.surviveCutMs > 0) refreshBossProblem(state);
+  if (outcome.reinforce) tryReinforce(state, profile);
 }
 
 function advanceStageOrEndRun(state: RuntimeState): void {
@@ -387,36 +593,61 @@ function fire(state: RuntimeState, profile: PlayerProfile): void {
   state.player.inputBuffer = '';
   applyFireCooldown(state, profile);
 
-  if (target.kind === 'none') return;
-
-  if (target.kind === 'boss') {
-    resolveBossDirectShot(state, profile, evaluateAnswer(guess, state.boss!.problem));
-  } else if (state.stagePhase === 'boss') {
-    resolveBossAddShot(state, profile, target.enemy, evaluateAnswer(guess, target.enemy.problem));
-  } else {
-    resolveEnemyShot(state, profile, target.enemy, evaluateAnswer(guess, target.enemy.problem));
+  switch (target.kind) {
+    case 'none':
+      return;
+    case 'boss':
+      resolveBossShot(state, profile, evaluateAnswer(guess, state.boss!.problem), false);
+      return;
+    case 'boss-weak-point':
+      resolveBossShot(state, profile, evaluateAnswer(guess, state.boss!.problem), true);
+      return;
+    case 'enemy':
+      // Boss adds are ordinary enemies now: they threaten the clock, but
+      // shooting one is no longer a backdoor into damaging the boss.
+      resolveEnemyShot(state, profile, target.enemy, evaluateAnswer(guess, target.enemy.problem));
+      return;
   }
 }
 
 function applyBomb(state: RuntimeState, profile: PlayerProfile, damage: number): void {
   if (state.stagePhase === 'boss' && state.boss) {
     const boss = state.boss;
-    const n = state.enemies.length;
-    boss.hp = Math.max(0, boss.hp - n * Math.round(boss.maxHp * 0.05));
-    for (let i = 0; i < n; i++) awardCurrency(profile);
+    const cleared = state.enemies.length;
     state.enemies = [];
-    checkBossHpAndAdvance(state);
-  } else {
-    for (const enemy of state.enemies) enemy.hp = Math.max(0, enemy.hp - damage);
-    const dead = state.enemies.filter((e) => e.hp <= 0);
-    state.enemies = state.enemies.filter((e) => e.hp > 0);
-    for (const enemy of dead) {
-      state.score += 10;
-      state.enemiesDefeated++;
-      awardCurrency(profile);
-      gameEvents.emit({ type: 'enemy-defeated', xPct: enemy.xPct, y: enemy.y, kind: enemy.kind });
+    for (let i = 0; i < cleared; i++) awardCurrency(profile, 0.5);
+
+    if (cleared > 0) {
+      const cut = cleared * BOMB_BOSS_CUT_PER_ADD_MS;
+      boss.surviveRemainingMs = Math.max(0, boss.surviveRemainingMs - cut);
+      boss.progress = 1 - boss.surviveRemainingMs / boss.surviveTotalMs;
+      gameEvents.emit({ type: 'boss-timer-cut', amountMs: cut, remainingMs: boss.surviveRemainingMs });
     }
-    if (state.enemiesDefeated >= currentLevel(state).enemiesToClear) startBossPhase(state, profile);
+    if (boss.surviveRemainingMs <= 0) onBossDefeated(state, profile, 'survival');
+    return;
+  }
+
+  // A bomb only ever empties the layer an enemy is currently on - a
+  // multi-layer enemy survives it with a fresh problem, which is what
+  // makes those enemies the answer to a bomb-heavy playstyle.
+  for (const enemy of [...state.enemies]) {
+    if (enemy.shielded) continue;
+    enemy.hp = Math.max(0, enemy.hp - damage);
+    if (enemy.hp > 0) continue;
+
+    if (enemy.layersRemaining > 1) {
+      enemy.layersRemaining -= 1;
+      enemy.hp = enemy.maxHp;
+      enemy.problem = problemForCurrentPhase(state);
+      gameEvents.emit({
+        type: 'enemy-layer-broken',
+        xPct: enemy.xPct,
+        y: enemy.y,
+        layersRemaining: enemy.layersRemaining,
+      });
+    } else {
+      destroyEnemy(state, profile, enemy);
+    }
   }
 }
 
@@ -491,11 +722,21 @@ function updateEnemyMovement(state: RuntimeState, profile: PlayerProfile, dt: nu
   const now = performance.now();
   const burn = currentEffect(findBaseSkillNode('burn')!, profile.skillProgress);
   const slowMultiplier = burn.kind === 'burn' ? burn.slowMultiplier : 1;
+
   for (const enemy of state.enemies) {
     enemy.frozen = frozen;
     if (frozen) continue;
     const burning = now < enemy.burnUntilMs;
-    enemy.y += enemy.speed * (burning ? slowMultiplier : 1) * dt;
+    const moved = stepMovement({
+      movement: enemyArchetype(enemy.archetype).movement,
+      y: enemy.y,
+      anchorXPct: enemy.anchorXPct,
+      wavePhase: enemy.wavePhase,
+      speed: enemy.speed * (burning ? slowMultiplier : 1),
+      dtSec: dt,
+    });
+    enemy.y = moved.y;
+    enemy.xPct = moved.xPct;
   }
 }
 
@@ -523,36 +764,70 @@ function handleImpacts(state: RuntimeState, profile: PlayerProfile): void {
 }
 
 function updateLevelPhase(state: RuntimeState, profile: PlayerProfile, dt: number, frozen: boolean): void {
-  const level = currentLevel(state);
   updateEnemyMovement(state, profile, dt, frozen);
   state.spawnTimer -= dt;
-  if (state.spawnTimer <= 0) {
-    if (state.enemies.length < level.arcadeDifficulty.maxConcurrent) spawnGrunt(state, profile, false);
-    state.spawnTimer = randRange(level.arcadeDifficulty.spawnInterval[0], level.arcadeDifficulty.spawnInterval[1]);
+  if (state.spawnTimer <= 0) releaseWave(state, profile);
+}
+
+function updateBossDrift(state: RuntimeState, dt: number): void {
+  const boss = state.boss!;
+  boss.xPct += boss.driftDirection * boss.driftSpeed * dt;
+  if (boss.xPct > 90) {
+    boss.xPct = 90;
+    boss.driftDirection = -1;
+  } else if (boss.xPct < 10) {
+    boss.xPct = 10;
+    boss.driftDirection = 1;
   }
 }
 
-function updateBossPhase(state: RuntimeState, profile: PlayerProfile, dt: number, frozen: boolean): void {
-  const bossRules = currentLevel(state).boss!;
+function startBossFinale(state: RuntimeState): void {
   const boss = state.boss!;
+  boss.inFinale = true;
+  boss.vulnerable = true;
+  state.enemies = [];
+  boss.problem = buildAuthoredProblem(currentBossRules(state).finaleProblem);
+  gameEvents.emit({ type: 'boss-finale-started' });
+}
+
+function updateBossPhase(state: RuntimeState, profile: PlayerProfile, dt: number, frozen: boolean): void {
+  const boss = state.boss!;
+  const rules = currentBossRules(state);
   updateEnemyMovement(state, profile, dt, frozen);
 
-  if (!frozen) {
-    boss.xPct += boss.driftDirection * boss.driftSpeed * dt;
-    if (boss.xPct > 90) {
-      boss.xPct = 90;
-      boss.driftDirection = -1;
-    } else if (boss.xPct < 10) {
-      boss.xPct = 10;
-      boss.driftDirection = 1;
+  // The survive clock runs regardless of Freeze - freezing the adds is
+  // meant to buy breathing room, not to stall the fight it's meant to win.
+  boss.surviveRemainingMs = Math.max(0, boss.surviveRemainingMs - dt * 1000);
+  boss.progress = 1 - boss.surviveRemainingMs / boss.surviveTotalMs;
+
+  const nextPhase = phaseIndexForProgress(rules.phases, boss.progress);
+  if (nextPhase !== boss.phaseIndex) enterBossPhase(state, nextPhase);
+  const phase = currentBossPhase(state);
+
+  if (!boss.inFinale && boss.surviveRemainingMs <= boss.surviveTotalMs * FINALE_REMAINING_THRESHOLD) {
+    startBossFinale(state);
+  }
+
+  // Shields never cycle during the finale - the boss is committed and
+  // fully exposed for the last stretch.
+  if (!boss.inFinale && phase.shieldedSec > 0) {
+    boss.stateRemainingMs -= dt * 1000;
+    if (boss.stateRemainingMs <= 0) {
+      if (boss.vulnerable) raiseBossShield(state, phase);
+      else dropBossShield(state, phase);
     }
   }
 
+  if (!frozen) updateBossDrift(state, dt);
+
   state.spawnTimer -= dt;
   if (state.spawnTimer <= 0) {
-    if (state.enemies.length < bossRules.arcadeDifficulty.maxConcurrent) spawnBossAdd(state, profile);
-    state.spawnTimer = randRange(bossRules.arcadeDifficulty.spawnInterval[0], bossRules.arcadeDifficulty.spawnInterval[1]);
+    if (hasRoom(state)) spawnBossAdd(state, profile);
+    const multiplier = boss.inFinale ? FINALE_ADD_INTERVAL_MULTIPLIER : 1;
+    state.spawnTimer = randRange(phase.addInterval[0], phase.addInterval[1]) * multiplier;
   }
+
+  if (boss.surviveRemainingMs <= 0) onBossDefeated(state, profile, 'survival');
 }
 
 /** Advances the simulation by dtSec. Does nothing once the clock has run
@@ -572,7 +847,7 @@ export function tick(state: RuntimeState, profile: PlayerProfile, dtSec: number)
   const frozen = performance.now() < state.freezeUntilMs;
 
   if (state.stagePhase === 'level') updateLevelPhase(state, profile, dtSec, frozen);
-  else updateBossPhase(state, profile, dtSec, frozen);
+  else if (state.boss) updateBossPhase(state, profile, dtSec, frozen);
 
   handleImpacts(state, profile);
 }
