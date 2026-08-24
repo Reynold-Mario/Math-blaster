@@ -7,6 +7,7 @@
   import type { RuntimeState } from './runtime/RuntimeState';
   import type { PlayerProfile } from './runtime/PlayerProfile';
   import { loadPlayerProfile, savePlayerProfile } from './runtime/PlayerProfile';
+  import type { GradeLevel } from './levels/gradeTree';
   import { installSkillTreeDebugTools } from './runtime/devTools';
   import { purchaseNextInstallment, type SkillNode } from './skills/SkillTree';
   import type { BaseSkillEffect } from './skills/baseSkillTree';
@@ -86,6 +87,12 @@
     profile.skillProgress = result.progress;
     profile.skillSubProgress = result.subProgress;
     profile.currency -= result.pointsSpent;
+    savePlayerProfile(profile);
+  }
+  /** The grade is a profile setting, so it's owned here alongside the other
+   * profile mutations - SkillTreeScreen only reads it and calls back. */
+  function selectGrade(grade: GradeLevel) {
+    profile.selectedGrade = grade;
     savePlayerProfile(profile);
   }
   function startRun() {
@@ -184,7 +191,12 @@
       <div class="mini-scores currency-note">💰 {profile.currency} banked</div>
     </div>
   {:else if phase === 'skillTree'}
-    <SkillTreeScreen profile={profile} onPlay={startRun} onPurchase={purchaseSkill} />
+    <SkillTreeScreen
+      profile={profile}
+      onPlay={startRun}
+      onPurchase={purchaseSkill}
+      onSelectGrade={selectGrade}
+    />
   {:else}
     <div class="hud">
       <div class="hud-left">

@@ -16,13 +16,24 @@
     type SkillNode,
   } from './SkillTree';
   import type { PlayerProfile } from '../runtime/PlayerProfile';
+  import { GRADE_ORDER, topicsForGrade, type GradeLevel } from '../levels/gradeTree';
 
   interface Props {
     profile: PlayerProfile;
     onPlay: () => void;
     onPurchase: (node: SkillNode<BaseSkillEffect>) => void;
+    onSelectGrade: (grade: GradeLevel) => void;
   }
-  let { profile, onPlay, onPurchase }: Props = $props();
+  let { profile, onPlay, onPurchase, onSelectGrade }: Props = $props();
+
+  /** Only the grades that actually have maths authored for them. Grades 4-12
+   * are typed but unauthored, so offering them would promise content that
+   * doesn't exist. */
+  const PLAYABLE_GRADES: GradeLevel[] = GRADE_ORDER.filter((g) => topicsForGrade(g).length > 0);
+  const GRADE_LABELS: Partial<Record<GradeLevel, string>> = { K: 'K' };
+  function gradeLabel(grade: GradeLevel): string {
+    return GRADE_LABELS[grade] ?? grade;
+  }
 
   const CATEGORY_LABELS: Record<BaseSkillCategory, string> = {
     economy: '💰 Economy',
@@ -396,6 +407,20 @@
   </div>
 
   <div class="tree-footer">
+    <div class="grade-picker">
+      <span class="grade-label">Grade</span>
+      <div class="grade-options" role="radiogroup" aria-label="Which grade's maths to practise">
+        {#each PLAYABLE_GRADES as grade}
+          <button
+            class="grade-btn"
+            class:selected={profile.selectedGrade === grade}
+            role="radio"
+            aria-checked={profile.selectedGrade === grade}
+            onclick={() => onSelectGrade(grade)}
+          >{gradeLabel(grade)}</button>
+        {/each}
+      </div>
+    </div>
     <button class="play-btn" onclick={onPlay}>Play ▶</button>
   </div>
 </div>
@@ -410,6 +435,34 @@
     border: 4px solid var(--ink);
     border-radius: 14px;
     overflow: hidden;
+  }
+
+  .grade-picker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .grade-label {
+    font-size: 11px;
+    font-weight: 700;
+    opacity: 0.8;
+  }
+  .grade-options {
+    display: flex;
+    gap: 4px;
+  }
+  .grade-btn {
+    min-width: 30px;
+    height: 30px;
+    border: 2px solid var(--ink);
+    border-radius: 7px;
+    background: #fff;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .grade-btn.selected {
+    background: var(--marquee-yellow);
   }
 
   .tree-header {
@@ -726,7 +779,10 @@
 
   .tree-footer {
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: space-between;
     padding: 10px 14px;
     border-top: 3px solid var(--ink);
     background: var(--panel);

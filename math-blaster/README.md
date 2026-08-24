@@ -64,13 +64,15 @@ still making genuine mastery matter for how well a run goes.
 2. **Type and fire.** Type your answer on the keypad and hit FIRE.
 3. **Read the wave.** Enemies arrive as formations, not a random trickle,
    and each kind behaves differently — see below.
-4. **Survive the clock.** You have 30 seconds (plus any skill bonuses) —
-   not lives. Letting an enemy reach the bottom costs a chunk of that
-   time, unless Dodge fully avoids it or Armor softens it.
-5. **Clear the level.** Defeat enough enemies to trigger that world's
-   boss — a rapid-fire fight drawing on everything the level (and every
-   level before it) has taught, ending in a climactic authored finale
-   problem.
+4. **Clear the wave, earn the clock back.** The run has a clock, not lives.
+   It drains constantly, and letting an enemy reach the bottom costs a
+   chunk of it (unless Dodge fully avoids it or Armor softens it) — but
+   clearing a wave pays time back, more of it the more you actually
+   defeated. A run lasts as long as you keep answering.
+5. **Face a boss every fifth wave.** A rapid-fire fight drawing on
+   everything your grade and the ones below it have taught, ending in a
+   climactic authored finale problem. Beat it and you're straight into the
+   next wave.
 6. **Bank currency, spend it.** Between runs, the skill tree shop is where
    currency earned from kills becomes permanent upgrades — for the *next*
    run, not the current one.
@@ -117,18 +119,38 @@ moves every time the shield goes up. Hitting it takes tighter positioning
 the game. For the last stretch the shield drops for good, reinforcements
 go berserk, and the authored finale problem appears.
 
-## World / level structure
+## Run structure
 
-| World | Grade | Levels | Curriculum | Boss |
-|---|---|---|---|---|
-| 1 · Sprout Garden | K | Sprout Sums | +/− within 5 | — |
-| 2 · Sunny Meadow | 1 | Meadow Muddle, Cave Carry | +/− within 10, then 10–20 (regrouping) | Sum Slime King |
-| 3 · Golden Fields | 2 | Century Count, Grouping Grove | +/− within 100, ×2–3 foundations | Hundred Hydra |
-| 4 · Whispering Forest | 3 | Forest Factors, Sky Division | ×2–5, then ×÷6–10 | The Math Overlord |
+There are no worlds, stages or levels. A run is one continuous, endless
+sequence of numbered waves, and there is nothing to interrupt it — no
+"stage clear" screen, no continue button, no win screen. It ends when the
+clock does.
 
-A full run currently plays straight through all four worlds in order —
-grade *selection* (picking just one grade's worth of content for a
-session) is designed for but not wired up yet; see Current Status.
+A wave is announced, arrives all at once as a formation, and the next one
+only starts when the board is empty. **Every fifth wave is a boss.**
+Formations, fall speeds, and how many enemies can be on screen all escalate
+with the wave number, and keep escalating past the authored material so a
+long run never plateaus.
+
+**The maths, though, comes from the player's grade — not the wave number.**
+
+| Grade | Curriculum a run walks up |
+|---|---|
+| K | +/− within 5 |
+| 1 | +/− within 10, then 10–20 (regrouping) |
+| 2 | +/− within 100, then ×2–3 foundations |
+| 3 | ×2–5, then ×÷6–10 |
+
+A run holds at the hardest thing its grade teaches and never reaches past
+it, so a Kindergartener having an excellent run gets faster and busier
+waves — never times tables. Bosses are the exception: they draw on
+everything from K up through the run's grade, because waves teach the
+current grade and a boss reviews the ground already covered.
+
+The backdrop travels continuously through ten palettes as the wave count
+climbs. It's the only thing on screen that shows how far you've come, which
+is why it blends rather than switching — and why it settles at the last one
+instead of looping back to the opening garden.
 
 ## Progression systems
 
@@ -149,16 +171,20 @@ extend to K–12 without any engine changes.
 ## Current status
 
 **Fully playable:** the entire loop above — movement/targeting, all six
-answer verdicts, all six enemy archetypes, wave-based spawning, timer-based
-survival with Dodge/Armor, currency and the Base skill tree shop, all four
-worlds and three phased boss fights with both win conditions.
+answer verdicts, all six enemy archetypes, the endless discrete-wave
+sequence with its escalating difficulty, the earn-it-back clock with
+Dodge/Armor, grade-scoped curriculum with a picker, the travelling backdrop,
+currency and the Base skill tree shop, and a boss every fifth wave cycling
+three phased fights with both win conditions.
 
 **Built but not yet wired into the session flow:**
-- Grade selection — the data and unlock logic exist (`gradeTree.ts`); a
-  session always plays the full K–3 sequence rather than a chosen grade.
-- Grades 4–5 content — would need fraction/decimal problem *generation*
-  (the answer evaluator already supports fractions/decimals; the problem
-  generator only produces integers so far).
+- Grades 4–12 — `GRADE_ORDER` runs to 12 but only K–3 have topics authored,
+  so the grade picker offers only those. Grades 4–5 would also need
+  fraction/decimal problem *generation* (the answer evaluator already
+  supports fractions/decimals; the generator only produces integers).
+- Grade *source* — the grade is chosen locally on the shop screen for now.
+  It's meant to come from a service that already knows the player's grade;
+  `resolveGrade()` in `gradeSource.ts` is the single function that changes.
 - Gamepad input — the input system is built to support it cleanly
   whenever it's added, but no gamepad code exists yet.
 

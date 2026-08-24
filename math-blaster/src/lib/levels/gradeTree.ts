@@ -144,3 +144,60 @@ export function topicsForGrade(grade: GradeLevel): SkillNode<GradeSkillEffect>[]
 export function findGradeTopicNode(id: string): SkillNode<GradeSkillEffect> | undefined {
   return GRADE_TOPIC_NODES.find((n) => n.id === id);
 }
+
+// --- Curriculum ladders. This file already knew which curricula belong to
+// which grade; what it lacked was anyone asking. These two functions are
+// that question, and they're what stops a run drifting into maths the
+// player was never meant to be practising.
+//
+// The curriculum is read off `effectAtLevel(1)` - a topic's *unlocked*
+// effect - rather than stored twice. `levelIds` is ignored on purpose:
+// three topics have none (no arcade level was ever authored for them), and
+// a run doesn't need one now that waves are generated. ---
+
+function curriculumOf(topic: SkillNode<GradeSkillEffect>): Curriculum | null {
+  const effect = topic.effectAtLevel(1);
+  return effect.kind === 'unlocked' ? effect.curriculum : null;
+}
+
+function laddersUpTo(grade: GradeLevel): Curriculum[] {
+  const limit = GRADE_ORDER.indexOf(grade);
+  if (limit < 0) return [];
+  return GRADE_ORDER.slice(0, limit + 1)
+    .flatMap((g) => topicsForGrade(g))
+    .map(curriculumOf)
+    .filter((c): c is Curriculum => c !== null);
+}
+
+/**
+ * The curricula a run at this grade walks up, easiest first - that grade's
+ * topics and nothing else.
+ *
+ * Scoped to the single grade on purpose: a Grade 2 player practising
+ * Grade 2 maths should not find themselves being asked Grade 3 questions
+ * because their run went well. `curriculumForWave` holds at the last rung,
+ * so a long run stays at the hardest thing this grade actually teaches.
+ *
+ * Falls back to every authored curriculum for a grade with no topics
+ * (Grades 4-12 are typed but unauthored), so an unexpected grade degrades
+ * to "the whole game" rather than to a run with no problems in it.
+ */
+export function curriculumLadderForGrade(grade: GradeLevel): Curriculum[] {
+  const own = topicsForGrade(grade)
+    .map(curriculumOf)
+    .filter((c): c is Curriculum => c !== null);
+  return own.length > 0 ? own : laddersUpTo(GRADE_ORDER[GRADE_ORDER.length - 1]);
+}
+
+/**
+ * Everything from Kindergarten up through this grade, easiest first - what
+ * a boss draws on, so a fight reviews the ground already covered rather
+ * than only the newest material.
+ *
+ * Wider than the wave ladder by design: waves teach this grade, bosses
+ * test everything up to it.
+ */
+export function cumulativeScopeForGrade(grade: GradeLevel): Curriculum[] {
+  const scope = laddersUpTo(grade);
+  return scope.length > 0 ? scope : curriculumLadderForGrade(grade);
+}
