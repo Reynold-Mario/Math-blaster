@@ -6,10 +6,18 @@ import type { ProblemDefinition } from '../math/ProblemDefinition';
 import type { AnswerResult } from '../math/evaluator';
 import type { InputAction } from '../input/InputManager';
 
-import { GAME_LEVELS } from '../levels/gameLevels';
 import { phaseIndexForProgress } from '../levels/LevelDefinition';
 import { enemyArchetype, stepMovement, clampLane, GLOBAL_FALL_SPEED_MULTIPLIER } from '../levels/enemyArchetypes';
-import { buildFormation, waveAt, nextWaveIndex } from '../levels/waves';
+import { buildFormation } from '../levels/waves';
+import {
+  DEFAULT_CURRICULUM_LADDER,
+  arcadeDifficultyFor,
+  bossRulesFor,
+  bossScopeForWave,
+  curriculumForWave,
+  isBossWave,
+  waveSpecFor,
+} from '../levels/waveProgression';
 import { generateProblem, generateBossProblem, buildAuthoredProblem } from '../levels/problemGenerators';
 import { evaluateAnswer } from '../math/evaluator';
 import { resolveGruntHit, resolveBossAnswer } from '../combat';
@@ -27,12 +35,19 @@ const BASE_IMPACT_TIME_PENALTY_MS = 5000;
 const BASE_CURRENCY_PER_KILL = 5;
 const BASE_PLAYER_SPEED_PCT_PER_SEC = 55;
 
-/** Delay before a stage's first wave, so the countdown doesn't hand the
- * player a formation already halfway down the screen. */
-const OPENING_WAVE_DELAY_SEC = 1.2;
-/** How long to wait before retrying a wave that couldn't be released
- * because the screen was already at maxConcurrent. */
-const WAVE_RETRY_DELAY_SEC = 0.7;
+/**
+ * Seconds between a wave being announced and its formation arriving.
+ *
+ * Every wave gets one, which is what makes waves read as discrete events:
+ * the board empties, the run takes a breath, the next wave is called, then
+ * it arrives. It also does the job the old opening delay did - the
+ * countdown never hands the player a formation already halfway down.
+ */
+const WAVE_BREATHER_SEC = 1.5;
+/** How many reinforcements one wave can be padded out with. A wave ends
+ * when the board empties, so without a cap a player answering badly could
+ * keep the same wave alive indefinitely and never reach the next one. */
+const MAX_REINFORCEMENTS_PER_WAVE = 3;
 /** Horizontal spread of the minis a splitter breaks into. */
 const SPLIT_SPREAD_PCT = 9;
 /** How far back up the screen a knockback can push an enemy. Kept a little
@@ -67,30 +82,38 @@ function randInt(min: number, max: number): number {
 function randRange(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
-function currentLevel(state: RuntimeState) {
-  return GAME_LEVELS[state.stageIndex];
-}
+/** The rules of the fight in progress. Held on the run rather than looked
+ * up, because a boss is generated from a wave number now. */
 function currentBossRules(state: RuntimeState) {
-  return currentLevel(state).boss!;
+  return state.bossRules!;
 }
 function currentBossPhase(state: RuntimeState): BossPhase {
   return currentBossRules(state).phases[state.boss!.phaseIndex];
 }
 
 /** Which arcade knobs apply right now - a boss fight governs its adds with
- * its own difficulty block rather than the level's. */
+ * its own difficulty block rather than the wave's. */
 function activeArcadeDifficulty(state: RuntimeState) {
-  return state.stagePhase === 'boss' ? currentBossRules(state).arcadeDifficulty : currentLevel(state).arcadeDifficulty;
+  return state.runPhase === 'boss' && state.bossRules
+    ? state.bossRules.arcadeDifficulty
+    : arcadeDifficultyFor(state.waveNumber);
+}
+
+/** The curriculum ladder this run draws from. A single seam: the ladder is
+ * a property of the run, not of the wave, so scoping it (to a grade, say)
+ * means changing what is passed here and nothing else. */
+function curriculumLadder(): Curriculum[] {
+  return DEFAULT_CURRICULUM_LADDER;
 }
 
 /** Where a newly spawned or re-layered enemy's problem comes from. During
  * a boss fight even the adds draw from the boss's cumulative scope, so
  * the whole fight reviews everything learned so far. */
 function problemForCurrentPhase(state: RuntimeState): ProblemDefinition {
-  if (state.stagePhase === 'boss' && state.boss) {
-    return generateBossProblem(currentBossRules(state).scope, state.boss.progress);
+  if (state.runPhase === 'boss' && state.boss && state.bossRules) {
+    return generateBossProblem(state.bossRules.scope, state.boss.progress);
   }
-  return generateProblem(currentLevel(state).curriculum);
+  return generateProblem(curriculumForWave(curriculumLadder(), state.waveNumber));
 }
 
 // --- Skill-effect lookups. Skill levels now live on PlayerProfile (they
@@ -135,47 +158,87 @@ function startingTimeMs(profile: PlayerProfile): number {
 
 export function createInitialRuntimeState(): RuntimeState {
   return {
-    stageIndex: 0,
-    stagePhase: 'level',
+    waveNumber: 1,
+    runPhase: 'wave',
     score: 0,
     timeRemainingMs: BASE_TIMER_MS,
     enemies: [],
     player: { xPct: 50, movingLeft: false, movingRight: false, inputBuffer: '', fireCooldownRemainingMs: 0 },
     boss: null,
+    bossRules: null,
     enemiesDefeated: 0,
+    enemiesDefeatedThisWave: 0,
+    reinforcementsThisWave: 0,
+    waveSize: 0,
     spawnTimer: 0,
-    waveIndex: 0,
+    waveBreatherSec: 0,
     missStreak: 0,
     skillCooldowns: {},
     freezeUntilMs: 0,
   };
 }
 
-export function resetRun(state: RuntimeState, profile: PlayerProfile): void {
+/**
+ * Starts a run at `fromWave`. Everything per-run is cleared here,
+ * including the cooldowns and player position that used to survive into
+ * the next run because only `setupStage` touched them.
+ *
+ * `fromWave` exists so a run can start somewhere other than the beginning.
+ * Nothing in this module decides whether that's allowed - it takes the
+ * number it's given.
+ */
+export function resetRun(state: RuntimeState, profile: PlayerProfile, fromWave = 1): void {
   state.score = 0;
   state.timeRemainingMs = startingTimeMs(profile);
-  setupStage(state, 0);
+  state.enemiesDefeated = 0;
+  state.player.xPct = 50;
+  state.player.movingLeft = false;
+  state.player.movingRight = false;
+  state.skillCooldowns = {};
+  state.freezeUntilMs = 0;
+  beginWave(state, Math.max(1, Math.floor(fromWave)));
 }
 
-export function setupStage(state: RuntimeState, stageIndex: number): void {
-  state.stageIndex = stageIndex;
-  state.stagePhase = 'level';
+/**
+ * Announces a wave and starts its breather. The formation (or the boss)
+ * arrives when that breather runs out, in `openWave` - a wave is an
+ * announced event, not something that materialises the instant the last
+ * one dies.
+ */
+export function beginWave(state: RuntimeState, waveNumber: number): void {
+  state.waveNumber = waveNumber;
+  state.runPhase = isBossWave(waveNumber) ? 'boss' : 'wave';
   state.enemies = [];
   state.boss = null;
-  state.enemiesDefeated = 0;
+  state.bossRules = null;
   state.missStreak = 0;
-  state.player.inputBuffer = '';
-  state.player.fireCooldownRemainingMs = 0;
-  state.waveIndex = 0;
-  state.spawnTimer = OPENING_WAVE_DELAY_SEC;
-  gameEvents.emit({ type: 'level-started', stageId: currentLevel(state).id });
+  state.enemiesDefeatedThisWave = 0;
+  state.reinforcementsThisWave = 0;
+  state.waveSize = 0;
+  state.spawnTimer = 0;
+  state.waveBreatherSec = WAVE_BREATHER_SEC;
+  gameEvents.emit({ type: 'wave-announced', waveNumber, isBoss: isBossWave(waveNumber) });
 }
 
-/** Called by the Svelte layer once the player dismisses a "stage clear"
- * screen - gameFlow itself never auto-advances, so that pause is always
- * player-driven. */
-export function advanceToNextStage(state: RuntimeState): void {
-  setupStage(state, state.stageIndex + 1);
+/** The breather has elapsed: send in whatever this wave is. */
+function openWave(state: RuntimeState, profile: PlayerProfile): void {
+  if (isBossWave(state.waveNumber)) startBossPhase(state);
+  else releaseWave(state, profile);
+}
+
+/**
+ * A wave ends when the board is empty. That always happens: an enemy is
+ * either answered or it crosses the impact line and is removed, so there
+ * is no state in which a wave can stall forever.
+ */
+function onWaveCleared(state: RuntimeState): void {
+  gameEvents.emit({
+    type: 'wave-cleared',
+    waveNumber: state.waveNumber,
+    defeated: state.enemiesDefeatedThisWave,
+    released: state.waveSize,
+  });
+  beginWave(state, state.waveNumber + 1);
 }
 
 // --- Spawning ---
@@ -229,31 +292,22 @@ function hasRoom(state: RuntimeState): boolean {
 }
 
 /**
- * Releases the next authored wave. A wave is all-or-most-of-it at once -
- * that's what makes it read as a formation rather than a trickle - but it
- * still respects maxConcurrent, and defers rather than advancing the plan
- * when the screen is already full, so a backed-up player never silently
- * skips content.
+ * Releases this wave's whole formation at once. No maxConcurrent gate and
+ * no deferral: the wave *is* the formation, its size was already capped
+ * when `waveSpecFor` built it, and there is no plan position left to
+ * silently skip past. `maxConcurrent` still applies to everything that
+ * arrives on top of a formation - splits, reinforcements, boss adds.
  */
 function releaseWave(state: RuntimeState, profile: PlayerProfile): void {
-  const level = currentLevel(state);
-  if (!hasRoom(state)) {
-    state.spawnTimer = WAVE_RETRY_DELAY_SEC;
-    return;
-  }
+  const spec = waveSpecFor(state.waveNumber);
+  const slots = buildFormation(spec, state.waveNumber);
 
-  const spec = waveAt(level.waves, state.waveIndex);
-  const slots = buildFormation(spec, state.waveIndex);
-  let released = 0;
   for (const slot of slots) {
-    if (!hasRoom(state)) break;
-    spawnEnemy(state, profile, { archetype: slot.archetype, xPct: slot.xPct, y: slot.y, curriculum: level.curriculum });
-    released++;
+    spawnEnemy(state, profile, { archetype: slot.archetype, xPct: slot.xPct, y: slot.y });
   }
 
-  gameEvents.emit({ type: 'wave-incoming', index: state.waveIndex, count: released });
-  state.waveIndex = nextWaveIndex(level.waves, state.waveIndex);
-  state.spawnTimer = spec.gapSec;
+  state.waveSize = slots.length;
+  gameEvents.emit({ type: 'wave-incoming', waveNumber: state.waveNumber, count: slots.length });
 }
 
 function spawnBossAdd(state: RuntimeState, profile: PlayerProfile): EnemyInstance {
@@ -266,8 +320,15 @@ function spawnBossAdd(state: RuntimeState, profile: PlayerProfile): EnemyInstanc
  * whatever its current phase calls. */
 function tryReinforce(state: RuntimeState, profile: PlayerProfile): void {
   if (!hasRoom(state)) return;
+  // Outside a boss fight, reinforcements extend the wave that has to be
+  // cleared before the run can move on - so they're capped. A boss fight
+  // ends on its own clock and doesn't need the guard.
+  if (state.runPhase !== 'boss') {
+    if (state.reinforcementsThisWave >= MAX_REINFORCEMENTS_PER_WAVE) return;
+    state.reinforcementsThisWave++;
+  }
   const spawned =
-    state.stagePhase === 'boss'
+    state.runPhase === 'boss'
       ? spawnBossAdd(state, profile)
       : spawnEnemy(state, profile, { archetype: 'spore', xPct: randInt(12, 88), y: 0 });
   gameEvents.emit({ type: 'reinforcement-spawned', xPct: spawned.xPct });
@@ -334,9 +395,12 @@ function destroyEnemy(state: RuntimeState, profile: PlayerProfile, enemy: EnemyI
 
   if (archetype.splitsInto > 0) spawnSplit(state, profile, enemy, archetype.splitsInto);
 
-  if (state.stagePhase === 'level' && archetype.countsTowardClear) {
+  // Purely a tally now. What used to happen here - hitting a quota and
+  // starting the boss - is a wave count instead, so a kill no longer
+  // decides where the run goes next.
+  if (archetype.countsTowardClear) {
     state.enemiesDefeated++;
-    if (state.enemiesDefeated >= currentLevel(state).enemiesToClear) startBossPhase(state, profile);
+    if (state.runPhase === 'wave') state.enemiesDefeatedThisWave++;
   }
 }
 
@@ -455,15 +519,16 @@ function enterBossPhase(state: RuntimeState, phaseIndex: number): void {
   gameEvents.emit({ type: 'boss-phase-changed', phaseIndex, name: phase.name });
 }
 
-function startBossPhase(state: RuntimeState, profile: PlayerProfile): void {
-  const rules = currentLevel(state).boss;
-  if (!rules) {
-    advanceStageOrEndRun(state);
-    return;
-  }
-  state.stagePhase = 'boss';
+/** Builds the fight for this wave and starts it. The rules are generated
+ * from the wave number rather than read off a level, and stored on the run
+ * because there's nowhere else for them to live. */
+function startBossPhase(state: RuntimeState): void {
+  const rules = bossRulesFor(state.waveNumber, bossScopeForWave(curriculumLadder(), state.waveNumber));
+  state.runPhase = 'boss';
+  state.bossRules = rules;
   state.enemies = [];
   state.missStreak = 0;
+  state.waveSize = 0;
 
   const surviveTotalMs = rules.surviveSec * 1000;
   const openingPhase = rules.phases[0];
@@ -503,9 +568,17 @@ function onBossDefeated(state: RuntimeState, profile: PlayerProfile, cause: 'sur
   }
 
   state.enemies = [];
-  gameEvents.emit({ type: 'boss-defeated', by: cause, bestCombo: Math.max(boss.bestCombo, boss.combo) });
+  gameEvents.emit({
+    type: 'boss-defeated',
+    by: cause,
+    bestCombo: Math.max(boss.bestCombo, boss.combo),
+    waveNumber: state.waveNumber,
+  });
   state.boss = null;
-  advanceStageOrEndRun(state);
+  state.bossRules = null;
+  // Straight on to the next wave. No stage-clear screen, no Continue
+  // button, no victory - the run only ends when the clock does.
+  beginWave(state, state.waveNumber + 1);
 }
 
 /**
@@ -573,14 +646,6 @@ function resolveBossShot(
   if (outcome.reinforce) tryReinforce(state, profile);
 }
 
-function advanceStageOrEndRun(state: RuntimeState): void {
-  if (state.stageIndex >= GAME_LEVELS.length - 1) {
-    gameEvents.emit({ type: 'victory' });
-  } else {
-    gameEvents.emit({ type: 'stage-cleared', stageId: currentLevel(state).id });
-  }
-}
-
 // --- Firing & skills ---
 
 function applyFireCooldown(state: RuntimeState, profile: PlayerProfile): void {
@@ -614,7 +679,7 @@ function fire(state: RuntimeState, profile: PlayerProfile): void {
 }
 
 function applyBomb(state: RuntimeState, profile: PlayerProfile, layersStripped: number): void {
-  if (state.stagePhase === 'boss' && state.boss) {
+  if (state.runPhase === 'boss' && state.boss) {
     const boss = state.boss;
     const cleared = state.enemies.length;
     state.enemies = [];
@@ -760,14 +825,22 @@ function handleSingleImpact(state: RuntimeState, profile: PlayerProfile): void {
 function handleImpacts(state: RuntimeState, profile: PlayerProfile): void {
   const landed = state.enemies.filter((e) => e.y >= IMPACT_LINE_PCT);
   if (!landed.length) return;
-  for (const _enemy of landed) handleSingleImpact(state, profile);
+  for (const _enemy of landed) {
+    // Stop the moment the clock is gone. Several enemies can cross the
+    // line on one frame, and without this each of the rest would emit
+    // another `game-over` on an already-empty clock.
+    if (state.timeRemainingMs <= 0) break;
+    handleSingleImpact(state, profile);
+  }
   state.enemies = state.enemies.filter((e) => e.y < IMPACT_LINE_PCT);
 }
 
-function updateLevelPhase(state: RuntimeState, profile: PlayerProfile, dt: number, frozen: boolean): void {
+function updateWavePhase(state: RuntimeState, profile: PlayerProfile, dt: number, frozen: boolean): void {
   updateEnemyMovement(state, profile, dt, frozen);
-  state.spawnTimer -= dt;
-  if (state.spawnTimer <= 0) releaseWave(state, profile);
+  // Waves are discrete: an empty board IS the end of the wave. Nothing
+  // else releases enemies while one is running, so there's no ambiguity
+  // about which wave just ended.
+  if (state.enemies.length === 0) onWaveCleared(state);
 }
 
 function updateBossDrift(state: RuntimeState, dt: number): void {
@@ -847,7 +920,15 @@ export function tick(state: RuntimeState, profile: PlayerProfile, dtSec: number)
   updateCooldowns(state, dtSec);
   const frozen = performance.now() < state.freezeUntilMs;
 
-  if (state.stagePhase === 'level') updateLevelPhase(state, profile, dtSec, frozen);
+  // The breather runs ahead of both kinds of wave, and the board is empty
+  // while it does - so nothing else needs to happen this frame.
+  if (state.waveBreatherSec > 0) {
+    state.waveBreatherSec -= dtSec;
+    if (state.waveBreatherSec <= 0) openWave(state, profile);
+    return;
+  }
+
+  if (state.runPhase === 'wave') updateWavePhase(state, profile, dtSec, frozen);
   else if (state.boss) updateBossPhase(state, profile, dtSec, frozen);
 
   handleImpacts(state, profile);

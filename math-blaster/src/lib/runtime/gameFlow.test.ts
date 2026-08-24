@@ -1,10 +1,19 @@
-import { createInitialRuntimeState, setupStage, tick, handleInputAction } from './gameFlow';
+import { createInitialRuntimeState, beginWave, tick, handleInputAction } from './gameFlow';
 import { createEmptyProfile, type PlayerProfile } from './PlayerProfile';
 import type { RuntimeState, EnemyInstance } from './RuntimeState';
 import { gameEvents, type GameEvent } from '../events';
-import { GAME_LEVELS } from '../levels/gameLevels';
 import { weakPointXPct } from '../targeting';
-import { enemyArchetype, GLOBAL_FALL_SPEED_MULTIPLIER } from '../levels/enemyArchetypes';
+import {
+  enemyArchetype,
+  GLOBAL_FALL_SPEED_MULTIPLIER,
+  type EnemyArchetypeId,
+} from '../levels/enemyArchetypes';
+import {
+  WAVE_BOSS_INTERVAL,
+  arcadeDifficultyFor,
+  isBossWave,
+  waveSpecFor,
+} from '../levels/waveProgression';
 import { toNumber } from '../math/MathValue';
 import type { ProblemDefinition } from '../math/ProblemDefinition';
 
@@ -14,8 +23,6 @@ import type { ProblemDefinition } from '../math/ProblemDefinition';
  * are actually wired together. The pure layers below it are unit-tested on
  * their own; what these tests are for is the wiring.
  */
-
-const STAGE = Object.fromEntries(GAME_LEVELS.map((l, i) => [l.id, i])) as Record<string, number>;
 
 let events: GameEvent[] = [];
 let unsubscribe = () => {};
@@ -30,12 +37,29 @@ function eventsOfType<T extends GameEvent['type']>(type: T): Extract<GameEvent, 
   return events.filter((e) => e.type === type) as Extract<GameEvent, { type: T }>[];
 }
 
-function startAt(stageId: string): { state: RuntimeState; profile: PlayerProfile } {
+function startAtWave(waveNumber: number): { state: RuntimeState; profile: PlayerProfile } {
   const state = createInitialRuntimeState();
   const profile = createEmptyProfile();
-  setupStage(state, STAGE[stageId]);
+  beginWave(state, waveNumber);
   events = [];
   return { state, profile };
+}
+
+/**
+ * The first ordinary wave that sends this archetype. Searched rather than
+ * hard-coded: which wave sends what is a property of the progression
+ * ladder, and these tests are about the wiring, not the tuning.
+ */
+function waveSending(archetype: EnemyArchetypeId): number {
+  for (let wave = 1; wave <= 400; wave++) {
+    if (isBossWave(wave)) continue;
+    if (waveSpecFor(wave).archetypes.includes(archetype)) return wave;
+  }
+  throw new Error(`No wave in the ladder sends a ${archetype}.`);
+}
+
+function startAtArchetype(archetype: EnemyArchetypeId): { state: RuntimeState; profile: PlayerProfile } {
+  return startAtWave(waveSending(archetype));
 }
 
 /** Ticks in small steps until `done`, so spawn timers and drift advance
@@ -88,40 +112,69 @@ function spawnUntil(
 }
 
 describe('wave spawning', () => {
-  it('releases a formation rather than a lone grunt', () => {
-    const { state, profile } = startAt('l1');
+  it('releases the whole formation at once rather than a trickle', () => {
+    const { state, profile } = startAtWave(1);
     tickUntil(state, profile, () => state.enemies.length > 0, 'the first wave');
 
-    const waves = eventsOfType('wave-incoming');
-    expect(waves.length).toBeGreaterThan(0);
-    expect(waves[0].count).toBe(state.enemies.length);
+    const released = eventsOfType('wave-incoming');
+    expect(released).toHaveLength(1);
+    expect(released[0].count).toBe(state.enemies.length);
+    expect(released[0].count).toBe(waveSpecFor(1).archetypes.length);
+    expect(state.waveSize).toBe(state.enemies.length);
   });
 
-  it('advances through the plan and then loops, so a level never runs dry', () => {
-    const { state, profile } = startAt('k1');
-    const plan = GAME_LEVELS[STAGE.k1].waves;
+  it('announces a wave before it arrives, so nothing starts mid-screen', () => {
+    const { state, profile } = startAtWave(1);
+    // beginWave announces; the formation lands only once the breather ends.
+    expect(state.enemies).toHaveLength(0);
+    tick(state, profile, 1 / 30);
+    expect(state.enemies).toHaveLength(0);
 
-    tickUntil(state, profile, () => eventsOfType('wave-incoming').length >= 6, 'six waves');
-    const indices = eventsOfType('wave-incoming').map((e) => e.index);
-
-    expect(indices.slice(0, plan.waves.length)).toEqual(plan.waves.map((_, i) => i));
-    // The introductory wave is authored to play once and never return.
-    expect(indices.slice(plan.waves.length)).not.toContain(0);
+    tickUntil(state, profile, () => state.enemies.length > 0, 'the formation');
+    expect(state.enemies.every((e) => e.y < 20)).toBe(true);
   });
 
-  it('spawns enemies matching the archetypes its waves author', () => {
-    const { state, profile } = startAt('k1');
+  it('holds the next wave until the board is empty', () => {
+    const { state, profile } = startAtWave(1);
     tickUntil(state, profile, () => state.enemies.length > 0, 'the first wave');
-    expect(state.enemies.every((e) => e.archetype === 'drifter')).toBe(true);
+
+    // Tick long enough that the old gapSec-driven release would have fired
+    // several more waves by now.
+    for (let i = 0; i < 200 && state.enemies.length > 1; i++) {
+      state.timeRemainingMs = 60000;
+      tick(state, profile, 1 / 30);
+    }
+    expect(state.waveNumber).toBe(1);
+    expect(eventsOfType('wave-incoming')).toHaveLength(1);
   });
 
-  it('applies the global fall-speed brake on top of level and archetype speeds', () => {
+  it('moves to the next wave once the board empties, and says so', () => {
+    const { state, profile } = startAtWave(1);
+    tickUntil(state, profile, () => state.enemies.length > 0, 'the first wave');
+    for (const enemy of [...state.enemies]) destroy(state, profile, enemy);
+
+    tickUntil(state, profile, () => state.waveNumber === 2, 'the next wave');
+
+    const cleared = eventsOfType('wave-cleared');
+    expect(cleared).toHaveLength(1);
+    expect(cleared[0].waveNumber).toBe(1);
+    expect(cleared[0].defeated).toBe(cleared[0].released);
+  });
+
+  it('spawns exactly the archetypes the wave ladder authors', () => {
+    const { state, profile } = startAtWave(1);
+    tickUntil(state, profile, () => state.enemies.length > 0, 'the first wave');
+    expect(state.enemies.map((e) => e.archetype).sort()).toEqual([...waveSpecFor(1).archetypes].sort());
+  });
+
+  it('applies the global fall-speed brake on top of wave and archetype speeds', () => {
     // The brake is the one knob for global pacing - if a spawn path stops
     // honouring it, descent speed silently doubles for those enemies.
-    const { state, profile } = startAt('l3');
-    tickUntil(state, profile, () => state.enemies.length >= 2, 'a couple of enemies');
+    const wave = 8;
+    const { state, profile } = startAtWave(wave);
+    tickUntil(state, profile, () => state.enemies.length > 0, 'a formation');
 
-    const [min, max] = GAME_LEVELS[STAGE.l3].arcadeDifficulty.fallSpeed;
+    const [min, max] = arcadeDifficultyFor(wave).fallSpeed;
     for (const enemy of state.enemies) {
       const archetype = enemyArchetype(enemy.archetype).speedMultiplier;
       expect(enemy.speed).toBeGreaterThanOrEqual(min * archetype * GLOBAL_FALL_SPEED_MULTIPLIER);
@@ -129,27 +182,42 @@ describe('wave spawning', () => {
     }
   });
 
-  it('brakes split debris and boss adds too, not just wave spawns', () => {
-    const { state, profile } = startAt('g2a');
+  it('brakes split debris too, not just wave spawns', () => {
+    const wave = waveSending('splitter');
+    const { state, profile } = startAtArchetype('splitter');
     const splitter = spawnUntil(state, profile, 'splitter');
     shootExactly(state, profile, splitter);
 
-    const [min, max] = GAME_LEVELS[STAGE.g2a].arcadeDifficulty.fallSpeed;
+    const [min, max] = arcadeDifficultyFor(wave).fallSpeed;
     const spore = enemyArchetype('spore').speedMultiplier;
-    for (const debris of state.enemies.filter((e) => e.archetype === 'spore')) {
-      expect(debris.speed).toBeGreaterThanOrEqual(min * spore * GLOBAL_FALL_SPEED_MULTIPLIER);
-      expect(debris.speed).toBeLessThanOrEqual(max * spore * GLOBAL_FALL_SPEED_MULTIPLIER);
+    const debris = state.enemies.filter((e) => e.archetype === 'spore');
+    expect(debris.length).toBeGreaterThan(0);
+    for (const d of debris) {
+      expect(d.speed).toBeGreaterThanOrEqual(min * spore * GLOBAL_FALL_SPEED_MULTIPLIER);
+      expect(d.speed).toBeLessThanOrEqual(max * spore * GLOBAL_FALL_SPEED_MULTIPLIER);
     }
   });
 
-  it('never exceeds the level maxConcurrent, even mid-formation', () => {
-    const { state, profile } = startAt('l4');
-    const cap = GAME_LEVELS[STAGE.l4].arcadeDifficulty.maxConcurrent;
-    for (let i = 0; i < 900; i++) {
-      state.timeRemainingMs = 60000;
-      tick(state, profile, 1 / 30);
-      expect(state.enemies.length).toBeLessThanOrEqual(cap);
+  it('never lets a formation exceed the wave maxConcurrent', () => {
+    for (const wave of [1, 7, 13, 29, 60, 140]) {
+      if (isBossWave(wave)) continue;
+      expect(waveSpecFor(wave).archetypes.length).toBeLessThanOrEqual(
+        arcadeDifficultyFor(wave).maxConcurrent
+      );
     }
+  });
+
+  it('caps how far reinforcements can extend one wave', () => {
+    // A wave ends when the board empties. Unbounded reinforcements would
+    // let a player who keeps answering badly never reach the next wave.
+    const { state, profile } = startAtWave(1);
+    tickUntil(state, profile, () => state.enemies.length > 0, 'the first wave');
+
+    const target = state.enemies[0];
+    // Every wrong answer builds toward the miss-streak reinforcement.
+    for (let i = 0; i < 40; i++) shoot(state, profile, target.xPct, '99999');
+
+    expect(state.reinforcementsThisWave).toBeLessThanOrEqual(3);
   });
 });
 
@@ -160,7 +228,7 @@ describe('knockback', () => {
   }
 
   it('shoves an enemy back up the screen on a close answer', () => {
-    const { state, profile } = startAt('k1');
+    const { state, profile } = startAtWave(1);
     const enemy = spawnUntil(state, profile, 'drifter');
     tickUntil(state, profile, () => enemy.y > 20, 'the enemy to descend');
     const before = enemy.y;
@@ -173,7 +241,7 @@ describe('knockback', () => {
   });
 
   it('does not move an enemy on an exact answer - it removes it', () => {
-    const { state, profile } = startAt('k1');
+    const { state, profile } = startAtWave(1);
     const enemy = spawnUntil(state, profile, 'drifter');
 
     shootExactly(state, profile, enemy);
@@ -185,7 +253,7 @@ describe('knockback', () => {
   it('never pushes an enemy past the ceiling, however many times it lands', () => {
     // Otherwise a player parked under one enemy could shove it far enough
     // off-screen that it effectively stops existing.
-    const { state, profile } = startAt('k1');
+    const { state, profile } = startAtWave(1);
     const enemy = spawnUntil(state, profile, 'drifter');
 
     for (let i = 0; i < 20; i++) shoot(state, profile, enemy.xPct, nearMiss(enemy));
@@ -197,7 +265,7 @@ describe('knockback', () => {
 
 describe('multi-problem enemies', () => {
   it('survives its first exact answer and presents a fresh problem', () => {
-    const { state, profile } = startAt('g2b');
+    const { state, profile } = startAtArchetype('bulwark');
     const bulwark = spawnUntil(state, profile, 'bulwark');
     const firstProblem = bulwark.problem.id;
     expect(bulwark.layersTotal).toBe(2);
@@ -211,7 +279,7 @@ describe('multi-problem enemies', () => {
   });
 
   it('dies to the answer that empties its last layer', () => {
-    const { state, profile } = startAt('g2b');
+    const { state, profile } = startAtArchetype('bulwark');
     const bulwark = spawnUntil(state, profile, 'bulwark');
 
     shootExactly(state, profile, bulwark);
@@ -224,7 +292,7 @@ describe('multi-problem enemies', () => {
 
 describe('shielded enemies', () => {
   it('deflects a wrong answer without letting anything through', () => {
-    const { state, profile } = startAt('l3');
+    const { state, profile } = startAtArchetype('sentinel');
     const sentinel = spawnUntil(state, profile, 'sentinel');
     expect(sentinel.shielded).toBe(true);
     const startY = sentinel.y;
@@ -238,7 +306,7 @@ describe('shielded enemies', () => {
   });
 
   it('yields to an exact answer, then behaves like any other enemy', () => {
-    const { state, profile } = startAt('l3');
+    const { state, profile } = startAtArchetype('sentinel');
     const sentinel = spawnUntil(state, profile, 'sentinel');
 
     shootExactly(state, profile, sentinel);
@@ -254,7 +322,7 @@ describe('shielded enemies', () => {
 
 describe('splitters', () => {
   it('breaks into debris that does not count toward the level quota', () => {
-    const { state, profile } = startAt('g2a');
+    const { state, profile } = startAtArchetype('splitter');
     const splitter = spawnUntil(state, profile, 'splitter');
     const before = state.enemiesDefeated;
 
@@ -272,22 +340,20 @@ describe('splitters', () => {
 });
 
 describe('boss fights', () => {
-  /** Drops the player straight into a boss fight by clearing the quota
-   * with the last kill, so the transition itself is exercised too. */
-  function enterBossFight(stageId: string) {
-    const { state, profile } = startAt(stageId);
-    const level = GAME_LEVELS[STAGE[stageId]];
-    state.enemiesDefeated = level.enemiesToClear - 1;
+  /** Drops the player into a boss fight the way the run does: by arriving
+   * on a wave whose number is a multiple of the boss interval. */
+  function enterBossFight(waveNumber = WAVE_BOSS_INTERVAL) {
+    expect(isBossWave(waveNumber)).toBe(true);
+    const { state, profile } = startAtWave(waveNumber);
 
-    tickUntil(state, profile, () => state.enemies.length > 0, 'a grunt to finish the quota');
-    destroy(state, profile, state.enemies.find((e) => e.archetype !== 'spore')!);
+    tickUntil(state, profile, () => state.boss !== null, 'the boss to arrive');
 
-    expect(state.stagePhase).toBe('boss');
-    return { state, profile, boss: state.boss!, rules: level.boss! };
+    expect(state.runPhase).toBe('boss');
+    return { state, profile, boss: state.boss!, rules: state.bossRules! };
   }
 
   it('starts with a survive clock and an empty combo, not a health bar', () => {
-    const { boss, rules } = enterBossFight('l2');
+    const { boss, rules } = enterBossFight();
     expect(boss.surviveTotalMs).toBe(rules.surviveSec * 1000);
     expect(boss.surviveRemainingMs).toBe(boss.surviveTotalMs);
     expect(boss.comboRequired).toBe(rules.comboToDefeat);
@@ -296,12 +362,12 @@ describe('boss fights', () => {
   });
 
   it('opens unshielded so the player gets a clean look at the fight', () => {
-    const { boss } = enterBossFight('l2');
+    const { boss } = enterBossFight();
     expect(boss.vulnerable).toBe(true);
   });
 
   it('cuts the survive clock on an exact answer and advances the combo', () => {
-    const { state, profile, boss } = enterBossFight('l2');
+    const { state, profile, boss } = enterBossFight();
     state.enemies = [];
     const before = boss.surviveRemainingMs;
 
@@ -313,7 +379,7 @@ describe('boss fights', () => {
   });
 
   it('lets a close answer make progress without advancing the combo', () => {
-    const { state, profile, boss } = enterBossFight('l2');
+    const { state, profile, boss } = enterBossFight();
     state.enemies = [];
     boss.combo = 2;
     const before = boss.surviveRemainingMs;
@@ -327,7 +393,7 @@ describe('boss fights', () => {
   });
 
   it('ends the fight by mastery on a full run of exact answers', () => {
-    const { state, profile, boss } = enterBossFight('l2');
+    const { state, profile, boss } = enterBossFight();
     state.enemies = [];
 
     for (let i = 0; i < boss.comboRequired; i++) {
@@ -341,12 +407,14 @@ describe('boss fights', () => {
     expect(defeated[0].by).toBe('mastery');
     expect(defeated[0].bestCombo).toBe(boss.comboRequired);
     expect(state.boss).toBeNull();
-    // Ending a fight early still clears the stage.
-    expect(eventsOfType('stage-cleared')).toHaveLength(1);
+    expect(state.bossRules).toBeNull();
+    // Ending a fight early drops straight into the next wave - there is no
+    // stage-clear screen left to pass through.
+    expect(state.waveNumber).toBe(WAVE_BOSS_INTERVAL + 1);
   });
 
   it('ends the fight by survival when the clock runs out first', () => {
-    const { state, profile, boss } = enterBossFight('l2');
+    const { state, profile, boss } = enterBossFight();
     boss.surviveRemainingMs = 40;
 
     tickUntil(state, profile, () => state.boss === null, 'the survive clock to expire');
@@ -357,7 +425,7 @@ describe('boss fights', () => {
   });
 
   it('pays a mastery finish better than an endurance one', () => {
-    const mastered = enterBossFight('l2');
+    const mastered = enterBossFight();
     mastered.state.enemies = [];
     const startCurrency = mastered.profile.currency;
     for (let i = 0; i < mastered.boss.comboRequired; i++) {
@@ -370,7 +438,7 @@ describe('boss fights', () => {
 
   describe('shields and weak points', () => {
     it('blocks body shots while shielded, leaving a standing combo alone', () => {
-      const { state, profile, boss } = enterBossFight('l2');
+      const { state, profile, boss } = enterBossFight();
       state.enemies = [];
       boss.combo = 2;
       boss.vulnerable = false;
@@ -385,7 +453,7 @@ describe('boss fights', () => {
     });
 
     it('drops the shield when the weak point takes an exact answer', () => {
-      const { state, profile, boss } = enterBossFight('l2');
+      const { state, profile, boss } = enterBossFight();
       state.enemies = [];
       boss.vulnerable = false;
       boss.weakPointOffsetPct = 12;
@@ -402,8 +470,8 @@ describe('boss fights', () => {
      * finale that the shield cycle is the only thing that can flip the
      * boss's state - otherwise a phase change or the finale gets there
      * first and the test is really measuring the schedule, not the cycle. */
-    function parkInShieldedPhase(stageId: string) {
-      const fight = enterBossFight(stageId);
+    function parkInShieldedPhase(waveNumber = WAVE_BOSS_INTERVAL) {
+      const fight = enterBossFight(waveNumber);
       const shieldedPhase = fight.rules.phases.findIndex((p) => p.shieldedSec > 0);
       expect(shieldedPhase).toBeGreaterThan(-1);
 
@@ -428,7 +496,7 @@ describe('boss fights', () => {
     }
 
     it('raises its shield when a shielded phase runs out of open time', () => {
-      const { state, profile, boss } = parkInShieldedPhase('l2');
+      const { state, profile, boss } = parkInShieldedPhase();
       boss.vulnerable = true;
       boss.stateRemainingMs = 50;
 
@@ -440,7 +508,7 @@ describe('boss fights', () => {
     });
 
     it('drops it again when the shield window expires', () => {
-      const { state, profile, boss } = parkInShieldedPhase('l2');
+      const { state, profile, boss } = parkInShieldedPhase();
       boss.vulnerable = false;
       boss.stateRemainingMs = 50;
 
@@ -451,7 +519,7 @@ describe('boss fights', () => {
   });
 
   it('walks through its phases as the survive clock drains', () => {
-    const { state, profile, rules } = enterBossFight('g2b');
+    const { state, profile, rules } = enterBossFight(WAVE_BOSS_INTERVAL * 2);
     expect(rules.phases.length).toBeGreaterThan(1);
 
     tickUntil(state, profile, () => state.boss === null, 'the fight to finish');
@@ -464,16 +532,27 @@ describe('boss fights', () => {
   });
 
   it('drops its shield for good once the finale begins', () => {
-    const { state, profile } = enterBossFight('l2');
+    const { state, profile } = enterBossFight();
     tickUntil(state, profile, () => !state.boss || state.boss.inFinale, 'the finale');
     expect(state.boss?.inFinale).toBe(true);
     expect(state.boss?.vulnerable).toBe(true);
-    expect(state.enemies).toHaveLength(0);
     expect(eventsOfType('boss-finale-started')).toHaveLength(1);
+
+    // "For good" is the claim worth pinning: the shield cycle stops, so the
+    // boss stays open for however long the rest of the fight runs. Asserting
+    // an empty board here instead would be flaky - the finale does clear it,
+    // but the same tick can go on to spawn the next add.
+    events = [];
+    for (let i = 0; i < 200 && state.boss; i++) {
+      state.timeRemainingMs = 60000;
+      tick(state, profile, 1 / 30);
+      if (state.boss) expect(state.boss.vulnerable).toBe(true);
+    }
+    expect(eventsOfType('boss-shield-raised')).toHaveLength(0);
   });
 
   it('presents the authored finale problem for the last stretch', () => {
-    const { state, profile, rules } = enterBossFight('l2');
+    const { state, profile, rules } = enterBossFight();
     tickUntil(state, profile, () => !state.boss || state.boss.inFinale, 'the finale');
     expect(state.boss!.problem.source).toBe('authored');
     expect(state.boss!.problem.displayText).toBe(

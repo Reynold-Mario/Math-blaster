@@ -3,21 +3,15 @@
   import GameCanvas from './render/GameCanvas.svelte';
   import SkillTreeScreen from './skills/SkillTreeScreen.svelte';
   import { InputManager } from './input/InputManager';
-  import {
-    createInitialRuntimeState,
-    resetRun,
-    advanceToNextStage,
-    tick,
-    handleInputAction,
-  } from './runtime/gameFlow';
+  import { createInitialRuntimeState, resetRun, tick, handleInputAction } from './runtime/gameFlow';
   import type { RuntimeState } from './runtime/RuntimeState';
   import type { PlayerProfile } from './runtime/PlayerProfile';
   import { loadPlayerProfile, savePlayerProfile } from './runtime/PlayerProfile';
   import { installSkillTreeDebugTools } from './runtime/devTools';
   import { purchaseNextInstallment, type SkillNode } from './skills/SkillTree';
   import type { BaseSkillEffect } from './skills/baseSkillTree';
-  import { GAME_LEVELS } from './levels/gameLevels';
-  import type { StageTheme } from './levels/LevelDefinition';
+  import { backdropForWave } from './levels/waveProgression';
+  import type { Backdrop } from './levels/LevelDefinition';
   import { gameEvents, type GameEvent } from './events';
   import { wireAudioToEvents, setMuted, isMuted } from './audio';
   import type { GamePhase } from './types';
@@ -28,30 +22,30 @@
   let countdownValue = $state(3);
   let muted = $state(isMuted());
   let finalScore = $state(0);
-  /** How the last boss fight ended, so the stage-clear screen can tell the
-   * player whether they outlasted it or mastered it. */
-  let lastBossDefeat = $state<{ by: 'survival' | 'mastery'; bestCombo: number } | null>(null);
+  /** How far the run got, for the end-of-run readout. The wave number is
+   * the score that actually means something in an endless run. */
+  let finalWave = $state(1);
 
   const input = new InputManager();
   let stageWrapperEl: HTMLDivElement | undefined = $state();
   let dragging = false;
 
-  const currentLevelDef = $derived(GAME_LEVELS[runtime.stageIndex]);
-  const isBossPhase = $derived(runtime.stagePhase === 'boss' && runtime.boss !== null);
-  const stageName = $derived(isBossPhase ? runtime.boss!.name : currentLevelDef.name);
+  const isBossPhase = $derived(runtime.runPhase === 'boss' && runtime.boss !== null);
   const currentTheme = $derived(
-    (isBossPhase && currentLevelDef.boss?.theme ? currentLevelDef.boss.theme : currentLevelDef.theme) as StageTheme
+    (isBossPhase && runtime.bossRules?.theme ? runtime.bossRules.theme : backdropForWave(runtime.waveNumber)) as Backdrop
   );
-  const nextStageName = $derived.by(() => {
-    const n = GAME_LEVELS[runtime.stageIndex + 1];
-    return n ? n.name : '';
-  });
   const secondsRemaining = $derived(Math.max(0, Math.ceil(runtime.timeRemainingMs / 1000)));
   const timeLow = $derived(runtime.timeRemainingMs <= 10000);
   const bossPhaseName = $derived.by(() => {
     if (!isBossPhase) return '';
-    return currentLevelDef.boss?.phases[runtime.boss!.phaseIndex]?.name ?? '';
+    return runtime.bossRules?.phases[runtime.boss!.phaseIndex]?.name ?? '';
   });
+  /** Enemies still standing in this wave. A wave ends when this hits 0, so
+   * it's the honest progress readout - not a kill quota. */
+  const waveRemaining = $derived(runtime.enemies.length);
+  const waveCleared = $derived(Math.max(0, runtime.waveSize - waveRemaining));
+  const waveProgressPct = $derived(runtime.waveSize > 0 ? (waveCleared / runtime.waveSize) * 100 : 0);
+  const incoming = $derived(runtime.waveBreatherSec > 0);
   const surviveSeconds = $derived(isBossPhase ? Math.max(0, Math.ceil(runtime.boss!.surviveRemainingMs / 1000)) : 0);
 
   function skillLevel(id: string): number {
@@ -61,29 +55,16 @@
     return skillLevel(id) > 0 && (runtime.skillCooldowns[id] ?? 0) <= 0;
   }
 
-  function endRun(p: 'gameover' | 'victory') {
+  function endRun() {
     finalScore = runtime.score;
-    phase = p;
+    finalWave = runtime.waveNumber;
+    phase = 'gameover';
   }
 
   function handleFlowEvent(event: GameEvent) {
     switch (event.type) {
-      case 'boss-defeated':
-        lastBossDefeat = { by: event.by, bestCombo: event.bestCombo };
-        break;
-      case 'stage-cleared':
-        phase = 'stageClear';
-        break;
-      case 'victory':
-        endRun('victory');
-        break;
       case 'game-over':
-        endRun('gameover');
-        break;
-      case 'level-started':
-        // Cleared here rather than on stage-clear, which fires *after*
-        // the boss-defeated event it needs to survive long enough to show.
-        lastBossDefeat = null;
+        endRun();
         break;
       case 'currency-earned':
         savePlayerProfile(profile);
@@ -109,11 +90,6 @@
   }
   function startRun() {
     resetRun(runtime, profile);
-    countdownValue = 3;
-    phase = 'countdown';
-  }
-  function continueRun() {
-    advanceToNextStage(runtime);
     countdownValue = 3;
     phase = 'countdown';
   }
@@ -143,9 +119,6 @@
   function handleUIKeydown(e: KeyboardEvent) {
     if (phase === 'boot' && (e.key === 'Enter' || e.key === ' ')) {
       goToSkillTree();
-      e.preventDefault();
-    } else if (phase === 'stageClear' && (e.key === 'Enter' || e.key === ' ')) {
-      continueRun();
       e.preventDefault();
     }
   }
@@ -219,8 +192,8 @@
         <div class="score">Score: {runtime.score}</div>
       </div>
       <div class="hud-mid">
-        <div class="stage-world">{currentLevelDef.world}</div>
-        <div class="stage-name">{stageName}</div>
+        <div class="wave-label">{isBossPhase ? 'BOSS WAVE' : incoming ? 'INCOMING' : 'WAVE'}</div>
+        <div class="wave-number">WAVE {runtime.waveNumber}</div>
         {#if isBossPhase}
           <div class="bar boss">
             <div class="fill" style="width:{(runtime.boss!.surviveRemainingMs / runtime.boss!.surviveTotalMs) * 100}%"></div>
@@ -231,10 +204,12 @@
               ⚡ {runtime.boss!.combo}/{runtime.boss!.comboRequired}
             </span>
           </div>
-          {#if bossPhaseName}<div class="boss-phase">{runtime.boss!.inFinale ? 'FINAL ATTACK' : bossPhaseName}</div>{/if}
+          <div class="boss-phase">{runtime.boss!.inFinale ? 'FINAL ATTACK' : bossPhaseName || runtime.boss!.name}</div>
         {:else}
-          <div class="bar level"><div class="fill" style="width:{(runtime.enemiesDefeated / currentLevelDef.enemiesToClear) * 100}%"></div></div>
-          <div class="stage-progress">{runtime.enemiesDefeated}/{currentLevelDef.enemiesToClear} defeated</div>
+          <div class="bar level"><div class="fill" style="width:{waveProgressPct}%"></div></div>
+          <div class="wave-progress">
+            {#if incoming}wave incoming{:else}{waveRemaining} left{/if}
+          </div>
         {/if}
       </div>
       <div class="hud-right">
@@ -261,25 +236,10 @@
         </div>
       {/if}
 
-      {#if phase === 'stageClear'}
+      {#if phase === 'gameover'}
         <div class="overlay">
-          <h2>Stage Clear! 🎉</h2>
-          <p>{currentLevelDef.name} complete.</p>
-          {#if lastBossDefeat}
-            <p class="next-up">
-              {lastBossDefeat.by === 'mastery'
-                ? `Mastered it - ${lastBossDefeat.bestCombo} exact answers in a row! ⚡`
-                : `You outlasted it. Best combo: ${lastBossDefeat.bestCombo} 🛡`}
-            </p>
-          {/if}
-          {#if nextStageName}<p class="next-up">Next up: {nextStageName}</p>{/if}
-          <button class="big-btn" onclick={continueRun}>Continue ▶</button>
-        </div>
-      {/if}
-
-      {#if phase === 'gameover' || phase === 'victory'}
-        <div class="overlay">
-          <h2>{phase === 'victory' ? 'You defeated the Math Overlord! 🏆' : "Time's Up!"}</h2>
+          <h2>Time's Up!</h2>
+          <p class="next-up">You reached wave {finalWave}.</p>
           <p>Final Score: {finalScore}</p>
           <p class="currency-note">💰 {profile.currency} total banked</p>
           <button class="big-btn" onclick={startRun}>Play Again ▶</button>
@@ -455,16 +415,17 @@
     align-items: center;
     gap: 2px;
   }
-  .stage-world {
+  .wave-label {
     font-size: 11px;
     font-weight: 700;
     opacity: 0.8;
+    letter-spacing: 0.08em;
   }
-  .stage-name {
+  .wave-number {
     font-family: 'Press Start 2P', monospace;
     font-size: 11px;
   }
-  .stage-progress {
+  .wave-progress {
     font-size: 11px;
     font-weight: 700;
   }

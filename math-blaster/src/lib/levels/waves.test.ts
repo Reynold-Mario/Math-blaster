@@ -1,4 +1,4 @@
-import { buildFormation, waveAt, nextWaveIndex, type WavePlan, type WaveSpec } from './waves';
+import { buildFormation, type WaveSpec } from './waves';
 import { LANE_MIN_PCT, LANE_MAX_PCT } from './enemyArchetypes';
 
 function spec(overrides: Partial<WaveSpec> = {}): WaveSpec {
@@ -93,30 +93,5 @@ describe('buildFormation', () => {
       expect(new Set(slots.map((s) => s.xPct)).size).toBeGreaterThan(1);
       expect(new Set(slots.map((s) => s.y)).size).toBeGreaterThan(1);
     });
-  });
-});
-
-describe('wave plan traversal', () => {
-  const plan: WavePlan = {
-    waves: [spec({ gapSec: 1 }), spec({ gapSec: 2 }), spec({ gapSec: 3 })],
-    loopFrom: 1,
-  };
-
-  it('walks forward through the authored waves', () => {
-    expect(nextWaveIndex(plan, 0)).toBe(1);
-    expect(nextWaveIndex(plan, 1)).toBe(2);
-  });
-
-  it('loops back to loopFrom rather than restarting, so the opener plays once', () => {
-    expect(nextWaveIndex(plan, 2)).toBe(1);
-  });
-
-  it('never returns an index the plan cannot serve', () => {
-    const single: WavePlan = { waves: [spec()], loopFrom: 3 };
-    expect(nextWaveIndex(single, 0)).toBe(0);
-  });
-
-  it('falls back to a real wave when handed an out-of-range index', () => {
-    expect(waveAt(plan, 99)).toBe(plan.waves[1]);
   });
 });
