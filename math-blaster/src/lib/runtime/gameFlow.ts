@@ -43,28 +43,57 @@ const BOSS_FX_Y_PCT = 12;
 // rest of the run free. A player who keeps clearing waves keeps playing;
 // one who starts leaking enemies loses the bonus and the clock together.
 //
-// All placeholders - none of this has been tuned against real play. ---
+// These numbers HAVE now been tuned, against simulated runs rather than
+// against children - `balanceSim.ts` drives this module with modelled
+// players and reports where runs end. What that measured, and what these
+// values are set to answer:
+//
+//  - A slow player (~6.5s per problem) was walled at the first boss: the
+//    median run ended on wave 5 and only 40% of them ever got past it.
+//  - The payout is deliberately weighted toward the FLAT part rather than
+//    the per-kill share. Per-kill rewards throughput, which is precisely
+//    what a struggling child does not have; the flat part is what lets a
+//    player who answered one of two still come out roughly level.
+//  - It cannot balance for both ends at once: a payout that lets a 6.5s
+//    player survive necessarily overpays a 3.2s one, who therefore climbs
+//    to the ceiling and stays there. That is what the ceiling is FOR - it
+//    is the pressure valve on a surplus, not an oversight. What matters is
+//    that it arrives late in a run rather than at wave 6.
+//
+// Re-run the harness after touching any of these; they interact. ---
 
-const BASE_TIMER_MS = 45000;
+const BASE_TIMER_MS = 50000;
 /**
  * How far above a player's *starting* clock earned time can bank.
  *
- * The ceiling is relative rather than absolute on purpose. A flat cap of
- * 75s would sit exactly at base + a maxed More Time, so a fully upgraded
- * player would begin every run pinned to it - every wave-clear payout
- * silently discarded, and More Time reduced to "start at the ceiling"
- * rather than an upgrade that keeps paying. Relative to the start, every
- * player gets the same bankable slack and More Time raises both ends.
+ * The ceiling is relative rather than absolute on purpose. A flat cap at
+ * base + a maxed More Time would leave a fully upgraded player pinned to it
+ * from wave 1 - every wave-clear payout silently discarded, and More Time
+ * reduced to "start at the ceiling" rather than an upgrade that keeps
+ * paying. Relative to the start, every player gets the same bankable slack
+ * and More Time raises both ends.
+ *
+ * The size of the slack is what decides how deep a strong player gets
+ * before their surplus starts being discarded. It was 30s, which measured
+ * as a competent player pinned from wave 6 of a ~30-wave run - most of the
+ * run spent with the clock inert and no feedback for good play.
  */
-const BANKABLE_HEADROOM_MS = 30000;
-/** Paid for clearing an ordinary wave, before per-kill share. */
-const WAVE_CLEAR_BONUS_MS = 12000;
+const BANKABLE_HEADROOM_MS = 35000;
+/** Paid for clearing an ordinary wave, before per-kill share. Carries most
+ * of the payout on purpose - see the note above on why the flat part is
+ * what keeps a struggling player in the run. It has to stay comfortably
+ * below (formation size x impact penalty), or letting a whole wave land
+ * becomes a free way past a wave the player can't answer. */
+const WAVE_CLEAR_BONUS_MS = 9500;
 /** Paid per qualifying kill in the cleared wave. An enemy that got through
  * costs the player this as well as the impact penalty. */
-const WAVE_CLEAR_PER_KILL_BONUS_MS = 1500;
+const WAVE_CLEAR_PER_KILL_BONUS_MS = 3000;
 /** Paid for surviving a boss wave, whichever route won it. */
 const BOSS_CLEAR_BONUS_MS = 25000;
-const BASE_IMPACT_TIME_PENALTY_MS = 5000;
+/** Cut from the clock by one enemy reaching the impact line. Every point of
+ * this compounds for a weak player, who leaks on most waves - it was 5s,
+ * which was most of why a slow run died before the second boss. */
+const BASE_IMPACT_TIME_PENALTY_MS = 3500;
 const BASE_CURRENCY_PER_KILL = 5;
 const BASE_PLAYER_SPEED_PCT_PER_SEC = 55;
 

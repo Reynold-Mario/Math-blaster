@@ -107,6 +107,42 @@ describe('wave formations', () => {
     }
   });
 
+  it('trims an opening formation below its authored width', () => {
+    // Wave 3 is authored as a trio, but the opening cap is a pair. This is
+    // the early-game difficulty curve: a child who can only answer one
+    // problem per descent leaks every enemy past the first no matter how
+    // many were sent, so a third arrival is pure penalty, not difficulty.
+    expect(arcadeDifficultyFor(3).maxConcurrent).toBe(2);
+    expect(waveSpecFor(3).archetypes).toHaveLength(2);
+  });
+
+  it('sends more at once as a run goes on, so concurrency is a real escalation', () => {
+    // The cap used to only ever trim: every authored formation already sat
+    // within it, so raising the ramp changed nothing at all until the tail
+    // started cycling some thirty waves in - and a player quick enough to
+    // clear four enemies just coasted until then.
+    const meanWidth = (from: number, to: number) => {
+      const widths: number[] = [];
+      for (let wave = from; wave <= to; wave++) {
+        if (!isBossWave(wave)) widths.push(waveSpecFor(wave).archetypes.length);
+      }
+      return widths.reduce((a, b) => a + b, 0) / widths.length;
+    };
+
+    expect(meanWidth(11, 20)).toBeGreaterThan(meanWidth(1, 10));
+    expect(meanWidth(31, 40)).toBeGreaterThan(meanWidth(11, 20));
+  });
+
+  it('keeps the authored contrast between a breather wave and a busy one', () => {
+    // Widening adds the same number of slots to every formation rather than
+    // filling each to the cap, so the ladder's internal shape survives -
+    // a wave authored as a lone bulwark still reads as a lull deep into a
+    // run, instead of every wave flattening out to the same width.
+    const widths = WAVES.filter((w) => !isBossWave(w)).map((w) => waveSpecFor(w).archetypes.length);
+    const deepWidths = widths.slice(40);
+    expect(Math.min(...deepWidths)).toBeLessThan(Math.max(...deepWidths));
+  });
+
   it('skips a formation on boss waves without skipping one in the ladder', () => {
     // A boss consumes a wave *number*, not a formation - so the wave after
     // a boss must send the formation the boss wave did not.
