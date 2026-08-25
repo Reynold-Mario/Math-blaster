@@ -118,41 +118,59 @@ describe('resolveGruntHit', () => {
     let randomSpy: jest.SpyInstance;
     afterEach(() => randomSpy.mockRestore());
 
-    it('forces a reinforcement on a close answer when the roll succeeds', () => {
-      randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.1); // < 0.5 chance
-      const outcome = resolveGruntHit(result('close'), grunt(), 0);
-      expect(outcome.reinforce).toBe(true);
-      expect(outcome.missStreak).toBe(0);
-    });
+    // The rule used to be the other way round: a `close` answer rolled a
+    // 50% reinforcement chance and a `partial` 35%, while a single outright
+    // wrong answer rolled nothing - so reasoning your way to within one of
+    // the answer was punished harder than guessing.
+    it.each(['exact', 'equivalent', 'close', 'partial'] as const)(
+      'never reinforces on a %s answer, however unlucky the roll',
+      (verdict) => {
+        randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+        const outcome = resolveGruntHit(result(verdict), grunt(), 0);
+        expect(outcome.reinforce).toBe(false);
+      }
+    );
 
-    it('does not reinforce a close answer when the roll fails', () => {
-      randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.9); // > 0.5 chance
-      expect(resolveGruntHit(result('close'), grunt(), 0).reinforce).toBe(false);
-    });
+    it.each(['exact', 'equivalent', 'close', 'partial'] as const)(
+      'clears a standing miss streak on a %s answer',
+      (verdict) => {
+        randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.9);
+        // Anything that landed at all says the player is still working at
+        // the problem, which is the only thing reinforcements care about.
+        expect(resolveGruntHit(result(verdict), grunt(), 4).missStreak).toBe(0);
+      }
+    );
 
-    it('resets the miss streak on exact/equivalent even without reinforcing', () => {
-      randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.9);
-      const outcome = resolveGruntHit(result('exact'), grunt(), 2);
+    it('never punishes a single wrong answer', () => {
+      randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+      const outcome = resolveGruntHit(result('incorrect'), grunt(), 0);
       expect(outcome.reinforce).toBe(false);
-      expect(outcome.missStreak).toBe(0);
+      expect(outcome.missStreak).toBe(1);
     });
 
-    it('builds a miss streak on repeated incorrect answers without reinforcing early', () => {
-      randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.9);
-      const first = resolveGruntHit(result('incorrect'), grunt(), 0);
-      expect(first.reinforce).toBe(false);
-      expect(first.missStreak).toBe(1);
-
-      const second = resolveGruntHit(result('incorrect'), grunt(), first.missStreak);
-      expect(second.reinforce).toBe(false);
-      expect(second.missStreak).toBe(2);
+    it('raises the chance with every further consecutive miss', () => {
+      // Sampled just under each step, so a roll that would have failed at
+      // one streak length succeeds at the next.
+      randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.58);
+      // streak 2 -> 35%: too low to fire.
+      expect(resolveGruntHit(result('incorrect'), grunt(), 1).reinforce).toBe(false);
+      // streak 3 -> 60%: now it does.
+      expect(resolveGruntHit(result('incorrect'), grunt(), 2).reinforce).toBe(true);
     });
 
-    it('forces a reinforcement once the miss streak threshold is reached, and resets it', () => {
-      randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.9);
-      const outcome = resolveGruntHit(result('invalid'), grunt(), 2);
+    it('becomes a certainty for a player who has stopped answering', () => {
+      randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0.999);
+      expect(resolveGruntHit(result('invalid'), grunt(), 8).reinforce).toBe(true);
+    });
+
+    it('keeps building the streak after a reinforcement fires', () => {
+      // Resetting here would sawtooth the pressure back to zero every time
+      // it landed, which is the opposite of "the less the player engages,
+      // the more arrives". Only engaging clears it.
+      randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+      const outcome = resolveGruntHit(result('incorrect'), grunt(), 3);
       expect(outcome.reinforce).toBe(true);
-      expect(outcome.missStreak).toBe(0);
+      expect(outcome.missStreak).toBe(4);
     });
   });
 });

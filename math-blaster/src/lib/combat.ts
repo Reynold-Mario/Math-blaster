@@ -1,12 +1,26 @@
 import type { AnswerResult, AnswerVerdict } from './math/evaluator';
 
-/** How many consecutive incorrect/invalid answers (against the same
- * target) it takes to force a reinforcement, independent of the
- * close/partial chance-based rule below. */
-const MISS_STREAK_THRESHOLD = 3;
+// --- Reinforcements. A reinforcement is the consequence of the player
+// having stopped engaging with the problem in front of them, and NOTHING
+// ELSE. It is not a difficulty knob and not a timer.
+//
+// The old rule had this backwards. A `close` answer rolled a 50% chance of
+// calling one in and a `partial` 35%, while a single outright wrong answer
+// rolled nothing at all - so the player who reasoned their way to within
+// one of the answer was punished harder than the one who guessed. The
+// stated reasoning was that a near-miss doesn't remove the enemy, so the
+// wave stretches; but the whole rest of the design says the reward for a
+// near-miss is TIME, and this was quietly taking it back.
+//
+// So anything that lands at all now counts as engaging and resets the
+// escalation, and only `incorrect`/`invalid` build toward it. ---
 
-const REINFORCE_CHANCE_CLOSE = 0.5;
-const REINFORCE_CHANCE_PARTIAL = 0.35;
+/** Consecutive misses that are free. A single wrong answer is never
+ * punished - a child guessing once is thinking, not disengaging. */
+const REINFORCE_GRACE_MISSES = 1;
+/** Chance on the first miss past the grace, then climbing per miss. */
+const REINFORCE_CHANCE_START = 0.35;
+const REINFORCE_CHANCE_STEP = 0.25;
 
 // --- Grunt knockback. Grunts have no health: an exact answer breaks a
 // layer outright, and a near-miss shoves the enemy back up the screen
@@ -85,30 +99,40 @@ interface ReinforcementDecision {
   missStreak: number;
 }
 
+/** Whether an answer counts as engaging with the problem at all. Exact and
+ * equivalent are obvious; `close` is reasoning that landed near, and
+ * `partial` at least got a place value right. All four say the player is
+ * still working, which is the only thing reinforcements care about. */
+function isEngaged(verdict: AnswerVerdict): boolean {
+  return isMastered(verdict) || verdict === 'close' || verdict === 'partial';
+}
+
 /**
- * Close and partial answers each get their own chance to call in a
- * reinforcement immediately. Exact and equivalent never do, and reset the
- * streak - they're fully correct, there's nothing to be "repeated" about.
- * Incorrect and invalid don't reinforce on their own, but build toward the
- * repeated-mistakes threshold instead, so a single bad guess is never
- * punished but a real pattern of them still has teeth.
+ * Whether this answer calls in a reinforcement.
+ *
+ * Anything that landed at all resets the escalation to zero - a player
+ * still reasoning at the problem is never punished for it, however far off
+ * they are. Only `incorrect` and `invalid` build toward a reinforcement,
+ * and the chance CLIMBS with each consecutive one, so drifting further from
+ * the maths gets steadily more crowded while a single bad guess costs
+ * nothing.
+ *
+ * The streak deliberately survives a reinforcement firing. Resetting it
+ * there would sawtooth the pressure back to zero every time it landed,
+ * which is the opposite of "the less the player engages, the more arrives";
+ * only actually engaging clears it.
  */
 function decideReinforcement(verdict: AnswerVerdict, missStreak: number): ReinforcementDecision {
-  if (isMastered(verdict)) {
+  if (isEngaged(verdict)) {
     return { shouldReinforce: false, missStreak: 0 };
   }
-  if (verdict === 'close') {
-    return { shouldReinforce: Math.random() < REINFORCE_CHANCE_CLOSE, missStreak: 0 };
-  }
-  if (verdict === 'partial') {
-    return { shouldReinforce: Math.random() < REINFORCE_CHANCE_PARTIAL, missStreak: 0 };
-  }
-  // incorrect or invalid
+
   const streak = missStreak + 1;
-  if (streak >= MISS_STREAK_THRESHOLD) {
-    return { shouldReinforce: true, missStreak: 0 };
-  }
-  return { shouldReinforce: false, missStreak: streak };
+  const past = streak - REINFORCE_GRACE_MISSES;
+  if (past <= 0) return { shouldReinforce: false, missStreak: streak };
+
+  const chance = Math.min(1, REINFORCE_CHANCE_START + (past - 1) * REINFORCE_CHANCE_STEP);
+  return { shouldReinforce: Math.random() < chance, missStreak: streak };
 }
 
 /** The consequence of one shot on a grunt. Pure - callers apply the

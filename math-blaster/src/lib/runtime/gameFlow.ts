@@ -167,6 +167,10 @@ const BOSS_ANSWER_SCORE = 15;
 /** Each add a bomb clears during a boss fight is worth this much off the
  * survive clock. */
 const BOMB_BOSS_CUT_PER_ADD_MS = 1200;
+/** How much slower a boss's reinforcements fall than the fight's own
+ * arcade difficulty asks for. An add exists to make disengaging cost
+ * something, so it has to stay readable - see `spawnBossAdd`. */
+const BOSS_ADD_SPEED_MULTIPLIER = 0.8;
 
 function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -279,7 +283,7 @@ export function createInitialRuntimeState(): RuntimeState {
     enemiesDefeatedThisWave: 0,
     reinforcementsThisWave: 0,
     waveSize: 0,
-    spawnTimer: 0,
+    bossReinforceCooldownSec: 0,
     waveBreatherSec: 0,
     missStreak: 0,
     skillCooldowns: {},
@@ -324,7 +328,7 @@ export function beginWave(state: RuntimeState, waveNumber: number): void {
   state.enemiesDefeatedThisWave = 0;
   state.reinforcementsThisWave = 0;
   state.waveSize = 0;
-  state.spawnTimer = 0;
+  state.bossReinforceCooldownSec = 0;
   state.waveBreatherSec = WAVE_BREATHER_SEC;
   gameEvents.emit({ type: 'wave-announced', waveNumber, isBoss: isBossWave(waveNumber) });
 }
@@ -380,6 +384,13 @@ interface SpawnOptions {
   archetype: EnemyArchetypeId;
   xPct: number;
   y: number;
+  /** Overrides what this enemy asks. Only boss adds use it, to draw an
+   * easier problem than the fight they arrive in - see `spawnBossAdd`. */
+  problem?: ProblemDefinition;
+  /** Scales this enemy's fall speed on top of every other factor. Applied
+   * here rather than mutated afterwards, so speed stays composed in exactly
+   * one place (see the note on `GLOBAL_FALL_SPEED_MULTIPLIER`). */
+  speedMultiplier?: number;
 }
 
 /** Builds one enemy from its archetype. Everything mechanical - sprite,
@@ -388,7 +399,7 @@ interface SpawnOptions {
  * is no health to initialise: `layersRemaining` is the whole of it. */
 function spawnEnemy(state: RuntimeState, profile: PlayerProfile, options: SpawnOptions): EnemyInstance {
   const archetype = enemyArchetype(options.archetype);
-  const problem = problemForCurrentPhase(state, profile);
+  const problem = options.problem ?? problemForCurrentPhase(state, profile);
   const [minSpeed, maxSpeed] = activeArcadeDifficulty(state).fallSpeed;
   const lane = clampLane(options.xPct);
 
@@ -406,6 +417,7 @@ function spawnEnemy(state: RuntimeState, profile: PlayerProfile, options: SpawnO
     wavePhase: Math.random(),
     y: options.y,
     speed:
+      (options.speedMultiplier ?? 1) *
       randRange(minSpeed, maxSpeed) *
       archetype.speedMultiplier *
       GLOBAL_FALL_SPEED_MULTIPLIER *
@@ -440,23 +452,64 @@ function releaseWave(state: RuntimeState, profile: PlayerProfile): void {
   gameEvents.emit({ type: 'wave-incoming', waveNumber: state.waveNumber, count: slots.length });
 }
 
+/**
+ * One reinforcement, called in because the player stopped engaging with the
+ * boss's maths. It is DELIBERATELY MUCH EASIER than the fight it arrives in,
+ * on all three axes that make an enemy hard:
+ *
+ *  - **Its problem** comes from the easiest rung of the boss's scope, not
+ *    from `generateBossProblem`. This is the big one. Adds used to inherit
+ *    the boss's own cumulative scope weighted toward its hard end, so a
+ *    player already failing the boss's maths was handed more of the same
+ *    maths to fail - which made a bad patch unrecoverable rather than
+ *    something to climb out of.
+ *  - **Its archetype** comes from `BOSS_ADD_LADDER`, which stops short of
+ *    bulwark and sentinel.
+ *  - **Its speed** is scaled down, so there is time to actually read it.
+ *
+ * The point of an add is to make disengaging cost something while still
+ * offering the player a problem they can answer to dig out.
+ */
 function spawnBossAdd(state: RuntimeState, profile: PlayerProfile): EnemyInstance {
   const phase = currentBossPhase(state);
-  return spawnEnemy(state, profile, { archetype: phase.addArchetype, xPct: randInt(12, 88), y: 0 });
+  const scope = currentBossRules(state).scope;
+  return spawnEnemy(state, profile, {
+    archetype: phase.addArchetype,
+    xPct: randInt(12, 88),
+    y: 0,
+    // Ordered easiest-first by contract - see `cumulativeScopeForGrade`.
+    problem: generateProblem(scope[0]),
+    speedMultiplier: BOSS_ADD_SPEED_MULTIPLIER,
+  });
 }
 
-/** The consequence of the combat layer asking for a reinforcement. What
- * arrives depends on where we are: a level sends in a spore, a boss calls
- * whatever its current phase calls. */
+/**
+ * The consequence of the combat layer asking for a reinforcement - the ONLY
+ * way an add ever reaches the board during a boss fight now. A level sends
+ * in a spore; a boss calls whatever its current phase calls.
+ *
+ * The two contexts are held back differently, because what a spare enemy
+ * costs differs. During a wave it extends the board that has to be cleared
+ * before the run can move on, so it's capped per wave. During a boss fight
+ * the fight ends on its own clock, so the limit is a cooldown instead: an
+ * uncapped boss can afford to keep calling minions, but a player who
+ * answers four wrong in a row shouldn't have four arrive at once.
+ */
 function tryReinforce(state: RuntimeState, profile: PlayerProfile): void {
   if (!hasRoom(state)) return;
-  // Outside a boss fight, reinforcements extend the wave that has to be
-  // cleared before the run can move on - so they're capped. A boss fight
-  // ends on its own clock and doesn't need the guard.
-  if (state.runPhase !== 'boss') {
+
+  if (state.runPhase === 'boss') {
+    if (state.bossReinforceCooldownSec > 0) return;
+    const phase = currentBossPhase(state);
+    // Floundering through the finale gets them faster, as it always did.
+    const multiplier = state.boss?.inFinale ? FINALE_ADD_INTERVAL_MULTIPLIER : 1;
+    state.bossReinforceCooldownSec =
+      randRange(phase.addInterval[0], phase.addInterval[1]) * multiplier;
+  } else {
     if (state.reinforcementsThisWave >= MAX_REINFORCEMENTS_PER_WAVE) return;
     state.reinforcementsThisWave++;
   }
+
   const spawned =
     state.runPhase === 'boss'
       ? spawnBossAdd(state, profile)
@@ -723,7 +776,9 @@ function startBossPhase(state: RuntimeState, profile: PlayerProfile): void {
     inFinale: false,
     defeatedBy: null,
   };
-  state.spawnTimer = randRange(openingPhase.addInterval[0], openingPhase.addInterval[1]);
+  // Ready from the first shot: the boss calls nothing in until the player
+  // gives it a reason to, so there is no opening delay to schedule.
+  state.bossReinforceCooldownSec = 0;
   gameEvents.emit({ type: 'boss-phase-changed', phaseIndex: 0, name: openingPhase.name });
 }
 
@@ -1114,12 +1169,11 @@ function updateBossPhase(state: RuntimeState, profile: PlayerProfile, dt: number
 
   if (!frozen) updateBossDrift(state, dt);
 
-  state.spawnTimer -= dt;
-  if (state.spawnTimer <= 0) {
-    if (hasRoom(state)) spawnBossAdd(state, profile);
-    const multiplier = boss.inFinale ? FINALE_ADD_INTERVAL_MULTIPLIER : 1;
-    state.spawnTimer = randRange(phase.addInterval[0], phase.addInterval[1]) * multiplier;
-  }
+  // No timed add stream. A boss calls in reinforcements ONLY when the
+  // player has stopped engaging with its maths (see `tryReinforce`), so a
+  // player answering well - even nearly - fights it on an empty screen.
+  // This only counts the cooldown down; nothing spawns from here.
+  state.bossReinforceCooldownSec = Math.max(0, state.bossReinforceCooldownSec - dt);
 
   if (boss.surviveRemainingMs <= 0) onBossDefeated(state, profile, 'survival');
 }

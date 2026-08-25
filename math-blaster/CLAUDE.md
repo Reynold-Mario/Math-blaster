@@ -140,6 +140,10 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   comes through; `gradeTree.test.ts` and `gameFlow.test.ts` both pin the
   containment property out past wave 300. Arcade difficulty still scales with
   the wave number - that separation is the point.
+  A **grade-K exception is planned here** (not in the boss numbers) to absorb
+  the boss-economy regression on the youngest players - see the grade-K note
+  under "Known gaps" for what was measured and why the boss knobs are the
+  wrong place for it.
 - **Boss scope is cumulative, wave scope is not.** `cumulativeScopeForGrade()`
   spans K up through the run's grade, because waves teach this grade and bosses
   test everything up to it. It must stay ordered easiest-first:
@@ -239,6 +243,8 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   the one kill that matters most. `boss-defeated` carries `bountyEarned` and
   `timeBonusMs` as *actually granted* - the clock has a ceiling, and the banner
   must not promise time the player didn't get.
+  This costs the youngest players the most, on purpose but not to a settled
+  degree - see the grade-K note under "Known gaps" before retuning any of it.
 - **A boss is a kind of wave**, arriving on every `WAVE_BOSS_INTERVAL`th one
   (5). The `BOSS_ROSTER` supplies **identity only** - name, sprite, theme, and
   the phase *names* that give a fight its voice (plus a tier prefix on each
@@ -317,6 +323,34 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   mastery route silently becomes decorative again.
 - **Boss adds are ordinary enemies.** Shooting one no longer damages the boss
   (it used to). They matter because they threaten the run clock, nothing else.
+- **A REINFORCEMENT IS THE CONSEQUENCE OF DISENGAGING, AND NOTHING ELSE.**
+  There is no timed add stream during a boss fight - `updateBossPhase` only
+  counts a cooldown down, and `tryReinforce` is the sole path an add reaches
+  the board by. A player answering the boss (even nearly) fights it on an
+  empty screen; one who has stopped answering gets a rising stream. Two
+  halves to keep together:
+  - **What counts as answering.** exact/equivalent/close/partial all reset
+    the escalation; only incorrect/invalid build it, the first miss is free,
+    and the chance climbs per consecutive miss thereafter. The streak
+    deliberately SURVIVES a reinforcement firing - resetting it there would
+    sawtooth the pressure back to zero exactly when it should be mounting.
+    The old rule was backwards: `close` rolled 50% and `partial` 35% while a
+    single wrong answer rolled nothing, so reasoning to within one of the
+    answer was punished harder than guessing.
+  - **Adds are much easier than the fight they arrive in**, on all three axes
+    that make an enemy hard: their problem comes from the *easiest* rung of
+    the boss's scope (not `generateBossProblem`), their archetype from
+    `BOSS_ADD_LADDER`, and their speed is scaled by
+    `BOSS_ADD_SPEED_MULTIPLIER`. An add used to inherit the boss's own
+    cumulative scope weighted toward its hard end, which handed a player
+    already failing the boss's maths more of the same maths to fail - a bad
+    patch became unrecoverable instead of something to climb out of.
+  A wave keeps `MAX_REINFORCEMENTS_PER_WAVE` instead of a cooldown, because
+  what a spare enemy costs differs: during a wave it extends the board that
+  must be cleared before the run moves on, during a boss fight the fight ends
+  on its own clock. `SpawnOptions.problem`/`.speedMultiplier` exist for this
+  and keep speed composed in one place - don't mutate `enemy.speed` after
+  spawning.
 - **Partial credit uses place-value digit matching** (ones/tens/etc. compared by
   position), not "contains these digits somewhere" - e.g. 24 vs 42 scores zero
   matching digits despite sharing digits, because place value is the point.
@@ -325,6 +359,34 @@ instead of events - stop, that's the exact coupling this structure exists to avo
 
 Don't "fix" these without checking - they're intentional stopping points, not bugs:
 
+- **THE YOUNGEST PLAYERS REGRESSED WHEN ONLY BOSS KILLS STARTED PAYING, AND
+  THE FIX IS COMING FROM THE CURRICULUM, NOT FROM THE BOSS NUMBERS.**
+  Making the mastery route the only paying one cost the weakest modelled
+  player most: K slow's median run went from wave 10 to 6, and 62% get past
+  wave 5 where 80% did. That is the intended shape of the change - a boss you
+  cannot answer down costs you the ~45s you spent on it - but the size of it
+  on grade K is not settled, and **an exception for grade K's curricula is
+  planned to absorb it.** A K player's problem is accuracy: at ~0.72 exact
+  they master 11% of fights, so they almost never collect. Raising what a kill
+  pays cannot reach them; giving them maths they can actually chain answers on
+  can.
+  So do NOT "fix" this by retuning the boss economy. Both obvious knobs have
+  already been measured against the harness:
+  - `BOSS_CLEAR_BONUS_MS` 12.5s -> 18s moved G1 15->16 and G3 26->27 and left
+    K slow **identical on every figure**. It is mastery-gated, so at an 11%
+    mastery rate it is worth about 0.6s per fight to them - it pays the
+    players who could already afford bosses. (It is at 18s for that reason,
+    not this one.)
+  - `BOSS_COMBO_BASE` 5 -> 4 *is* effective (K slow mastery 11% -> 24%, past
+    wave 10 0% -> 5%, G3 back to baseline 28) and costs no fight length, since
+    the floor is `max(30, comboToDefeat * BOSS_SEC_PER_COMBO_ANSWER)`. It is
+    deliberately NOT taken: the grade-K curriculum exception is the intended
+    lever, and lowering the combo for everyone to rescue one grade would flatten
+    the mastery requirement for the grades that don't need it.
+  The remaining levers after that are shortening the fight
+  (`BOSS_MIN_SURVIVE_SEC`, currently the stated 30s minimum) or paying the
+  survival route something - and the latter is the distinction the whole boss
+  economy rests on, so it isn't available.
 - **Grades 4-12 are typed but unauthored.** `GRADE_ORDER` runs to 12;
   `GRADE_TOPICS` only has K-3. The grade picker offers only grades with topics,
   and `curriculumLadderForGrade` falls back to every authored curriculum for a
