@@ -263,6 +263,8 @@
     // anything is on the canvas.
     void loadSpriteAtlas();
 
+    starLayers = buildStarLayers();
+
     const unsubscribe = gameEvents.on(handleGameEvent);
 
     let raf = 0;
@@ -282,19 +284,117 @@
     return (pct / 100) * span;
   }
 
-  function drawBackground(ctx: CanvasRenderingContext2D) {
-    const grad = ctx.createLinearGradient(0, 0, 0, LOGICAL_H);
-    grad.addColorStop(0, theme.sky1);
-    grad.addColorStop(1, theme.sky2);
-    ctx.fillStyle = grad;
+  /**
+   * Parallax star layers. Far/dim/slow through near/bright/fast - the
+   * difference in rates is the whole effect, so keep them spread apart.
+   * Speeds are logical px per second, downward, which reads as the ship
+   * making way rather than the stars falling.
+   */
+  const STAR_LAYERS = [
+    { count: 110, size: 1, alpha: 0.4, speed: 5 },
+    { count: 50, size: 1, alpha: 0.72, speed: 13 },
+    { count: 18, size: 2, alpha: 0.95, speed: 26 },
+  ];
+  let starLayers: HTMLCanvasElement[] = [];
+
+  /** Deterministic PRNG. The starfield must be identical on every frame and
+   * every run - Math.random() here would make the sky boil. */
+  function mulberry32(seed: number): () => number {
+    return () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /** Rendered once, then scrolled with drawImage. Re-issuing a few hundred
+   * fillRects per frame would cost more than the whole rest of the scene. */
+  function buildStarLayers(): HTMLCanvasElement[] {
+    return STAR_LAYERS.map((layer, index) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = LOGICAL_W;
+      canvas.height = LOGICAL_H;
+      const lctx = canvas.getContext('2d')!;
+      const random = mulberry32(0x5eed + index * 7919);
+      for (let i = 0; i < layer.count; i++) {
+        // A little alpha variation stops a layer reading as a regular grid.
+        lctx.fillStyle = `rgba(255,255,255,${(layer.alpha * (0.55 + random() * 0.45)).toFixed(3)})`;
+        lctx.fillRect(
+          Math.floor(random() * LOGICAL_W),
+          Math.floor(random() * LOGICAL_H),
+          layer.size,
+          layer.size
+        );
+      }
+      return canvas;
+    });
+  }
+
+  /**
+   * The sky and nebula gradients, cached by the colours they were built
+   * from. The backdrop blends continuously with the wave number, so these
+   * change a few times a run - rebuilding them 60 times a second (which is
+   * what the old code did with the sky gradient) is pure waste.
+   */
+  let gradientCache: { key: string; sky: CanvasGradient; nebula: CanvasGradient } | null = null;
+
+  function backdropGradients(ctx: CanvasRenderingContext2D) {
+    const key = `${theme.sky1}|${theme.sky2}`;
+    if (gradientCache?.key === key) return gradientCache;
+
+    const sky = ctx.createLinearGradient(0, 0, 0, LOGICAL_H);
+    sky.addColorStop(0, theme.sky1);
+    sky.addColorStop(1, theme.sky2);
+
+    // A soft bloom of the rung's own colour, high and off-centre, so the
+    // sky has some structure behind the stars instead of a flat ramp.
+    const nebula = ctx.createRadialGradient(LOGICAL_W * 0.68, LOGICAL_H * 0.16, 8, LOGICAL_W * 0.68, LOGICAL_H * 0.16, LOGICAL_W * 0.62);
+    nebula.addColorStop(0, theme.sky1);
+    nebula.addColorStop(1, 'rgba(0,0,0,0)');
+
+    gradientCache = { key, sky, nebula };
+    return gradientCache;
+  }
+
+  function drawBackground(ctx: CanvasRenderingContext2D, nowMs: number) {
+    const { sky, nebula } = backdropGradients(ctx);
+    ctx.fillStyle = sky;
     ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
 
+    // Kept low on purpose: the bloom paints sky1 back over itself, so on the
+    // brighter rungs (Ember Nebula, Golden Nebula) a heavier alpha washes the
+    // top half out and starts competing with the problem the player is
+    // reading. It is meant to add structure, not light.
+    ctx.save();
+    ctx.globalAlpha = 0.32;
+    ctx.fillStyle = nebula;
+    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+    ctx.restore();
+
+    // Each layer is drawn twice, offset by a screen height, so the scroll
+    // wraps without a seam.
+    for (let i = 0; i < starLayers.length; i++) {
+      const offset = ((nowMs / 1000) * STAR_LAYERS[i].speed) % LOGICAL_H;
+      ctx.drawImage(starLayers[i], 0, Math.round(offset) - LOGICAL_H);
+      ctx.drawImage(starLayers[i], 0, Math.round(offset));
+    }
+
+    // The planet below. `Backdrop.ground` kept its name through the space
+    // retheme - it is still "the band under the line they must not cross".
     const groundY = px(IMPACT_LINE_PCT, LOGICAL_H);
     ctx.fillStyle = theme.ground;
     ctx.fillRect(0, groundY, LOGICAL_W, LOGICAL_H - groundY);
 
     ctx.save();
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    // A lit limb along the top edge, which is what makes the band read as a
+    // world rather than a rectangle.
+    ctx.fillStyle = 'rgba(226,232,240,0.22)';
+    ctx.fillRect(0, groundY, LOGICAL_W, 2);
+
+    // Light, not black: the impact line has to show against a dark sky.
+    ctx.strokeStyle = 'rgba(226,232,240,0.45)';
     ctx.lineWidth = 1;
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
@@ -309,7 +409,7 @@
    * nothing here has health. */
   function drawMeterBar(ctx: CanvasRenderingContext2D, cx: number, y: number, width: number, height: number, ratio: number, isBoss: boolean) {
     const x = cx - width / 2;
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillStyle = 'rgba(8,12,26,0.6)';
     ctx.fillRect(x, y, width, height);
     const fillW = width * Math.max(0, Math.min(1, ratio));
     const grad = ctx.createLinearGradient(x, 0, x + width, 0);
@@ -317,7 +417,7 @@
       grad.addColorStop(0, '#f87171');
       grad.addColorStop(1, '#fbbf24');
     } else {
-      grad.addColorStop(0, '#4ade80');
+      grad.addColorStop(0, '#3ddc97');
       grad.addColorStop(1, '#86efac');
     }
     ctx.fillStyle = grad;
@@ -342,15 +442,15 @@
     const boxW = textW + padX * 2;
     const x = cx - boxW / 2;
 
-    ctx.fillStyle = big ? '#fef08a' : '#fff9e6';
-    ctx.strokeStyle = '#14213d';
+    ctx.fillStyle = big ? '#dbeafe' : '#eef4ff';
+    ctx.strokeStyle = '#0b1226';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.roundRect(x, y, boxW, boxH, 6);
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = '#14213d';
+    ctx.fillStyle = '#101a30';
     ctx.fillText(text, cx, y + boxH / 2 + 1);
   }
 
@@ -402,9 +502,9 @@
     const totalW = total * pip + (total - 1) * gap;
     let x = cx - totalW / 2;
     for (let i = 0; i < total; i++) {
-      ctx.fillStyle = i < remaining ? '#fbbf24' : 'rgba(0,0,0,0.3)';
+      ctx.fillStyle = i < remaining ? '#fbbf24' : 'rgba(255,255,255,0.18)';
       ctx.fillRect(x, y, pip, pip);
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.strokeStyle = 'rgba(8,12,26,0.65)';
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y + 0.5, pip - 1, pip - 1);
       x += pip + gap;
@@ -453,11 +553,11 @@
     const totalW = required * pip + (required - 1) * gap;
     let x = cx - totalW / 2;
     for (let i = 0; i < required; i++) {
-      ctx.fillStyle = i < combo ? COLOR_COMBO : 'rgba(0,0,0,0.3)';
+      ctx.fillStyle = i < combo ? COLOR_COMBO : 'rgba(255,255,255,0.18)';
       ctx.beginPath();
       ctx.arc(x + pip / 2, y + pip / 2, pip / 2, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.strokeStyle = 'rgba(8,12,26,0.6)';
       ctx.lineWidth = 1;
       ctx.stroke();
       x += pip + gap;
@@ -528,7 +628,7 @@
     const x = LOGICAL_W / 2 - boxW / 2;
     const y = 6;
 
-    ctx.fillStyle = 'rgba(20, 33, 61, 0.85)';
+    ctx.fillStyle = 'rgba(8, 12, 26, 0.88)';
     ctx.strokeStyle = bannerColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -559,14 +659,14 @@
     const bx = x - boxW / 2;
     const by = y - boxH - 4;
 
-    ctx.fillStyle = player.inputBuffer ? '#fde68a' : '#ffffff';
-    ctx.strokeStyle = '#14213d';
+    ctx.fillStyle = player.inputBuffer ? '#a5f3fc' : '#eef4ff';
+    ctx.strokeStyle = '#0b1226';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.roundRect(bx, by, boxW, boxH, 6);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#14213d';
+    ctx.fillStyle = '#101a30';
     ctx.fillText(text, x, by + boxH / 2 + 1);
   }
 
@@ -580,13 +680,13 @@
     const boxH = 22;
     const boxW = ctx.measureText(f.text).width + padX * 2;
     ctx.fillStyle = f.color;
-    ctx.strokeStyle = '#14213d';
+    ctx.strokeStyle = '#0b1226';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.roundRect(x - boxW / 2, y - boxH / 2, boxW, boxH, 6);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#14213d';
+    ctx.fillStyle = '#101a30';
     ctx.fillText(f.text, x, y + 1);
     ctx.restore();
   }
@@ -603,8 +703,8 @@
     const totalW = digitWidths.reduce((a, b) => a + b, 0);
     const boxH = 24;
 
-    ctx.fillStyle = '#fff9e6';
-    ctx.strokeStyle = '#14213d';
+    ctx.fillStyle = '#eef4ff';
+    ctx.strokeStyle = '#0b1226';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.roundRect(x - totalW / 2 - 6, y - boxH / 2, totalW + 12, boxH, 6);
@@ -614,7 +714,7 @@
     ctx.textAlign = 'center';
     let cx = x - totalW / 2;
     for (let i = 0; i < f.answerDigits.length; i++) {
-      ctx.fillStyle = f.digitMatches[i] ? '#16a34a' : '#94a3b8';
+      ctx.fillStyle = f.digitMatches[i] ? '#16a34a' : '#7f8ea8';
       ctx.fillText(f.answerDigits[i], cx + digitWidths[i] / 2, y + 1);
       cx += digitWidths[i];
     }
@@ -686,7 +786,7 @@
     ctx.save();
     ctx.translate(shake.x, shake.y);
 
-    drawBackground(ctx);
+    drawBackground(ctx, nowMs);
 
     const target = resolveTarget(runtime.player, runtime.enemies, runtime.boss);
 

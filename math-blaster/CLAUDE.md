@@ -1,6 +1,7 @@
 # Pixel Math Blaster
 
-Pixel-art arcade math shooter for K-3 kids. Svelte 5 (runes) + TypeScript + Vite.
+Pixel-art arcade math shooter for K-3 kids, set in space. Svelte 5 (runes) +
+TypeScript + Vite.
 Gameplay renders on `<canvas>`; Svelte owns UI chrome only.
 
 Commands: `npm run dev` / `npm run build` / `npm run preview` / `npm run check`
@@ -70,7 +71,11 @@ lib/input/            InputManager abstracts keyboard/touch/future-gamepad into
 lib/Game.svelte       Top-level orchestrator: phases (boot/skillTree/countdown/
                     playing/gameover), HUD, wires InputManager, runs the rAF
                     loop, mounts GameCanvas + SkillTreeScreen.
-App.svelte           Arcade cabinet chrome (marquee/bezel/scanlines) around Game.
+App.svelte           A plain container around Game. It used to be an arcade
+                    cabinet - marquee, bulbs, CRT bezel, scanlines, vignette,
+                    vents - and all of that is deliberately gone. The pixel art
+                    is still pixel art ('Press Start 2P', nearest-neighbour
+                    scaling); it was the fake glass that went.
 ```
 
 **Do not collapse these layers.** If you're tempted to have `evaluator.ts` decide
@@ -98,8 +103,8 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   anything, stop. Every consequence in the game is expressed in *time* or in
   *questions answered*. `EnemyInstance` has no `hp`/`maxHp`; `GruntTarget` is
   `{ layersRemaining, shielded }` and that is the whole of an enemy's durability.
-- **Enemies are archetypes, not sprites.** Slime/bat/robot used to be purely
-  cosmetic. Now `EnemyArchetype` owns movement (straight/weave/dive), how many
+- **Enemies are archetypes, not sprites.** Drone/swarmer/hulk used to be
+  purely cosmetic. Now `EnemyArchetype` owns movement (straight/weave/dive), how many
   *layers* (= separate problems) it takes to kill, whether it starts shielded,
   whether it splits on death, and whether the kill counts toward the level
   quota. A **layer IS a question**, not a health pool with a question painted on
@@ -132,11 +137,28 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   `backdropForWave()` blends continuously along `BACKDROP_LADDER` rather than
   switching between palettes - a set change reads as "somewhere else", a
   gradient reads as travel, and the wave number already covers "where am I".
-  It holds at the last rung instead of wrapping (putting the opening garden
+  It holds at the last rung instead of wrapping (putting low orbit
   back on screen at wave 90 would read as losing progress), and a boss wave
   with no authored palette of its own darkens where it is rather than jumping
   somewhere unrelated. Colour parsing falls back to an unblended end rather
   than to black, so a malformed palette can't paint the scene out.
+  **The ten rungs are spaced roughly EVENLY in colour, and that is a
+  constraint rather than an aesthetic.** Because each blend runs over
+  `WAVES_PER_BACKDROP` waves, one outsized gap between adjacent rungs reads
+  mid-run as a lurch rather than as travel - `waveProgression.test.ts` pins
+  that no single wave jumps a whole rung's worth, measuring against the gap
+  between the first two. A draft of the space ladder had two nearly identical
+  navy rungs followed by a violet-to-orange jump three times their size, and
+  failed it. Every rung is dark at the BOTTOM and coloured at the TOP, so
+  enemies descend out of a nebula into empty space and the white-and-cyan
+  player ship always sits against the dark band.
+- **On a dark backdrop, a sprite's darkest tone must stay lighter than the
+  sky.** The enemy palettes were first picked against pastel daytime
+  backdrops; carried onto a starfield, the near-black shades let a silhouette
+  break apart - the leviathan lost its shoulder pods and landing struts
+  entirely and read as a floating visor. Hues also carry meaning: the player
+  is the only white-and-cyan thing on screen, enemies run warm or violet, and
+  a shield bubble's cyan is deliberately not an enemy hull colour.
 - **DIFFICULTY OF THE MATHS IS THE PLAYER'S GRADE, NOT THE WAVE NUMBER.**
   `gradeTree.ts` is the curriculum spine (it was dead code; now everything is
   drawn through it). `curriculumLadderForGrade()` gives a run that grade's
@@ -268,7 +290,7 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   roster contributes none of them. It used to contribute all of them, and
   because the roster cycles and its three entries are ordered easiest-first,
   **difficulty went backwards every third fight**: wave 15 fought a 3-phase
-  boss at `surviveSec` 28, then wave 20 fought "Elder Sum Slime King" with 2
+  boss at `surviveSec` 28, then wave 20 fought "Elder Sum Reactor" with 2
   phases, `surviveSec` 24 and an easier finale. Don't move any of these back
   onto the roster. `waveProgression.test.ts` pins monotonicity out past
   ordinal 24, that the opening phase is never shielded, and that adds are
@@ -458,6 +480,12 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   composes them from canvas primitives so they work over every silhouette
   without new pixel art. If you add archetype-specific art later, that's where
   it goes - not into new EnemyInstance fields.
+- **The starfield is seeded and pre-rendered, and the backdrop gradients are
+  cached.** Three parallax layers are rasterized once into offscreen canvases
+  at mount and then scrolled with `drawImage`; the sky and nebula gradients are
+  rebuilt only when the theme colours actually change (a few times a run),
+  where the old code rebuilt the sky gradient every frame. The starfield uses a
+  seeded PRNG - `Math.random()` there would make the sky boil.
 
 ## Conventions worth keeping
 

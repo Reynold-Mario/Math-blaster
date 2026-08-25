@@ -13,8 +13,8 @@
  * state.
  */
 
-export type GruntKind = 'slime' | 'bat' | 'robot';
-export type BossSpriteKind = 'boss1' | 'boss2';
+export type GruntKind = 'drone' | 'swarmer' | 'hulk';
+export type BossSpriteKind = 'dreadnought' | 'leviathan';
 
 /** How an enemy travels down the screen. Since aiming *is* horizontal
  * position, movement is the main lever on how hard something is to hit -
@@ -124,7 +124,7 @@ const ARCHETYPE_LIST: EnemyArchetype[] = [
   {
     id: 'drifter',
     label: 'Drifter',
-    sprite: 'slime',
+    sprite: 'drone',
     movement: 'straight',
     layers: 1,
     speedMultiplier: 1,
@@ -137,7 +137,7 @@ const ARCHETYPE_LIST: EnemyArchetype[] = [
   {
     id: 'weaver',
     label: 'Weaver',
-    sprite: 'bat',
+    sprite: 'swarmer',
     movement: 'weave',
     layers: 1,
     speedMultiplier: 1.1,
@@ -150,7 +150,7 @@ const ARCHETYPE_LIST: EnemyArchetype[] = [
   {
     id: 'diver',
     label: 'Diver',
-    sprite: 'bat',
+    sprite: 'swarmer',
     movement: 'dive',
     layers: 1,
     speedMultiplier: 1,
@@ -163,7 +163,7 @@ const ARCHETYPE_LIST: EnemyArchetype[] = [
   {
     id: 'bulwark',
     label: 'Bulwark',
-    sprite: 'robot',
+    sprite: 'hulk',
     movement: 'straight',
     layers: 2,
     speedMultiplier: 0.7,
@@ -176,7 +176,7 @@ const ARCHETYPE_LIST: EnemyArchetype[] = [
   {
     id: 'sentinel',
     label: 'Sentinel',
-    sprite: 'robot',
+    sprite: 'hulk',
     movement: 'straight',
     layers: 2,
     speedMultiplier: 0.6,
@@ -189,7 +189,7 @@ const ARCHETYPE_LIST: EnemyArchetype[] = [
   {
     id: 'splitter',
     label: 'Splitter',
-    sprite: 'slime',
+    sprite: 'drone',
     movement: 'straight',
     layers: 1,
     speedMultiplier: 0.8,
@@ -202,7 +202,7 @@ const ARCHETYPE_LIST: EnemyArchetype[] = [
   {
     id: 'spore',
     label: 'Spore',
-    sprite: 'slime',
+    sprite: 'drone',
     movement: 'weave',
     layers: 1,
     speedMultiplier: 1.25,

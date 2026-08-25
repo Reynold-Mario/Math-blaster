@@ -390,7 +390,7 @@
     max-width: 720px;
     margin: 0 auto;
     font-family: 'Baloo 2', sans-serif;
-    color: var(--ink);
+    color: var(--text);
   }
 
   .boot {
@@ -405,7 +405,7 @@
     font-family: 'Press Start 2P', monospace;
     font-size: clamp(22px, 6vw, 34px);
     line-height: 1.5;
-    text-shadow: 3px 3px 0 var(--marquee-yellow);
+    text-shadow: 3px 3px 0 var(--accent-warm);
     margin: 0;
   }
   .tagline {
@@ -417,8 +417,8 @@
     list-style: none;
     padding: 12px 16px;
     margin: 0;
-    background: var(--panel);
-    border: 3px solid var(--ink);
+    background: var(--surface);
+    border: 3px solid var(--edge);
     border-radius: 12px;
     display: flex;
     flex-direction: column;
@@ -430,9 +430,9 @@
     font-family: 'Press Start 2P', monospace;
     font-size: 14px;
     padding: 14px 22px;
-    background: var(--marquee-red);
+    background: var(--accent-hot);
     color: #fff;
-    border: 3px solid var(--ink);
+    border: 3px solid var(--edge-strong);
     border-radius: 10px;
     cursor: pointer;
     box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);
@@ -447,8 +447,8 @@
     margin: 0;
   }
   .setup-panel {
-    background: var(--panel);
-    border: 3px solid var(--ink);
+    background: var(--surface);
+    border: 3px solid var(--edge);
     border-radius: 12px;
     padding: 14px 18px;
     display: flex;
@@ -481,9 +481,10 @@
     font-family: 'Press Start 2P', monospace;
     font-size: 10px;
     padding: 10px 14px;
-    border: 3px solid var(--ink);
+    border: 3px solid var(--edge-strong);
     border-radius: 8px;
-    background: var(--marquee-yellow);
+    background: var(--accent-warm);
+    color: var(--bg);
     cursor: pointer;
   }
   .skip-btn:disabled {
@@ -503,8 +504,8 @@
     justify-content: space-between;
     gap: 10px;
     padding: 8px 12px;
-    background: var(--panel);
-    border: 3px solid var(--ink);
+    background: var(--surface);
+    border: 3px solid var(--edge);
     border-radius: 10px;
   }
   .hud-left,
@@ -522,7 +523,7 @@
     font-size: 13px;
   }
   .timer.low {
-    color: var(--marquee-red);
+    color: var(--accent-hot);
     animation: pulse 0.6s infinite alternate;
   }
   @keyframes pulse {
@@ -569,7 +570,7 @@
   }
   .boss-status .combo.hot {
     opacity: 1;
-    color: #a21caf;
+    color: var(--accent-violet);
   }
   .boss-phase {
     font-family: 'Press Start 2P', monospace;
@@ -580,24 +581,25 @@
     width: 100%;
     max-width: 260px;
     height: 10px;
-    background: rgba(0, 0, 0, 0.15);
+    background: rgba(255, 255, 255, 0.09);
     border-radius: 5px;
     overflow: hidden;
-    border: 2px solid var(--ink);
+    border: 2px solid var(--edge);
   }
   .bar .fill {
     height: 100%;
   }
   .bar.level .fill {
-    background: linear-gradient(90deg, #4ade80, #22c55e);
+    background: linear-gradient(90deg, #3ddc97, #22c55e);
   }
   .bar.boss .fill {
     background: linear-gradient(90deg, #f87171, #fbbf24);
     transition: width 0.2s;
   }
   .mute-btn {
-    border: 3px solid var(--ink);
-    background: #fff;
+    border: 3px solid var(--edge);
+    background: var(--surface-alt);
+    color: var(--text);
     border-radius: 8px;
     width: 40px;
     height: 40px;
@@ -617,7 +619,7 @@
   .overlay {
     position: absolute;
     inset: 0;
-    background: rgba(20, 33, 61, 0.82);
+    background: rgba(6, 10, 22, 0.86);
     color: #fff;
     display: flex;
     flex-direction: column;
@@ -640,8 +642,8 @@
   .countdown-num {
     font-family: 'Press Start 2P', monospace;
     font-size: 48px;
-    color: var(--marquee-yellow);
-    text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4);
+    color: var(--accent-warm);
+    text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.55);
   }
 
   .mini-scores {
@@ -666,8 +668,9 @@
     width: 54px;
     height: 44px;
     border-radius: 8px;
-    border: 3px solid var(--ink);
-    background: #fff;
+    border: 3px solid var(--edge);
+    background: var(--surface-alt);
+    color: var(--text);
     font-size: 16px;
     cursor: pointer;
     box-shadow: 0 3px 0 rgba(0, 0, 0, 0.25);
@@ -685,8 +688,9 @@
   .key {
     height: 44px;
     border-radius: 8px;
-    border: 3px solid var(--ink);
-    background: #fff;
+    border: 3px solid var(--edge);
+    background: var(--surface-alt);
+    color: var(--text);
     font-family: 'Press Start 2P', monospace;
     font-size: 14px;
     cursor: pointer;
@@ -697,7 +701,7 @@
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
   }
   .key.fire {
-    background: var(--marquee-red);
+    background: var(--accent-hot);
     color: #fff;
   }
   .skills-bar {
@@ -709,8 +713,8 @@
     width: 62px;
     height: 62px;
     border-radius: 12px;
-    border: 3px solid var(--ink);
-    background: #64748b;
+    border: 3px solid var(--edge);
+    background: #3a4763;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -720,7 +724,8 @@
     box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
   }
   .skill.ready {
-    background: #f59e0b;
+    background: var(--accent-warm);
+    color: var(--bg);
   }
   .skill:disabled {
     cursor: not-allowed;
