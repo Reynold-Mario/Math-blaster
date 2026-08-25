@@ -55,8 +55,14 @@ lib/events.ts        GameEvent union + a shared EventBus (gameEvents). gameFlow
 lib/render/           GameCanvas.svelte draws the scene from (runtime, theme)
                     props alone, and manages its OWN transient FX (float text,
                     hit-flash, shake) by subscribing to gameEvents - it never
-                    touches gameplay logic. spriteCanvas.ts rasterizes the
-                    pixel-grid SpriteDefs (sprites.ts) onto canvas, cached.
+                    touches gameplay logic. spriteAtlas.ts owns what art
+                    exists and which frame of it to draw; apng.ts decodes the
+                    APNGs at boot; apngParse.ts is the pure byte half of that.
+
+tools/                THE ART SOURCE, run at build time, not shipped.
+                    spriteFrames.mjs holds the pixel grids and per-frame
+                    animation; apngEncode.mjs writes APNGs; buildSprites.mjs
+                    emits public/sprites/*.apng (`npm run sprites`).
 
 lib/input/            InputManager abstracts keyboard/touch/future-gamepad into
                     one action vocabulary (move/moveTo/digit/backspace/fire/skill).
@@ -444,7 +450,7 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
 - **Freeze does not pause a boss's survive clock.** Freezing the adds buys
   breathing room; stalling the fight it's meant to win would make the skill a
   self-nerf during exactly the moment you'd want it.
-- **Only two boss sprites exist** in `sprites.ts`, so the roster's three fights
+- **Only two boss sprites exist** in `tools/spriteFrames.mjs`, so the roster's three fights
   share them - "Hundred Hydra" reuses boss1 with a different name/theme/phases.
   A cycled roster makes this more visible than it was, which is why repeat
   visits take a tier prefix ("Elder", "Ancient", "Eternal").
@@ -469,6 +475,42 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   / "Skill Tree" choice, nothing is saved beyond the profile. The end-of-run
   screen reports the wave reached, which is the number that means something in
   an endless run.
-- Pixel sprites are plain numeric grids + a palette (`sprites.ts`), rasterized
-  once per size via `spriteCanvas.ts`'s cache - don't add per-frame `fillRect`
-  loops for enemies, use `drawSprite()`.
+- **Sprites are animated APNGs, decoded once at boot.** The art is still
+  composed from numeric pixel grids + a palette, but that now happens at BUILD
+  time in `tools/spriteFrames.mjs`, which emits `public/sprites/*.apng` via
+  `npm run sprites`. The generated files are committed, so neither the build nor
+  CI depends on the tool running. At runtime `spriteAtlas.ts` fetches and decodes
+  them; nothing is rasterized per frame. Don't add `fillRect` loops for entities,
+  use `drawSprite()`.
+  - **APNG is the only animated format, and there is no GIF fallback.** When a
+    sprite fails to decode, `spriteAtlas` draws a plain silhouette rect so the
+    game stays playable - the fallback for broken art is a canvas primitive,
+    never a different image format.
+  - **Assets are fetched by URL from `public/`, never `import`ed.** An asset
+    import in any `.ts` under `src/` breaks `npm test`, because
+    `tsconfig.jest.json` overrides `types` and drops `vite/client`'s asset module
+    declarations - and Vite's default `assetsInlineLimit` would base64 the small
+    ones into the JS bundle.
+  - **ANIMATION STATE LIVES IN `render/`, NEVER ON GAME STATE.** Which frame an
+    enemy shows is a pure function of the clock and the enemy's `uid`
+    (`spritePhase()`, which is what stops a formation of identical enemies
+    animating in lockstep). `EnemyInstance` has no `frame` field and must not
+    grow one - the renderer stays a pure function of `(runtime, theme, nowMs)`.
+  - **`spriteSize()` returns the ON-SCREEN footprint and works before the art
+    loads.** Every overlay - problem label, reticle box, shield bubble, layer
+    pips, boss weak point - is positioned from it, so native sizes are declared
+    statically in `SPRITE_META` rather than read off the decoded images. If they
+    came from the images the whole HUD would jump when decoding finished.
+  - **Scales are integers.** The old pipeline rasterized at fractional sizes
+    (grunts were 4.5), which is fine for rectangles but gives a scaled bitmap
+    unevenly doubled pixel columns. Draw positions are rounded for the same
+    reason.
+  - The player sprite is deliberately only 19 rows tall: it is drawn
+    top-anchored at 88% of a 320-tall canvas, so ~38px is all that is ever
+    visible. The old 12-row sprite had its bottom quarter clipped off screen
+    unnoticed, which is where a thruster would have gone.
+- **One-shot sprite FX are driven by `gameEvents`, like every other bit of
+  presentation.** `enemy-defeated` plays an explosion, `shot-fired` a muzzle
+  flash and a rising bolt, `shield-broken` a hue-shifted explosion. These events
+  were always on the bus with nothing listening. The bolt is cosmetic only -
+  shots resolve instantly in the rules, so nothing waits for it to arrive.

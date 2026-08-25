@@ -2,8 +2,10 @@
   import { onMount } from 'svelte';
   import type { RuntimeState, EnemyInstance, PlayerState, BossState } from '../runtime/RuntimeState';
   import type { Backdrop } from '../levels/LevelDefinition';
-  import { SPRITES } from '../sprites';
-  import { drawSprite, spriteSize } from './spriteCanvas';
+  import {
+    loadSpriteAtlas, drawSprite, spriteSize, spriteScale, spritePhase,
+    frameIndexAt, frameIndexOnce, animationDurationMs, type SpriteKey,
+  } from './spriteAtlas';
   import { resolveTarget, weakPointXPct, type Target } from '../targeting';
   import { gameEvents, type GameEvent } from '../events';
 
@@ -54,6 +56,30 @@
   let floatIdCounter = 0;
   const flashUntil = new Map<string, number>();
   let shakeUntilMs = 0;
+
+  /** A sprite animation played through exactly once at a fixed spot -
+   * explosions, muzzle flashes, the bolt. It ends when the art runs out
+   * (`frameIndexOnce` returns -1), so a lifetime is never duplicated here
+   * as a constant. */
+  interface OneShotFx {
+    id: number;
+    sprite: SpriteKey;
+    xPct: number;
+    /** Percent of canvas height, matching how enemies report position. */
+    y: number;
+    scale: number;
+    createdAt: number;
+    /** Percent of canvas height travelled per second - the bolt rises, the
+     * rest stay put. */
+    riseRatePct: number;
+    /** CSS filter, for reusing one animation in more than one colour. */
+    filter?: string;
+  }
+  let oneShots: OneShotFx[] = [];
+
+  function pushOneShot(fx: Omit<OneShotFx, 'id' | 'createdAt'>) {
+    oneShots.push({ ...fx, id: ++floatIdCounter, createdAt: performance.now() });
+  }
 
   function pushFloat(xPct: number, y: number, text: string, color: string) {
     floatTexts.push({ id: ++floatIdCounter, kind: 'text', xPct, y, text, color, createdAt: performance.now() });
@@ -123,6 +149,9 @@
       case 'shield-broken':
         pushFloat(event.xPct, event.y, 'SHIELD DOWN!', COLOR_SHIELD);
         flashTarget(event.targetId);
+        // Reuses the explosion, hue-shifted to the shield colour rather
+        // than spending another sprite on a once-per-fight event.
+        pushOneShot({ sprite: 'explosion', xPct: event.xPct, y: event.y, scale: 2, riseRatePct: 0, filter: 'hue-rotate(150deg) saturate(1.4)' });
         break;
       case 'enemy-layer-broken':
         pushFloat(event.xPct, event.y, `${event.layersRemaining} LEFT`, COLOR_PARTIAL);
@@ -134,6 +163,17 @@
         break;
       case 'enemy-split':
         pushFloat(event.xPct, event.y, 'SPLIT!', COLOR_PARTIAL);
+        break;
+      case 'enemy-defeated':
+        // An answered enemy used to simply disappear between frames. The
+        // event has always been on the bus; nothing was listening for it.
+        pushOneShot({ sprite: 'explosion', xPct: event.xPct, y: event.y, scale: 2, riseRatePct: 0 });
+        break;
+      case 'shot-fired':
+        pushOneShot({ sprite: 'muzzle', xPct: event.xPct, y: PLAYER_Y_PCT + 1, scale: 2, riseRatePct: 0 });
+        // Cosmetic only: shots resolve instantly in the game rules, so this
+        // never reports a hit and nothing waits for it to arrive.
+        pushOneShot({ sprite: 'bolt', xPct: event.xPct, y: PLAYER_Y_PCT - 6, scale: 2, riseRatePct: -220 });
         break;
       case 'wave-announced':
         pushBanner(event.isBoss ? `WAVE ${event.waveNumber} - BOSS` : `WAVE ${event.waveNumber}`, event.isBoss ? COLOR_MISS : COLOR_INFO);
@@ -158,6 +198,10 @@
         // invisible: no float text appears for a payout that never happened.
         if (event.by === 'mastery') {
           pushBanner(`MASTERED - ${event.bestCombo} IN A ROW!`, COLOR_COMBO);
+          // Only a mastery finish is a kill; an escaped boss leaves under
+          // its own power, so it gets no explosion.
+          pushOneShot({ sprite: 'explosion', xPct: 50, y: BOSS_Y_PCT + 8, scale: 5, riseRatePct: 0 });
+          triggerShake();
         } else {
           pushBanner('BOSS ESCAPED - NO BOUNTY', COLOR_MISS);
         }
@@ -205,10 +249,19 @@
     canvasEl.width = LOGICAL_W * dpr;
     canvasEl.height = LOGICAL_H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Sprites are pixel art scaled by whole numbers, so every interpolated
+    // sample is wrong. Without this the DPR transform resamples every
+    // sprite, every frame - it was the one real per-frame cost in here.
+    ctx.imageSmoothingEnabled = false;
 
     document.fonts?.ready?.then(() => {
       fontsReady = true;
     });
+
+    // Same shape as the font gate above: start it, draw silhouettes until
+    // it lands. In practice it resolves during the boot screen, long before
+    // anything is on the canvas.
+    void loadSpriteAtlas();
 
     const unsubscribe = gameEvents.on(handleGameEvent);
 
@@ -361,16 +414,21 @@
   function drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemyInstance, target: Target, nowMs: number) {
     const x = px(enemy.xPct, LOGICAL_W);
     const y = px(enemy.y, LOGICAL_H);
-    const sprite = SPRITES[enemy.kind];
-    const pixel = enemy.mini ? 3 : 4.5;
-    const size = spriteSize(sprite, pixel);
+    const scale = spriteScale(enemy.kind, enemy.mini);
+    const size = spriteSize(enemy.kind, scale);
     const isTargeted = target.kind === 'enemy' && target.enemy.uid === enemy.uid;
 
     if (enemy.layersTotal > 1) {
       drawLayerPips(ctx, x, y - 19, enemy.layersRemaining, enemy.layersTotal);
     }
 
-    drawSprite(ctx, sprite, x, y, pixel, { centerX: true, filter: flashFilter(isFlashing(enemy.uid, nowMs)) });
+    // The uid-derived phase is what stops six identical drifters breathing
+    // in unison. It needs no state on the enemy itself.
+    drawSprite(ctx, enemy.kind, x, y, scale, {
+      centerX: true,
+      filter: flashFilter(isFlashing(enemy.uid, nowMs)),
+      frame: frameIndexAt(enemy.kind, nowMs, spritePhase(enemy.uid)),
+    });
     if (enemy.shielded) drawShieldBubble(ctx, x, y + size.height / 2, size, nowMs);
 
     if (enemy.frozen) {
@@ -412,7 +470,7 @@
    * exactly what they see. */
   function drawWeakPoint(ctx: CanvasRenderingContext2D, boss: BossState, targeted: boolean, nowMs: number) {
     const x = px(weakPointXPct(boss), LOGICAL_W);
-    const y = px(BOSS_Y_PCT, LOGICAL_H) + spriteSize(SPRITES[boss.sprite], 7).height / 2;
+    const y = px(BOSS_Y_PCT, LOGICAL_H) + spriteSize(boss.sprite).height / 2;
     const pulse = 5 + 2.5 * Math.sin(nowMs / 120);
 
     ctx.save();
@@ -431,9 +489,8 @@
   function drawBoss(ctx: CanvasRenderingContext2D, boss: BossState, target: Target, nowMs: number) {
     const x = px(boss.xPct, LOGICAL_W);
     const y = px(BOSS_Y_PCT, LOGICAL_H);
-    const sprite = SPRITES[boss.sprite];
-    const pixel = 7;
-    const size = spriteSize(sprite, pixel);
+    const scale = spriteScale(boss.sprite);
+    const size = spriteSize(boss.sprite, scale);
     const isTargeted = target.kind === 'boss';
 
     // The bar is the survive clock, not health - it drains toward the
@@ -441,7 +498,11 @@
     drawMeterBar(ctx, x, y - 22, 96, 9, boss.surviveRemainingMs / boss.surviveTotalMs, true);
     drawComboPips(ctx, x, y - 10, boss.combo, boss.comboRequired);
 
-    drawSprite(ctx, sprite, x, y, pixel, { centerX: true, filter: flashFilter(isFlashing('boss', nowMs)) });
+    drawSprite(ctx, boss.sprite, x, y, scale, {
+      centerX: true,
+      filter: flashFilter(isFlashing('boss', nowMs)),
+      frame: frameIndexAt(boss.sprite, nowMs),
+    });
 
     if (!boss.vulnerable) {
       drawShieldBubble(ctx, x, y + size.height / 2, size, nowMs);
@@ -480,10 +541,13 @@
     ctx.restore();
   }
 
-  function drawPlayer(ctx: CanvasRenderingContext2D, player: PlayerState) {
+  function drawPlayer(ctx: CanvasRenderingContext2D, player: PlayerState, nowMs: number) {
     const x = px(player.xPct, LOGICAL_W);
     const y = px(PLAYER_Y_PCT, LOGICAL_H);
-    drawSprite(ctx, SPRITES.player, x, y, 5, { centerX: true });
+    drawSprite(ctx, 'player', x, y, spriteScale('player'), {
+      centerX: true,
+      frame: frameIndexAt('player', nowMs),
+    });
 
     const text = player.inputBuffer || '·';
     ctx.font = labelFont(15);
@@ -570,6 +634,44 @@
     }
   }
 
+  /**
+   * Plays each one-shot through once and drops it when its art runs out.
+   * Pruned here rather than on a timer for the same reason drawFloatTexts
+   * does it: the draw pass is the only place that knows what is still
+   * visible.
+   */
+  function drawOneShots(ctx: CanvasRenderingContext2D, nowMs: number) {
+    const alive: OneShotFx[] = [];
+    for (const fx of oneShots) {
+      const elapsed = nowMs - fx.createdAt;
+      const frame = frameIndexOnce(fx.sprite, elapsed);
+      if (frame < 0) {
+        // -1 also means "not decoded yet"; either way there is nothing to
+        // draw and nothing to wait for.
+        if (animationDurationMs(fx.sprite) === 0 && elapsed < 500) alive.push(fx);
+        continue;
+      }
+      alive.push(fx);
+
+      const size = spriteSize(fx.sprite, fx.scale);
+      const yPct = fx.y + (fx.riseRatePct * elapsed) / 1000;
+      drawSprite(ctx, fx.sprite, px(fx.xPct, LOGICAL_W), px(yPct, LOGICAL_H) - size.height / 2, fx.scale, {
+        centerX: true,
+        frame,
+        filter: fx.filter,
+      });
+    }
+    oneShots = alive;
+  }
+
+  /** `flashUntil` is keyed by enemy uid and enemies are endless, so without
+   * this the map grows for the whole run. */
+  function pruneFlashes(nowMs: number) {
+    for (const [key, until] of flashUntil) {
+      if (nowMs >= until) flashUntil.delete(key);
+    }
+  }
+
   function getShakeOffset(nowMs: number): { x: number; y: number } {
     if (nowMs > shakeUntilMs) return { x: 0, y: 0 };
     const remainingMs = shakeUntilMs - nowMs;
@@ -590,8 +692,12 @@
 
     if (runtime.boss) drawBoss(ctx, runtime.boss, target, nowMs);
     for (const enemy of runtime.enemies) drawEnemy(ctx, enemy, target, nowMs);
-    drawPlayer(ctx, runtime.player);
+    drawPlayer(ctx, runtime.player, nowMs);
+    // Above the sprites, below the text: an explosion should cover the
+    // thing it destroyed but never the problem the player is reading.
+    drawOneShots(ctx, nowMs);
     drawFloatTexts(ctx, nowMs);
+    pruneFlashes(nowMs);
     drawBanner(ctx, nowMs);
 
     ctx.restore();
