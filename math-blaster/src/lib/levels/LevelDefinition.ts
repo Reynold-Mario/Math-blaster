@@ -75,9 +75,12 @@ export interface BossPhase {
 }
 
 /**
- * Embedded boss rules for a level. A boss phase begins automatically once
- * the level's own enemy quota is cleared - it is not a separate stage in
- * its own right.
+ * Boss rules. A boss is a kind of WAVE, arriving on every
+ * `WAVE_BOSS_INTERVAL`th one rather than when some quota is cleared - the
+ * quota it used to wait on is gone along with stages. These authored bundles
+ * are read as templates by `waveProgression.bossRulesFor()`, which generates
+ * every number that decides how hard a fight is from the wave number; the
+ * roster supplies identity only (name, sprite, theme, phase names).
  *
  * Bosses have no health bar. A fight ends one of two ways: the player
  * outlasts `surviveSec`, or they string together `comboToDefeat`

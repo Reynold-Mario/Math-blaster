@@ -5,8 +5,11 @@ TypeScript + Vite.
 Gameplay renders on `<canvas>`; Svelte owns UI chrome only.
 
 Commands: `npm run dev` / `npm run build` / `npm run preview` / `npm run check`
-(`check` = svelte-check + tsc). Always run `npm run check` after edits - the
-whole codebase currently passes with 0 errors/warnings; keep it that way.
+/ `npm test` / `npm run sprites`. `check` = svelte-check + tsc; `sprites`
+regenerates the APNG art from `tools/` (see the sprite conventions at the
+bottom). Always run `npm run check` AND `npm test` after edits - CI gates both,
+and the whole codebase currently passes with 0 errors/warnings; keep it that
+way.
 
 ## Architecture
 
@@ -55,7 +58,8 @@ lib/events.ts        GameEvent union + a shared EventBus (gameEvents). gameFlow
 
 lib/render/           GameCanvas.svelte draws the scene from (runtime, theme)
                     props alone, and manages its OWN transient FX (float text,
-                    hit-flash, shake) by subscribing to gameEvents - it never
+                    hit-flash, shake, one-shot sprite FX, the banner, and the
+                    parallax starfield) by subscribing to gameEvents - it never
                     touches gameplay logic. spriteAtlas.ts owns what art
                     exists and which frame of it to draw; apng.ts decodes the
                     APNGs at boot; apngParse.ts is the pure byte half of that.
@@ -68,9 +72,21 @@ tools/                THE ART SOURCE, run at build time, not shipped.
 lib/input/            InputManager abstracts keyboard/touch/future-gamepad into
                     one action vocabulary (move/moveTo/digit/backspace/fire/skill).
 
-lib/Game.svelte       Top-level orchestrator: phases (boot/skillTree/countdown/
-                    playing/gameover), HUD, wires InputManager, runs the rAF
-                    loop, mounts GameCanvas + SkillTreeScreen.
+lib/Game.svelte       Top-level orchestrator: phases (boot/skillTree/runSetup/
+                    countdown/playing/gameover - the full list is `GamePhase`
+                    in lib/types.ts), HUD, wires InputManager, runs the
+                    SIMULATION rAF loop, mounts GameCanvas + SkillTreeScreen.
+
+                    THERE ARE TWO INDEPENDENT rAF LOOPS: this one advances
+                    `tick()` and GameCanvas runs its own for drawing. Keep
+                    that straight when debugging timing. The simulation
+                    clamps its delta to 50ms per frame (so a backgrounded tab
+                    can't teleport the world), which means an unfocused
+                    window - where the browser throttles rAF hard - makes the
+                    game advance in slow motion, while anything drawn from
+                    absolute `performance.now()` (the starfield, the pulses)
+                    keeps moving at full speed. That combination looks
+                    convincingly like `tick()` has thrown when it hasn't.
 App.svelte           A plain container around Game. It used to be an arcade
                     cabinet - marquee, bulbs, CRT bezel, scanlines, vignette,
                     vents - and all of that is deliberately gone. The pixel art
@@ -103,8 +119,8 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   anything, stop. Every consequence in the game is expressed in *time* or in
   *questions answered*. `EnemyInstance` has no `hp`/`maxHp`; `GruntTarget` is
   `{ layersRemaining, shielded }` and that is the whole of an enemy's durability.
-- **Enemies are archetypes, not sprites.** Drone/swarmer/hulk used to be
-  purely cosmetic. Now `EnemyArchetype` owns movement (straight/weave/dive), how many
+- **Enemies are archetypes, not sprites.** The three grunt sprites
+  (drone/swarmer/hulk) used to be purely cosmetic. Now `EnemyArchetype` owns movement (straight/weave/dive), how many
   *layers* (= separate problems) it takes to kill, whether it starts shielded,
   whether it splits on death, and whether the kill counts toward the level
   quota. A **layer IS a question**, not a health pool with a question painted on
@@ -263,7 +279,9 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   `survival` route. The cost of failing to defeat a boss is the half-minute
   spent on it for nothing; there is deliberately no extra penalty stacked on
   top, and the run still advances either way. `BOSS_CLEAR_BONUS_MS` was halved
-  (25s -> 12.5s) at the same time so the two changes don't compound into a wall.
+  (25s -> 12.5s) at the same time so the two changes don't compound into a
+  wall - it has since gone back up to 18s, for the reason in the grade-K note
+  below, so don't read 12.5 as the current value.
   The bounty is a *multiplier* on the ordinary per-kill amount
   (`BOSS_BOUNTY_MULTIPLIER` + `BOSS_BOUNTY_MULTIPLIER_PER_FIGHT` per boss
   ordinal, plus `MASTERY_BOUNTY_MULTIPLIER`) rather than its own flat figure,
@@ -454,7 +472,11 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   `GLOBAL_FALL_SPEED_MULTIPLIER` and the concurrency ramp were all set from it,
   and they interact - re-run the harness after touching any one of them rather
   than reasoning about it alone. Current measured medians, un-upgraded:
-  ~wave 10 for a slow K player, ~20 for a typical G1, ~28 for a quick G3.
+  wave 6 for a slow K player, 16 for a typical G1, 27 for a quick G3. (These
+  are the post-boss-economy figures - the grade-K note below is where the
+  drop from 10 to 6 is discussed. If you change them, change them here too:
+  this line said ~10/~20/~28 for several releases after it stopped being
+  true.)
   The player model is the assumption to argue with; the numbers only mean as
   much as it does, and no real child has played this yet.
 - **Still untuned placeholders**: skill costs and the currency rate (a weak
@@ -472,8 +494,9 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
 - **Freeze does not pause a boss's survive clock.** Freezing the adds buys
   breathing room; stalling the fight it's meant to win would make the skill a
   self-nerf during exactly the moment you'd want it.
-- **Only two boss sprites exist** in `tools/spriteFrames.mjs`, so the roster's three fights
-  share them - "Hundred Hydra" reuses boss1 with a different name/theme/phases.
+- **Only two boss sprites exist** in `tools/spriteFrames.mjs`, so the roster's
+  three fights share them - "Carrier Hydra" reuses `dreadnought` with a
+  different name/theme/phases.
   A cycled roster makes this more visible than it was, which is why repeat
   visits take a tier prefix ("Elder", "Ancient", "Eternal").
 - **Shields, weak points and layer pips are drawn, not sprited.** GameCanvas

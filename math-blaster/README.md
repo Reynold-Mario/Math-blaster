@@ -90,7 +90,8 @@ recoloured sprite:
 | **Diver** | Hangs back near the top, then commits and accelerates hard. |
 | **Bulwark** | An armoured hulk that takes two problems, not one — a fresh question appears when you break its first layer. |
 | **Sentinel** | Two layers *behind a shield*. Only an exact answer strips the shield, and that costs the whole shot. |
-| **Splitter** | Breaks into two fast-weaving spores when destroyed. The debris doesn't count toward clearing the level. |
+| **Splitter** | Breaks into two fast-weaving spores when destroyed. |
+| **Spore** | Small, quick and weaving. Arrives as splitter debris, and also on its own — escorting a shielded sentinel, or called in by a boss. Pays half bounty and isn't counted as a kill, so it earns you no wave-clear bonus; the board still has to empty before the wave ends. |
 
 Enemies descend far slower than the difficulty numbers alone would
 suggest — with this much to read on screen, time to think is the thing
@@ -182,7 +183,7 @@ extend to K–12 without any engine changes.
 ## Current status
 
 **Fully playable:** the entire loop above — movement/targeting, all six
-answer verdicts, all six enemy archetypes, the endless discrete-wave
+answer verdicts, all seven enemy archetypes, the endless discrete-wave
 sequence with its escalating difficulty, the earn-it-back clock with
 Dodge/Armor, grade-scoped curriculum with a picker, the travelling backdrop,
 currency and the Base skill tree shop, and a boss every fifth wave cycling
@@ -200,7 +201,7 @@ three phased fights with both win conditions.
   whenever it's added, but no gamepad code exists yet.
 
 **Not yet tuned:** skill costs, knockback distances, fall speeds, wave gaps,
-the starting clock and every wave/boss time payout, the 5-second impact
+the starting clock and every wave/boss time payout, the 3.5-second impact
 penalty, and every boss's survive duration and combo requirement are all
 reasonable placeholders, not numbers validated by real play.
 

@@ -188,6 +188,16 @@
       if (phase === 'playing') handleInputAction(runtime, profile, action);
     });
 
+    // THE SIMULATION LOOP. GameCanvas runs a second, independent rAF loop for
+    // drawing - keep the two straight when debugging timing.
+    //
+    // The 50ms clamp stops a backgrounded tab from teleporting the world on
+    // its first frame back. The side effect is that when the browser throttles
+    // rAF (an unfocused window), the game advances in slow motion, while
+    // anything the renderer derives from absolute `performance.now()` - the
+    // starfield, the reticle dashes, the shield pulse - keeps moving at full
+    // speed. That combination reads convincingly like `tick()` has thrown an
+    // exception when it hasn't.
     let raf = 0;
     let last = performance.now();
     const loop = (ts: number) => {
