@@ -140,6 +140,10 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   comes through; `gradeTree.test.ts` and `gameFlow.test.ts` both pin the
   containment property out past wave 300. Arcade difficulty still scales with
   the wave number - that separation is the point.
+  A **grade-K exception is planned here** (not in the boss numbers) to absorb
+  the boss-economy regression on the youngest players - see the grade-K note
+  under "Known gaps" for what was measured and why the boss knobs are the
+  wrong place for it.
 - **Boss scope is cumulative, wave scope is not.** `cumulativeScopeForGrade()`
   spans K up through the run's grade, because waves teach this grade and bosses
   test everything up to it. It must stay ordered easiest-first:
@@ -239,6 +243,8 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   the one kill that matters most. `boss-defeated` carries `bountyEarned` and
   `timeBonusMs` as *actually granted* - the clock has a ceiling, and the banner
   must not promise time the player didn't get.
+  This costs the youngest players the most, on purpose but not to a settled
+  degree - see the grade-K note under "Known gaps" before retuning any of it.
 - **A boss is a kind of wave**, arriving on every `WAVE_BOSS_INTERVAL`th one
   (5). The `BOSS_ROSTER` supplies **identity only** - name, sprite, theme, and
   the phase *names* that give a fight its voice (plus a tier prefix on each
@@ -353,6 +359,34 @@ instead of events - stop, that's the exact coupling this structure exists to avo
 
 Don't "fix" these without checking - they're intentional stopping points, not bugs:
 
+- **THE YOUNGEST PLAYERS REGRESSED WHEN ONLY BOSS KILLS STARTED PAYING, AND
+  THE FIX IS COMING FROM THE CURRICULUM, NOT FROM THE BOSS NUMBERS.**
+  Making the mastery route the only paying one cost the weakest modelled
+  player most: K slow's median run went from wave 10 to 6, and 62% get past
+  wave 5 where 80% did. That is the intended shape of the change - a boss you
+  cannot answer down costs you the ~45s you spent on it - but the size of it
+  on grade K is not settled, and **an exception for grade K's curricula is
+  planned to absorb it.** A K player's problem is accuracy: at ~0.72 exact
+  they master 11% of fights, so they almost never collect. Raising what a kill
+  pays cannot reach them; giving them maths they can actually chain answers on
+  can.
+  So do NOT "fix" this by retuning the boss economy. Both obvious knobs have
+  already been measured against the harness:
+  - `BOSS_CLEAR_BONUS_MS` 12.5s -> 18s moved G1 15->16 and G3 26->27 and left
+    K slow **identical on every figure**. It is mastery-gated, so at an 11%
+    mastery rate it is worth about 0.6s per fight to them - it pays the
+    players who could already afford bosses. (It is at 18s for that reason,
+    not this one.)
+  - `BOSS_COMBO_BASE` 5 -> 4 *is* effective (K slow mastery 11% -> 24%, past
+    wave 10 0% -> 5%, G3 back to baseline 28) and costs no fight length, since
+    the floor is `max(30, comboToDefeat * BOSS_SEC_PER_COMBO_ANSWER)`. It is
+    deliberately NOT taken: the grade-K curriculum exception is the intended
+    lever, and lowering the combo for everyone to rescue one grade would flatten
+    the mastery requirement for the grades that don't need it.
+  The remaining levers after that are shortening the fight
+  (`BOSS_MIN_SURVIVE_SEC`, currently the stated 30s minimum) or paying the
+  survival route something - and the latter is the distinction the whole boss
+  economy rests on, so it isn't available.
 - **Grades 4-12 are typed but unauthored.** `GRADE_ORDER` runs to 12;
   `GRADE_TOPICS` only has K-3. The grade picker offers only grades with topics,
   and `curriculumLadderForGrade` falls back to every authored curriculum for a
