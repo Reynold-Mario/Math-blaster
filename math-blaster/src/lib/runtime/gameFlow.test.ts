@@ -725,9 +725,12 @@ describe('splitters', () => {
 describe('boss fights', () => {
   /** Drops the player into a boss fight the way the run does: by arriving
    * on a wave whose number is a multiple of the boss interval. */
-  function enterBossFight(waveNumber = WAVE_BOSS_INTERVAL) {
+  /** `grade` matters when a test needs a boss scope with more than one rung
+   * in it - grade K's cumulative scope is a single curriculum. */
+  function enterBossFight(waveNumber = WAVE_BOSS_INTERVAL, grade?: PlayerProfile['selectedGrade']) {
     expect(isBossWave(waveNumber)).toBe(true);
     const { state, profile } = startAtWave(waveNumber);
+    if (grade) profile.selectedGrade = grade;
 
     tickUntil(state, profile, () => state.boss !== null, 'the boss to arrive');
 
@@ -794,6 +797,88 @@ describe('boss fights', () => {
     // Ending a fight early drops straight into the next wave - there is no
     // stage-clear screen left to pass through.
     expect(state.waveNumber).toBe(WAVE_BOSS_INTERVAL + 1);
+  });
+
+  describe('reinforcements', () => {
+    it('calls in NOTHING while the player keeps answering', () => {
+      // The timed add stream is gone. A boss fight is between the player
+      // and the boss until the player stops engaging with its maths - which
+      // is also what makes the empty screen a reward for answering well.
+      const { state, profile } = enterBossFight();
+      state.enemies = [];
+      events = [];
+
+      let ticked = 0;
+      while (state.boss && ticked < 25) {
+        state.player.fireCooldownRemainingMs = 0;
+        state.boss.combo = 0; // never let the fight end early
+        shoot(state, profile, state.boss.xPct, correctAnswer(state.boss.problem));
+        if (!state.boss) break;
+        tick(state, profile, 1 / 30);
+        ticked += 1 / 30;
+      }
+
+      expect(ticked).toBeGreaterThan(10);
+      expect(eventsOfType('reinforcement-spawned')).toHaveLength(0);
+      expect(state.enemies).toHaveLength(0);
+    });
+
+    it('calls them in for a player who has stopped answering', () => {
+      const { state, profile } = enterBossFight();
+      state.enemies = [];
+      events = [];
+
+      for (let i = 0; i < 40 && state.boss; i++) {
+        state.player.fireCooldownRemainingMs = 0;
+        shoot(state, profile, state.boss.xPct, 'nonsense');
+        tick(state, profile, 1);
+      }
+
+      expect(eventsOfType('reinforcement-spawned').length).toBeGreaterThan(0);
+    });
+
+    it('holds a flurry of bad answers to one add at a time', () => {
+      // A player answering four wrong in a row shouldn't have four arrive
+      // at once - the cooldown is what a boss fight has instead of the
+      // per-wave cap, since the fight ends on its own clock.
+      const { state, profile } = enterBossFight();
+      state.enemies = [];
+      events = [];
+
+      for (let i = 0; i < 12; i++) {
+        state.player.fireCooldownRemainingMs = 0;
+        shoot(state, profile, state.boss!.xPct, 'nonsense');
+      }
+
+      // No time has passed, so the cooldown can only have allowed one.
+      expect(eventsOfType('reinforcement-spawned')).toHaveLength(1);
+    });
+
+    it('asks an add something easier than the boss it arrives in', () => {
+      // An add used to inherit the boss's own cumulative scope weighted
+      // toward its hard end, so a player already failing the boss's maths
+      // was handed more of the same to fail. It draws from the easiest rung
+      // of the scope instead.
+      const { state, profile, rules } = enterBossFight(WAVE_BOSS_INTERVAL * 6, '3');
+      state.enemies = [];
+      expect(rules.scope.length).toBeGreaterThan(1);
+      const easiest = rules.scope[0];
+
+      for (let i = 0; i < 60 && state.enemies.length < 3; i++) {
+        state.player.fireCooldownRemainingMs = 0;
+        shoot(state, profile, state.boss!.xPct, 'nonsense');
+        tick(state, profile, 1);
+      }
+
+      expect(state.enemies.length).toBeGreaterThan(0);
+      for (const add of state.enemies) {
+        const expr = add.problem.expression;
+        expect(expr.form).toBe('arithmetic');
+        // Operator and both operands stay inside the easiest rung.
+        expect(easiest.operations).toContain(expr.operator);
+        expect(Math.max(expr.left, expr.right)).toBeLessThanOrEqual(easiest.numberRange[1]);
+      }
+    });
   });
 
   it('cannot be answered down to under the minimum duration', () => {

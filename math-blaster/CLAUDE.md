@@ -317,6 +317,34 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   mastery route silently becomes decorative again.
 - **Boss adds are ordinary enemies.** Shooting one no longer damages the boss
   (it used to). They matter because they threaten the run clock, nothing else.
+- **A REINFORCEMENT IS THE CONSEQUENCE OF DISENGAGING, AND NOTHING ELSE.**
+  There is no timed add stream during a boss fight - `updateBossPhase` only
+  counts a cooldown down, and `tryReinforce` is the sole path an add reaches
+  the board by. A player answering the boss (even nearly) fights it on an
+  empty screen; one who has stopped answering gets a rising stream. Two
+  halves to keep together:
+  - **What counts as answering.** exact/equivalent/close/partial all reset
+    the escalation; only incorrect/invalid build it, the first miss is free,
+    and the chance climbs per consecutive miss thereafter. The streak
+    deliberately SURVIVES a reinforcement firing - resetting it there would
+    sawtooth the pressure back to zero exactly when it should be mounting.
+    The old rule was backwards: `close` rolled 50% and `partial` 35% while a
+    single wrong answer rolled nothing, so reasoning to within one of the
+    answer was punished harder than guessing.
+  - **Adds are much easier than the fight they arrive in**, on all three axes
+    that make an enemy hard: their problem comes from the *easiest* rung of
+    the boss's scope (not `generateBossProblem`), their archetype from
+    `BOSS_ADD_LADDER`, and their speed is scaled by
+    `BOSS_ADD_SPEED_MULTIPLIER`. An add used to inherit the boss's own
+    cumulative scope weighted toward its hard end, which handed a player
+    already failing the boss's maths more of the same maths to fail - a bad
+    patch became unrecoverable instead of something to climb out of.
+  A wave keeps `MAX_REINFORCEMENTS_PER_WAVE` instead of a cooldown, because
+  what a spare enemy costs differs: during a wave it extends the board that
+  must be cleared before the run moves on, during a boss fight the fight ends
+  on its own clock. `SpawnOptions.problem`/`.speedMultiplier` exist for this
+  and keep speed composed in one place - don't mutate `enemy.speed` after
+  spawning.
 - **Partial credit uses place-value digit matching** (ones/tens/etc. compared by
   position), not "contains these digits somewhere" - e.g. 24 vs 42 scores zero
   matching digits despite sharing digits, because place value is the point.

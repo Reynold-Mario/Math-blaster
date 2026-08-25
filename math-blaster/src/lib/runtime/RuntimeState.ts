@@ -185,9 +185,18 @@ export interface RuntimeState {
   /** How many enemies the current wave released, so the HUD can show
    * progress through it. */
   waveSize: number;
-  /** Seconds until the next boss add is called in. Boss-phase only - an
-   * ordinary wave releases once, all at once. */
-  spawnTimer: number;
+  /**
+   * Seconds before the boss may call in another reinforcement. Boss-phase
+   * only - an ordinary wave releases once, all at once.
+   *
+   * A COOLDOWN, NOT A SPAWN CLOCK. Reaching zero doesn't summon anything;
+   * it only means the next failed answer is allowed to. It used to be a
+   * spawn clock, which meant adds arrived on a timer regardless of how the
+   * player was doing - reinforcements now come only from the player
+   * disengaging, and this is what stops a run of bad answers dumping the
+   * whole screenful at once.
+   */
+  bossReinforceCooldownSec: number;
   /** Seconds before the current wave releases. Every wave opens with one
    * of these, so a wave arrives as an announced event and the countdown
    * never hands the player a formation already halfway down the screen. */
