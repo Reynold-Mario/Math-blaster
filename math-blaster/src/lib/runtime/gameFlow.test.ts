@@ -796,6 +796,81 @@ describe('boss fights', () => {
     expect(state.waveNumber).toBe(WAVE_BOSS_INTERVAL + 1);
   });
 
+  it('cannot be answered down to under the minimum duration', () => {
+    // A boss is the point of a run; one that flashes past in twelve seconds
+    // isn't an event. Timer cuts COMPRESS a fight rather than skipping it,
+    // so a player answering perfectly still spends the minimum on screen -
+    // unless they actually defeat it, which is the next test.
+    const { state, profile, boss } = enterBossFight();
+    const minSec = boss.minFightMs / 1000;
+    expect(minSec).toBeGreaterThanOrEqual(30);
+
+    let ticked = 0;
+    // Answer exactly on every frame we're allowed to, and never let the
+    // combo finish the fight, so only the clock can end it.
+    while (state.boss && ticked < 200) {
+      state.enemies = [];
+      state.boss.combo = 0;
+      state.player.fireCooldownRemainingMs = 0;
+      shoot(state, profile, state.boss.xPct, correctAnswer(state.boss.problem));
+      if (!state.boss) break;
+      tick(state, profile, 1 / 30);
+      ticked += 1 / 30;
+    }
+
+    expect(state.boss).toBeNull();
+    expect(eventsOfType('boss-defeated')[0].by).toBe('survival');
+    expect(ticked).toBeGreaterThanOrEqual(minSec);
+  });
+
+  it('still lets the combo end a fight immediately, floor or not', () => {
+    // The minimum is a floor on OUTLASTING a boss, not on killing one.
+    // Defeating it is allowed to be quick - that is what the combo is for.
+    const { state, profile, boss } = enterBossFight();
+    const minSec = boss.minFightMs / 1000;
+
+    for (let i = 0; i < boss.comboRequired && state.boss; i++) {
+      state.enemies = [];
+      shoot(state, profile, state.boss.xPct, correctAnswer(state.boss.problem));
+    }
+
+    expect(state.boss).toBeNull();
+    expect(eventsOfType('boss-defeated')[0].by).toBe('mastery');
+    // No time was ticked at all, so the fight ended far inside the floor.
+    expect(minSec).toBeGreaterThan(0);
+  });
+
+  it('reports a timer cut as what it actually took, not what it offered', () => {
+    // Once a fight is pressed against its floor, a cut lands for less than
+    // its nominal value - the HUD must not count down time the fight
+    // didn't lose.
+    const { state, profile, boss } = enterBossFight();
+    boss.elapsedMs = 0;
+    boss.surviveRemainingMs = boss.minFightMs;
+    events = [];
+
+    state.enemies = [];
+    shoot(state, profile, boss.xPct, correctAnswer(boss.problem));
+
+    const cuts = eventsOfType('boss-timer-cut');
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0].amountMs).toBe(0);
+    expect(boss.surviveRemainingMs).toBe(boss.minFightMs);
+  });
+
+  it('advances elapsed time from the tick alone, never from a cut', () => {
+    // `elapsedMs` is what the floor measures against, so a cut touching it
+    // would let cut-spam eat the minimum duration it exists to protect.
+    const { state, profile, boss } = enterBossFight();
+    tick(state, profile, 0.5);
+    const afterTick = boss.elapsedMs;
+    expect(afterTick).toBeGreaterThan(0);
+
+    state.enemies = [];
+    shoot(state, profile, boss.xPct, correctAnswer(boss.problem));
+    expect(state.boss!.elapsedMs).toBe(afterTick);
+  });
+
   it('ends the fight by survival when the clock runs out first', () => {
     const { state, profile, boss } = enterBossFight();
     boss.surviveRemainingMs = 40;

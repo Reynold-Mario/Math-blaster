@@ -18,7 +18,15 @@
  * has arrived at.
  */
 
-import type { ArcadeDifficulty, Backdrop, BossRules, Curriculum } from './LevelDefinition';
+import type {
+  ArcadeDifficulty,
+  AuthoredProblemRecipe,
+  Backdrop,
+  BossPhase,
+  BossRules,
+  Curriculum,
+} from './LevelDefinition';
+import type { EnemyArchetypeId } from './enemyArchetypes';
 import type { WaveSpec } from './waves';
 import {
   BACKDROP_LADDER,
@@ -71,12 +79,166 @@ const WAVES_PER_EXTRA_SLOT = 10;
  * past it the screen stops being readable, which isn't difficulty. */
 const MAX_CONCURRENT_CAP = 8;
 
-/** Seconds each boss cycle adds to the survive clock, and the combo grows
- * by one per cycle alongside it. */
-const BOSS_SURVIVE_STEP_SEC = 4;
 /** Prefixes for repeat visits from the same boss, so a cycled roster still
  * announces itself as an escalation rather than a repeat. */
 const BOSS_TIER_PREFIXES = ['', 'Elder ', 'Ancient ', 'Eternal '];
+
+// --- Boss escalation. ALL OF IT COMES FROM THE WAVE NUMBER, and that is
+// the point of this block.
+//
+// It used to ride the roster: `bossRulesFor` picked `BOSS_ROSTER[ordinal %
+// 3]` and took that entry's phases, surviveSec, comboToDefeat and finale
+// along with its name. Because the roster cycles and its three entries are
+// ordered easiest-first, difficulty went BACKWARDS every third fight -
+// wave 15 fought a 3-phase boss at surviveSec 28, then wave 20 fought
+// "Elder Sum Slime King" with 2 phases, surviveSec 24 and an easier
+// finale. A run got easier at wave 20 than it had been at wave 15.
+//
+// So the roster now supplies IDENTITY only - name, sprite, theme, and the
+// phase names that give a fight its voice - and every number that decides
+// how hard the fight is comes from the wave. This is the existing
+// identity/maths split (see `scope`) taken one step further to cover
+// behaviour, not a new idea. ---
+
+/**
+ * No boss fight is ever shorter than this, however well it's answered.
+ *
+ * A boss is the point of a run; one that flashes past in twelve seconds
+ * isn't an event. But see `bossMinFightSec` - the real floor is usually
+ * driven by the combo requirement rather than by this number, because a
+ * floor that doesn't leave room to actually land the combo makes the
+ * mastery route unreachable, which is the bug this replaced.
+ */
+export const BOSS_MIN_SURVIVE_SEC = 30;
+/**
+ * Seconds of fight guaranteed per answer the combo asks for.
+ *
+ * THIS IS WHAT MAKES THE MASTERY ROUTE REACHABLE AT ALL, and it is the
+ * single least obvious number here. Before it existed, a fight ended by
+ * survival long before a combo could be strung together: each exact answer
+ * cuts `BOSS_CUT_EXACT_MS` off the survive clock *on top of* the seconds
+ * the player spent thinking, so answering well actively raced the player
+ * into the endurance ending. Measured against the balance harness, the
+ * mastery rate was 0% for every modelled player at every wave - a wave-5
+ * boss wanted 5 exact answers in a row (~22s of play) and its clock
+ * permitted about 3.
+ *
+ * Multiplying the combo requirement by a per-answer allowance is what
+ * guarantees the room. Set it below a real child's think time and the
+ * mastery route silently becomes decorative again.
+ */
+const BOSS_SEC_PER_COMBO_ANSWER = 5.5;
+/**
+ * How much longer the ENDURANCE route runs than the compressed minimum.
+ *
+ * These two numbers have to stay apart, and it is easy to collapse them by
+ * accident. Set `surviveSec` equal to the floor and timer cuts become
+ * inert - there is no headroom left to cut, so "good answers shorten the
+ * fight" quietly stops being true and every fight runs exactly the minimum
+ * however it is played. The gap between them IS the reward for answering
+ * well, and it is also what makes outlasting a boss the tedious route the
+ * design wants it to be.
+ */
+const BOSS_SURVIVE_HEADROOM_FACTOR = 1.5;
+/** However deep a run goes, a single fight never runs longer than this. */
+const BOSS_SURVIVE_CAP_SEC = 60;
+/**
+ * The floor's own ceiling, derived so that headroom SURVIVES THE CAP.
+ *
+ * Capping the survive clock without capping the floor lets the two meet
+ * again at the deep end, which re-creates exactly the collapse the headroom
+ * factor exists to prevent - cuts go inert, and only in the late game where
+ * it is hardest to notice. Deriving it keeps the two in step whatever
+ * either number is retuned to.
+ */
+const BOSS_MIN_FIGHT_CAP_SEC = BOSS_SURVIVE_CAP_SEC / BOSS_SURVIVE_HEADROOM_FACTOR;
+
+/** Added to the fight's floor per fight deep, so consecutive bosses are
+ * never structurally identical even between combo/phase steps. */
+const BOSS_MIN_PER_FIGHT_SEC = 0.75;
+
+const BOSS_COMBO_BASE = 5;
+const FIGHTS_PER_EXTRA_COMBO = 3;
+/**
+ * DERIVED, not chosen: the largest combo that still fits inside the longest
+ * compressed fight the caps allow.
+ *
+ * The mastery route has to stay reachable at every wave, and that is a
+ * relationship between three numbers rather than a property of any one of
+ * them - the combo asks for `combo * BOSS_SEC_PER_COMBO_ANSWER` seconds of
+ * play, and cuts can compress a fight to at most `BOSS_MIN_FIGHT_CAP_SEC`.
+ * Pick the combo cap by hand and the two drift apart silently: a combo of
+ * 10 needs 55s of play inside a 40s floor, so the deepest bosses go back to
+ * being unkillable and only the endurance route is left.
+ *
+ * If a longer combo is wanted, raise `BOSS_SURVIVE_CAP_SEC` - that is the
+ * actual constraint, and this makes the dependency explicit instead of
+ * leaving it to be rediscovered. `waveProgression.test.ts` pins the
+ * reachability property itself.
+ */
+const BOSS_COMBO_CAP = Math.floor(BOSS_MIN_FIGHT_CAP_SEC / BOSS_SEC_PER_COMBO_ANSWER);
+
+const BOSS_PHASE_COUNT_MIN = 2;
+const BOSS_PHASE_COUNT_MAX = 5;
+const FIGHTS_PER_EXTRA_PHASE = 2;
+
+/** How fast the boss slides side to side, opening phase to closing one. */
+const BOSS_DRIFT_START = 11;
+const BOSS_DRIFT_END = 26;
+const BOSS_DRIFT_PER_FIGHT = 0.5;
+const BOSS_DRIFT_CAP = 40;
+
+// Shield windows. The OPENING PHASE NEVER SHIELDS - every authored boss was
+// written that way so the mechanic is introduced rather than sprung, and
+// generating the phases must not quietly drop that.
+const BOSS_SHIELDED_SEC_START = 3.5;
+const BOSS_SHIELDED_SEC_END = 6;
+const BOSS_SHIELDED_PER_FIGHT = 0.15;
+const BOSS_SHIELDED_CAP = 8;
+/** How long the boss stays open to fire. Shrinks as a fight and a run go
+ * on - a narrower window, not a tougher boss. */
+const BOSS_VULNERABLE_SEC_START = 6.5;
+const BOSS_VULNERABLE_SEC_END = 4;
+const BOSS_VULNERABLE_PER_FIGHT = 0.1;
+const BOSS_VULNERABLE_MIN_SEC = 2.5;
+
+/** Seconds between reinforcements the boss may call. */
+const BOSS_ADD_INTERVAL_START: [number, number] = [3.2, 4.2];
+const BOSS_ADD_INTERVAL_END: [number, number] = [2, 2.8];
+const BOSS_ADD_INTERVAL_TIGHTEN_PER_FIGHT = 0.02;
+const BOSS_ADD_INTERVAL_MIN_SEC = 1.2;
+
+/**
+ * What a boss calls in, easiest first.
+ *
+ * Deliberately the WEAK END of the registry, and deliberately missing
+ * `bulwark` and `sentinel`: a reinforcement is a consequence of the player
+ * not engaging with the maths, so it has to be answerable. A two-layer
+ * bulwark or a shielded sentinel is a second problem stacked on the one the
+ * player is already failing, which is the opposite of the point.
+ */
+const BOSS_ADD_LADDER: EnemyArchetypeId[] = ['spore', 'drifter', 'weaver', 'splitter'];
+/** Fights before the add ladder steps up a rung. */
+const FIGHTS_PER_ADD_STEP = 4;
+
+/** Suffixes for phases past the ones the roster entry named. */
+const PHASE_REPEAT_NUMERALS = ['', ' II', ' III', ' IV', ' V'];
+
+/** How much harder a fight's FIRST problem leans, per fight deep. Without
+ * it every boss opens sampling its scope evenly, so a wave-40 fight starts
+ * as gently as wave 5's and only hardens as its own clock runs down. */
+const BOSS_SCOPE_BIAS_PER_FIGHT = 0.12;
+const BOSS_SCOPE_BIAS_CAP = 0.8;
+
+/** Boss adds fall slower than the wave's own enemies. The authored roster
+ * had them FASTER ([15,20] against a wave's [8,12]-[13,18]), which is again
+ * the opposite of what a reinforcement is for. */
+const BOSS_ADD_SPEED_SOFTEN = 0.85;
+
+/** Every boss finale, in the roster's own easiest-first order. Selected by
+ * how many bosses deep the run is rather than by which boss it happens to
+ * be - that swap is what stops wave 20 inheriting wave 5's finale. */
+const FINALE_LADDER: AuthoredProblemRecipe[] = BOSS_ROSTER.map((b) => b.finaleProblem);
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -222,29 +384,164 @@ export function bossScopeForWave(ladder: Curriculum[], waveNumber: number): Curr
   return ladder.slice(0, Math.min(index, ladder.length - 1) + 1);
 }
 
+/** Consecutive exact answers that end this wave's fight outright. */
+export function bossComboFor(waveNumber: number): number {
+  const ordinal = Math.max(1, bossOrdinal(waveNumber));
+  return Math.min(BOSS_COMBO_CAP, BOSS_COMBO_BASE + Math.floor((ordinal - 1) / FIGHTS_PER_EXTRA_COMBO));
+}
+
 /**
- * The boss for this wave. Identity (name, sprite, phases, finale) is
- * cycled from the authored roster; the maths comes in as `scope`, and the
- * numbers that decide how hard the fight is scale with how many bosses
- * deep the run has got.
+ * The shortest this wave's fight may last, in seconds - the floor that
+ * timer cuts clamp against, so answering well compresses a fight rather
+ * than skipping it.
  *
- * Splitting it this way is what lets a boss appear on wave 5 regardless of
- * curriculum - the roster's three fights were authored on three different
- * bundles, and only two of the seven bundles authored one at all.
+ * Derived from the combo requirement, not flat. A flat floor sounds like
+ * the same thing and isn't: `comboToDefeat` grows with the wave, so a
+ * fixed 30s would leave a late boss asking for 8 exact answers inside a
+ * window that only fits 6, and the mastery route would go back to being
+ * unreachable exactly where it matters most.
+ */
+export function bossMinFightSec(waveNumber: number): number {
+  const ordinal = Math.max(1, bossOrdinal(waveNumber));
+  const needed = bossComboFor(waveNumber) * BOSS_SEC_PER_COMBO_ANSWER;
+  const creep = (ordinal - 1) * BOSS_MIN_PER_FIGHT_SEC;
+  return Math.min(
+    BOSS_MIN_FIGHT_CAP_SEC,
+    Math.round((Math.max(BOSS_MIN_SURVIVE_SEC, needed) + creep) * 10) / 10
+  );
+}
+
+/**
+ * How long the player must last if they never answer the boss down.
+ *
+ * Deliberately well above `bossMinFightSec`: the gap is the headroom timer
+ * cuts work in, so a player answering well compresses the fight toward the
+ * floor while one who can't answer it endures the whole thing. That gap is
+ * also what made the mastery route reachable again - the old 20s clock was
+ * shorter than the ~22s of play a 5-combo needs, so the fight always ended
+ * by survival first, whatever the player did.
+ */
+export function bossSurviveSecFor(waveNumber: number): number {
+  return Math.min(
+    BOSS_SURVIVE_CAP_SEC,
+    Math.round(bossMinFightSec(waveNumber) * BOSS_SURVIVE_HEADROOM_FACTOR * 10) / 10
+  );
+}
+
+/** How many segments this wave's fight is cut into. */
+export function bossPhaseCountFor(waveNumber: number): number {
+  const ordinal = Math.max(1, bossOrdinal(waveNumber));
+  return Math.min(
+    BOSS_PHASE_COUNT_MAX,
+    BOSS_PHASE_COUNT_MIN + Math.floor((ordinal - 1) / FIGHTS_PER_EXTRA_PHASE)
+  );
+}
+
+/** Keeps a fight's authored voice past the phases the roster entry named,
+ * rather than falling back to generic labels. */
+function phaseNameFor(template: BossRules, index: number): string {
+  const base = template.phases[index % template.phases.length].name;
+  const pass = Math.floor(index / template.phases.length);
+  return `${base}${PHASE_REPEAT_NUMERALS[Math.min(pass, PHASE_REPEAT_NUMERALS.length - 1)]}`;
+}
+
+/**
+ * The phase ladder for this wave's fight, generated rather than authored.
+ *
+ * Two escalations compose here, and they're independent on purpose: `t`
+ * walks from the opening phase to the closing one WITHIN a fight, and the
+ * ordinal makes every one of those positions harsher as the run goes on.
+ * That's what makes wave 40's opening phase tougher than wave 5's closing
+ * one, which is what "correlated to the wave number" has to mean if the
+ * run is to keep escalating past the authored material.
+ */
+export function bossPhasesFor(waveNumber: number, template: BossRules): BossPhase[] {
+  const ordinal = Math.max(1, bossOrdinal(waveNumber));
+  const count = bossPhaseCountFor(waveNumber);
+  const deep = ordinal - 1;
+
+  return Array.from({ length: count }, (_, i) => {
+    const t = count > 1 ? i / (count - 1) : 0;
+    // The opening phase never shields - see the constants above.
+    const opening = i === 0;
+
+    return {
+      name: phaseNameFor(template, i),
+      // Later phases occupy slightly more of the fight, so the hard part
+      // is also the long part.
+      weight: 1 + i * 0.1,
+      driftSpeed: Math.min(
+        BOSS_DRIFT_CAP,
+        lerp(BOSS_DRIFT_START, BOSS_DRIFT_END, t) + deep * BOSS_DRIFT_PER_FIGHT
+      ),
+      addInterval: [
+        Math.max(
+          BOSS_ADD_INTERVAL_MIN_SEC,
+          lerp(BOSS_ADD_INTERVAL_START[0], BOSS_ADD_INTERVAL_END[0], t) *
+            (1 - Math.min(0.5, deep * BOSS_ADD_INTERVAL_TIGHTEN_PER_FIGHT))
+        ),
+        Math.max(
+          BOSS_ADD_INTERVAL_MIN_SEC,
+          lerp(BOSS_ADD_INTERVAL_START[1], BOSS_ADD_INTERVAL_END[1], t) *
+            (1 - Math.min(0.5, deep * BOSS_ADD_INTERVAL_TIGHTEN_PER_FIGHT))
+        ),
+      ],
+      addArchetype:
+        BOSS_ADD_LADDER[
+          Math.min(BOSS_ADD_LADDER.length - 1, i + Math.floor(deep / FIGHTS_PER_ADD_STEP))
+        ],
+      vulnerableSec: Math.max(
+        BOSS_VULNERABLE_MIN_SEC,
+        lerp(BOSS_VULNERABLE_SEC_START, BOSS_VULNERABLE_SEC_END, t) - deep * BOSS_VULNERABLE_PER_FIGHT
+      ),
+      shieldedSec: opening
+        ? 0
+        : Math.min(
+            BOSS_SHIELDED_CAP,
+            lerp(BOSS_SHIELDED_SEC_START, BOSS_SHIELDED_SEC_END, t) + deep * BOSS_SHIELDED_PER_FIGHT
+          ),
+    };
+  });
+}
+
+/**
+ * The boss for this wave.
+ *
+ * The roster supplies IDENTITY - name, sprite, theme, and the phase names
+ * that give a fight its voice. Everything that decides how hard the fight
+ * is comes from the wave number: survive clock, combo requirement, phase
+ * ladder, finale, and how hard its first problem leans. See the escalation
+ * block above for why that split had to be drawn here rather than left on
+ * the roster.
+ *
+ * The maths still arrives separately as `scope`, which is what lets a boss
+ * appear on wave 5 regardless of curriculum - the roster's three fights
+ * were authored on three different bundles, and only two of the seven
+ * bundles authored one at all.
  */
 export function bossRulesFor(waveNumber: number, scope: Curriculum[]): BossRules {
   const ordinal = Math.max(1, bossOrdinal(waveNumber));
   const template = BOSS_ROSTER[(ordinal - 1) % BOSS_ROSTER.length];
   const cycle = Math.floor((ordinal - 1) / BOSS_ROSTER.length);
   const prefix = BOSS_TIER_PREFIXES[Math.min(cycle, BOSS_TIER_PREFIXES.length - 1)];
+  const wave = arcadeDifficultyFor(waveNumber);
 
   return {
     ...template,
     name: `${prefix}${template.name}`,
     scope,
-    surviveSec: template.surviveSec + cycle * BOSS_SURVIVE_STEP_SEC,
-    comboToDefeat: template.comboToDefeat + cycle,
-    arcadeDifficulty: arcadeDifficultyFor(waveNumber),
+    surviveSec: bossSurviveSecFor(waveNumber),
+    comboToDefeat: bossComboFor(waveNumber),
+    phases: bossPhasesFor(waveNumber, template),
+    finaleProblem: FINALE_LADDER[Math.min(ordinal - 1, FINALE_LADDER.length - 1)],
+    scopeBias: Math.min(BOSS_SCOPE_BIAS_CAP, (ordinal - 1) * BOSS_SCOPE_BIAS_PER_FIGHT),
+    arcadeDifficulty: {
+      maxConcurrent: wave.maxConcurrent,
+      fallSpeed: [
+        wave.fallSpeed[0] * BOSS_ADD_SPEED_SOFTEN,
+        wave.fallSpeed[1] * BOSS_ADD_SPEED_SOFTEN,
+      ],
+    },
   };
 }
 

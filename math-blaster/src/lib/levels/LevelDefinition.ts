@@ -107,6 +107,16 @@ export interface BossRules {
   /** Ordered easiest-to-hardest; the fight walks through them as the
    * survive timer drains. Must not be empty. */
   phases: BossPhase[];
+  /**
+   * How hard this fight's problems lean from the FIRST one, 0-1, on top of
+   * the progressive weighting every fight already applies as its clock runs
+   * down. A deep boss should not open as gently as wave 5's.
+   *
+   * Optional because the authored bundles don't set it - they are read as
+   * templates by `waveProgression`, which always does. Absent means 0,
+   * i.e. the original behaviour of opening evenly across the scope.
+   */
+  scopeBias?: number;
   /** The climactic final attack, staying within `scope` rather than
    * reaching outside it. Presented for the last stretch of the fight,
    * when the boss drops its shield and goes berserk. */
