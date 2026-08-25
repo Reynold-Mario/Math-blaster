@@ -605,10 +605,11 @@
     cursor: pointer;
   }
 
+  /* Was a 4px bezel nested inside App.svelte's CRT bezel - two frames around
+     one canvas. The cabinet is gone, so this is just the pointer surface now. */
   .stage-wrapper {
     position: relative;
-    border: 4px solid var(--ink);
-    border-radius: 14px;
+    border-radius: 10px;
     overflow: hidden;
     touch-action: none;
   }
