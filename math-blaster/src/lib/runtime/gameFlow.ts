@@ -11,6 +11,7 @@ import { enemyArchetype, stepMovement, clampLane, GLOBAL_FALL_SPEED_MULTIPLIER }
 import { buildFormation } from '../levels/waves';
 import {
   arcadeDifficultyFor,
+  bossOrdinal,
   bossRulesFor,
   bossScopeForWave,
   curriculumForWave,
@@ -88,8 +89,21 @@ const WAVE_CLEAR_BONUS_MS = 9500;
 /** Paid per qualifying kill in the cleared wave. An enemy that got through
  * costs the player this as well as the impact penalty. */
 const WAVE_CLEAR_PER_KILL_BONUS_MS = 3000;
-/** Paid for surviving a boss wave, whichever route won it. */
-const BOSS_CLEAR_BONUS_MS = 25000;
+/**
+ * Paid for DEFEATING a boss - the mastery route only. Outlasting the
+ * survive clock is escaping a boss, not killing it, and pays nothing at
+ * all: the cost of failing to defeat one is the half-minute spent on it
+ * with nothing to show.
+ *
+ * Cut from 25s when it stopped being paid on both routes, then raised
+ * again against the harness. Withholding it from the survival route,
+ * shrinking it, and giving every fight a 30s+ floor all push the same
+ * direction, and the youngest players wear all three at once - this is
+ * the knob that buys them back. Retune it HERE rather than by paying the
+ * survival route something, which is the distinction the whole change
+ * rests on.
+ */
+const BOSS_CLEAR_BONUS_MS = 18000;
 /** Cut from the clock by one enemy reaching the impact line. Every point of
  * this compounds for a weak player, who leaks on most waves - it was 5s,
  * which was most of why a slow run died before the second boss. */
@@ -128,9 +142,24 @@ const WEAK_POINT_MIN_OFFSET_PCT = 8;
 const WEAK_POINT_MAX_OFFSET_PCT = 16;
 
 /** Ending a fight on a combo instead of the clock is the mastery route,
- * and it pays like one. */
+ * and it pays like one. It is also the ONLY route that pays: see
+ * `onBossDefeated`. */
 const MASTERY_SCORE_BONUS = 250;
-const MASTERY_CURRENCY_BONUS = 40;
+
+// --- Boss bounty. A boss is the point of a run, so killing one is the
+// biggest single payout in the game, and it grows with how many bosses
+// deep the run has got - a wave-40 boss should not pay what wave 5's did.
+//
+// Expressed as a multiplier on the ordinary per-kill amount rather than as
+// its own flat figure, so it goes through `awardCurrency` and the Bounty
+// skill keeps applying to the one kill that matters most. ---
+
+/** What the first boss pays, in ordinary-kill equivalents. */
+const BOSS_BOUNTY_MULTIPLIER = 5;
+/** Added to that multiplier for each boss the run has already reached. */
+const BOSS_BOUNTY_MULTIPLIER_PER_FIGHT = 1.5;
+/** On top again for the mastery route, which is the harder way to win. */
+const MASTERY_BOUNTY_MULTIPLIER = 3;
 /** Score for a good answer against a boss - bosses award no per-kill
  * score of their own, so this is the fight's whole scoring surface. */
 const BOSS_ANSWER_SCORE = 15;
@@ -480,10 +509,21 @@ function emitHitEvent(result: AnswerResult, xPct: number, y: number, targetId: n
   }
 }
 
-function awardCurrency(profile: PlayerProfile, multiplier = 1): void {
+/** Pays currency and reports what was actually paid, so a caller can put
+ * the real figure in front of the player rather than the nominal one. */
+function awardCurrency(profile: PlayerProfile, multiplier = 1): number {
   const amount = Math.max(1, Math.round((BASE_CURRENCY_PER_KILL + currentBountyBonus(profile)) * multiplier));
   profile.currency += amount;
   gameEvents.emit({ type: 'currency-earned', amount, total: profile.currency });
+  return amount;
+}
+
+/** What this wave's boss is worth, in ordinary-kill equivalents. Grows with
+ * the boss ordinal rather than the raw wave number so it steps once per
+ * fight instead of drifting between them. */
+function bossBountyMultiplier(waveNumber: number): number {
+  const ordinal = Math.max(1, bossOrdinal(waveNumber));
+  return BOSS_BOUNTY_MULTIPLIER + (ordinal - 1) * BOSS_BOUNTY_MULTIPLIER_PER_FIGHT;
 }
 
 function destroyEnemy(state: RuntimeState, profile: PlayerProfile, enemy: EnemyInstance): void {
@@ -657,23 +697,45 @@ function startBossPhase(state: RuntimeState, profile: PlayerProfile): void {
   gameEvents.emit({ type: 'boss-phase-changed', phaseIndex: 0, name: openingPhase.name });
 }
 
+/**
+ * Ends a boss fight, either way it was won.
+ *
+ * ONLY THE MASTERY ROUTE PAYS. Outlasting the survive clock is escaping a
+ * boss, not defeating it - the player never answered it down, so there is
+ * nothing to reward. Both the bounty and the clock bonus are gated on the
+ * combo, which makes the half-minute spent on a boss you couldn't answer
+ * the whole cost of not answering it. There is deliberately no *extra*
+ * penalty on top: the run moves on either way, and the lost payout is
+ * punishment enough for a child.
+ *
+ * Bounty and time both come back from the calls that granted them rather
+ * than being reported nominally - the clock has a ceiling that can swallow
+ * a payout whole, and the banner must not promise what the player didn't
+ * get.
+ */
 function onBossDefeated(state: RuntimeState, profile: PlayerProfile, cause: 'survival' | 'mastery'): void {
   const boss = state.boss!;
   boss.defeatedBy = cause;
 
+  let bountyEarned = 0;
+  let timeBonusMs = 0;
   if (cause === 'mastery') {
     state.score += MASTERY_SCORE_BONUS;
-    profile.currency += MASTERY_CURRENCY_BONUS;
-    gameEvents.emit({ type: 'currency-earned', amount: MASTERY_CURRENCY_BONUS, total: profile.currency });
+    bountyEarned = awardCurrency(
+      profile,
+      bossBountyMultiplier(state.waveNumber) + MASTERY_BOUNTY_MULTIPLIER
+    );
+    timeBonusMs = addRunTime(state, profile, BOSS_CLEAR_BONUS_MS);
   }
 
   state.enemies = [];
-  addRunTime(state, profile, BOSS_CLEAR_BONUS_MS);
   gameEvents.emit({
     type: 'boss-defeated',
     by: cause,
     bestCombo: Math.max(boss.bestCombo, boss.combo),
     waveNumber: state.waveNumber,
+    bountyEarned,
+    timeBonusMs,
   });
   state.boss = null;
   state.bossRules = null;

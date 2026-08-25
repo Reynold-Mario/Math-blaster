@@ -401,24 +401,36 @@ describe('the run clock', () => {
     expect(granted).toBeLessThan(9500);
   });
 
-  it('pays out for surviving a boss wave', () => {
+  it('pays NOTHING for merely outlasting a boss', () => {
+    // Outlasting the survive clock is escaping a boss, not defeating it.
+    // The half-minute spent on one the player couldn't answer is the whole
+    // cost of not answering it - so there is no clock payout and no bounty,
+    // and the run still moves on to the next wave.
     const state = createInitialRuntimeState();
     const profile = createEmptyProfile();
     resetRun(state, profile);
     beginWave(state, WAVE_BOSS_INTERVAL);
-    state.timeRemainingMs = 20000;
     events = [];
 
     tickUntil(state, profile, () => state.boss !== null, 'the boss');
     state.timeRemainingMs = 20000;
     state.boss!.surviveRemainingMs = 40;
+    const startCurrency = profile.currency;
     events = [];
 
     for (let i = 0; i < 200 && state.boss; i++) tick(state, profile, 1 / 30);
 
-    expect(eventsOfType('boss-defeated')).toHaveLength(1);
-    expect(eventsOfType('time-gained').length).toBeGreaterThan(0);
-    expect(state.timeRemainingMs).toBeGreaterThan(20000);
+    const defeated = eventsOfType('boss-defeated');
+    expect(defeated).toHaveLength(1);
+    expect(defeated[0].by).toBe('survival');
+    expect(defeated[0].bountyEarned).toBe(0);
+    expect(defeated[0].timeBonusMs).toBe(0);
+    expect(eventsOfType('time-gained')).toHaveLength(0);
+    expect(eventsOfType('currency-earned')).toHaveLength(0);
+    expect(profile.currency).toBe(startCurrency);
+    expect(state.timeRemainingMs).toBeLessThanOrEqual(20000);
+    // Still not a dead end - the run carries on regardless of the route.
+    expect(state.waveNumber).toBe(WAVE_BOSS_INTERVAL + 1);
   });
 });
 
@@ -795,16 +807,37 @@ describe('boss fights', () => {
     expect(defeated[0].by).toBe('survival');
   });
 
-  it('pays a mastery finish better than an endurance one', () => {
-    const mastered = enterBossFight();
-    mastered.state.enemies = [];
-    const startCurrency = mastered.profile.currency;
-    for (let i = 0; i < mastered.boss.comboRequired; i++) {
-      if (!mastered.state.boss) break;
-      mastered.state.enemies = [];
-      shoot(mastered.state, mastered.profile, mastered.state.boss.xPct, correctAnswer(mastered.state.boss.problem));
+  /** Runs a fight to a combo finish and reports what the kill paid. */
+  function masterBossAt(waveNumber: number) {
+    const fight = enterBossFight(waveNumber);
+    const startCurrency = fight.profile.currency;
+    events = [];
+    for (let i = 0; i < fight.boss.comboRequired; i++) {
+      if (!fight.state.boss) break;
+      fight.state.enemies = [];
+      shoot(fight.state, fight.profile, fight.state.boss.xPct, correctAnswer(fight.state.boss.problem));
     }
-    expect(mastered.profile.currency).toBeGreaterThan(startCurrency);
+    const defeated = eventsOfType('boss-defeated');
+    expect(defeated).toHaveLength(1);
+    expect(defeated[0].by).toBe('mastery');
+    return { ...fight, paid: fight.profile.currency - startCurrency, event: defeated[0] };
+  }
+
+  it('pays a bounty and run time for a mastery finish', () => {
+    const { paid, event, state } = masterBossAt(WAVE_BOSS_INTERVAL);
+    expect(paid).toBeGreaterThan(0);
+    // The event reports what was actually granted, not the nominal figure.
+    expect(event.bountyEarned).toBe(paid);
+    expect(event.timeBonusMs).toBeGreaterThan(0);
+    expect(state.waveNumber).toBe(WAVE_BOSS_INTERVAL + 1);
+  });
+
+  it('pays a later boss more than an earlier one', () => {
+    // A wave-40 boss should not pay what wave 5's did - the bounty steps up
+    // once per fight, so a run that gets deep is worth getting deep into.
+    const early = masterBossAt(WAVE_BOSS_INTERVAL);
+    const late = masterBossAt(WAVE_BOSS_INTERVAL * 8);
+    expect(late.paid).toBeGreaterThan(early.paid);
   });
 
   describe('shields and weak points', () => {

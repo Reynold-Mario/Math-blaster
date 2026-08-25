@@ -158,7 +158,13 @@ function handleGameEvent(event: GameEvent) {
       // The old victory sting, repurposed: with an endless wave sequence
       // there's no final win to save it for, and beating a boss is the
       // biggest thing that happens in a run.
-      sfx.victory();
+      //
+      // Only the mastery route gets it, though. Outlasting a boss ends the
+      // wave without defeating it and pays nothing, so it takes the
+      // ordinary wave-clear cue - audibly less than a win, which is the
+      // relationship the payouts now describe.
+      if (event.by === 'mastery') sfx.victory();
+      else sfx.stageClear();
       break;
     case 'game-over':
       sfx.gameover();

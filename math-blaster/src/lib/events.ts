@@ -63,7 +63,17 @@ export type GameEvent =
   | { type: 'boss-shield-dropped' }
   | { type: 'boss-combo'; combo: number; required: number }
   | { type: 'boss-combo-broken'; lostCombo: number }
-  | { type: 'boss-defeated'; by: BossDefeatCause; bestCombo: number; waveNumber: number }
+  /** `bountyEarned` and `timeBonusMs` are what the player ACTUALLY got, not
+   * what the fight nominally pays - the clock has a ceiling, and a survival
+   * finish earns neither. Both are 0 on the survival route. */
+  | {
+      type: 'boss-defeated';
+      by: BossDefeatCause;
+      bestCombo: number;
+      waveNumber: number;
+      bountyEarned: number;
+      timeBonusMs: number;
+    }
   | { type: 'boss-finale-started' }
   | { type: 'time-lost'; amountMs: number; remainingMs: number }
   /** Time added back to the run clock - the counterpart to `time-lost`, and

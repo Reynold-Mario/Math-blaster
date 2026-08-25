@@ -141,7 +141,12 @@ export interface RunResult {
   survivedToCap: boolean;
   durationSec: number;
   bossesFought: number;
+  /** Fights that ENDED, either route - a boss wave the run got through. */
   bossesBeaten: number;
+  /** Fights ended on the combo, i.e. actually defeated. Only these pay a
+   * bounty or any run time, so this is the number that decides whether a
+   * modelled player can sustain a run through bosses at all. */
+  bossesMastered: number;
   waves: WaveRecord[];
 }
 
@@ -169,6 +174,7 @@ export function simulateRun(player: SimPlayer, seed: number, options: SimOptions
   const waves: WaveRecord[] = [];
   let bossesFought = 0;
   let bossesBeaten = 0;
+  let bossesMastered = 0;
   let leakedThisWave = 0;
   let waveStartSec = 0;
   let waveStartClockSec = 0;
@@ -191,6 +197,7 @@ export function simulateRun(player: SimPlayer, seed: number, options: SimOptions
         break;
       case 'boss-defeated':
         bossesBeaten++;
+        if (event.by === 'mastery') bossesMastered++;
         break;
       case 'wave-cleared':
         waves.push({
@@ -255,6 +262,7 @@ export function simulateRun(player: SimPlayer, seed: number, options: SimOptions
       durationSec: elapsed,
       bossesFought,
       bossesBeaten,
+      bossesMastered,
       waves,
     };
   } finally {
@@ -306,7 +314,11 @@ export interface Summary {
   pastFirstBoss: number;
   pastSecondBoss: number;
   reachedCap: number;
+  /** Share of fights the run got through at all. */
   bossWinRate: number;
+  /** Share of fights actually DEFEATED on the combo. The gap between this
+   * and bossWinRate is fights escaped for no reward. */
+  bossMasteryRate: number;
   meanRunSec: number;
 }
 
@@ -320,6 +332,7 @@ export function summarize(player: SimPlayer, runs: RunResult[]): Summary {
   const finals = runs.map((r) => r.finalWave).sort((a, b) => a - b);
   const fought = runs.reduce((n, r) => n + r.bossesFought, 0);
   const beaten = runs.reduce((n, r) => n + r.bossesBeaten, 0);
+  const mastered = runs.reduce((n, r) => n + r.bossesMastered, 0);
   return {
     player: player.name,
     runs: runs.length,
@@ -331,6 +344,7 @@ export function summarize(player: SimPlayer, runs: RunResult[]): Summary {
     pastSecondBoss: runs.filter((r) => r.finalWave > 10).length / runs.length,
     reachedCap: runs.filter((r) => r.survivedToCap).length / runs.length,
     bossWinRate: fought ? beaten / fought : 0,
+    bossMasteryRate: fought ? mastered / fought : 0,
     meanRunSec: runs.reduce((n, r) => n + r.durationSec, 0) / runs.length,
   };
 }
