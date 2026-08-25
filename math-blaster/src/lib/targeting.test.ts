@@ -30,6 +30,8 @@ function makeBoss(overrides: Partial<BossState> = {}): BossState {
     sprite: 'boss1',
     surviveRemainingMs: 20000,
     surviveTotalMs: 20000,
+    elapsedMs: 0,
+    minFightMs: 30000,
     combo: 0,
     comboRequired: 5,
     bestCombo: 0,

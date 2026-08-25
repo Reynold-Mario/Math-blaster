@@ -52,17 +52,31 @@ export function generateProblem(curriculum: Curriculum): ProblemDefinition {
   }
 }
 
-/** Picks a problem for a boss fight from its cumulative scope. `progress`
+/**
+ * Picks a problem for a boss fight from its cumulative scope. `progress`
  * (0-1, how far into the fight) smoothly biases selection toward the
  * harder end of `scope` - assumed ordered easiest-to-hardest - without
  * ever fully excluding earlier material, so the sequence escalates but
- * stays "still in-scope" rather than testing only the newest curriculum. */
-export function generateBossProblem(scope: Curriculum[], progress: number): ProblemDefinition {
+ * stays "still in-scope" rather than testing only the newest curriculum.
+ *
+ * `openingBias` (0-1) is where the fight STARTS on that same slope, so a
+ * deep boss is already leaning hard at its first problem instead of
+ * opening as evenly as wave 5's. It composes with progress rather than
+ * replacing it: bias sets the floor, progress covers the rest of the way.
+ * 0 is the original behaviour.
+ */
+export function generateBossProblem(
+  scope: Curriculum[],
+  progress: number,
+  openingBias = 0
+): ProblemDefinition {
   if (scope.length === 0) {
     throw new Error('Boss scope is empty - nothing to generate a problem from.');
   }
+  const bias = Math.max(0, Math.min(1, openingBias));
   const clamped = Math.max(0, Math.min(1, progress));
-  const weights = scope.map((_, i) => 1 + clamped * i);
+  const lean = bias + (1 - bias) * clamped;
+  const weights = scope.map((_, i) => 1 + lean * i);
   const total = weights.reduce((sum, w) => sum + w, 0);
   let roll = Math.random() * total;
   let chosen = scope[scope.length - 1];

@@ -1,10 +1,13 @@
 import {
+  BOSS_MIN_SURVIVE_SEC,
   WAVE_BOSS_INTERVAL,
   arcadeDifficultyFor,
   backdropForWave,
+  bossMinFightSec,
   bossOrdinal,
   bossRulesFor,
   bossScopeForWave,
+  bossSurviveSecFor,
   curriculumForWave,
   isBossWave,
   waveSpecFor,
@@ -19,6 +22,10 @@ import { enemyArchetype } from './enemyArchetypes';
  * to know what a wave is, that it's the same answer every time, and that
  * the sequence never runs out or plateaus.
  */
+
+/** The roster's finales in authored (easiest-first) order - the yardstick
+ * for "a later boss never gets an easier finale". */
+const FINALE_ORDER = BOSS_ROSTER.map((b) => b.finaleProblem);
 
 /** Deep enough to run well past the authored material and into the tail. */
 const DEEP = 160;
@@ -40,26 +47,115 @@ describe('boss cadence', () => {
     expect(bossOrdinal(WAVE_BOSS_INTERVAL * 4)).toBe(4);
   });
 
-  it('cycles the authored roster', () => {
+  it('cycles the authored roster for IDENTITY only', () => {
+    // The roster supplies name, sprite and the phase names that give a
+    // fight its voice. It no longer supplies the phases themselves - those
+    // are generated from the wave, which is the whole point of this change.
     const scope = DEFAULT_CURRICULUM_LADDER.slice(0, 1);
     for (let ordinal = 1; ordinal <= BOSS_ROSTER.length * 2; ordinal++) {
       const rules = bossRulesFor(ordinal * WAVE_BOSS_INTERVAL, scope);
       const template = BOSS_ROSTER[(ordinal - 1) % BOSS_ROSTER.length];
       expect(rules.sprite).toBe(template.sprite);
-      expect(rules.phases).toBe(template.phases);
       expect(rules.name).toContain(template.name);
+      // Its opening phase still carries the authored phase's name.
+      expect(rules.phases[0].name).toContain(template.phases[0].name);
     }
   });
 
-  it('escalates a boss on each pass through the roster', () => {
+  /** Every boss ordinal from the first to well past the authored material. */
+  const ORDINALS = Array.from({ length: 24 }, (_, i) => i + 1);
+
+  it('never gets easier as the wave number climbs', () => {
+    // This is the property the old roster-driven code broke: because the
+    // roster cycles and its entries are easiest-first, wave 20 inherited
+    // wave 5's 2-phase, 24s fight and its easier finale, so a run got
+    // EASIER at wave 20 than it had been at wave 15.
+    const scope = DEFAULT_CURRICULUM_LADDER;
+    let previous = bossRulesFor(WAVE_BOSS_INTERVAL, scope);
+
+    for (const ordinal of ORDINALS.slice(1)) {
+      const rules = bossRulesFor(ordinal * WAVE_BOSS_INTERVAL, scope);
+      expect(rules.surviveSec).toBeGreaterThanOrEqual(previous.surviveSec);
+      expect(rules.comboToDefeat).toBeGreaterThanOrEqual(previous.comboToDefeat);
+      expect(rules.phases.length).toBeGreaterThanOrEqual(previous.phases.length);
+      expect(rules.scopeBias!).toBeGreaterThanOrEqual(previous.scopeBias!);
+      previous = rules;
+    }
+  });
+
+  it('escalates visibly between consecutive bosses, not just across passes', () => {
     const scope = DEFAULT_CURRICULUM_LADDER;
     const first = bossRulesFor(WAVE_BOSS_INTERVAL, scope);
-    const second = bossRulesFor(WAVE_BOSS_INTERVAL * (BOSS_ROSTER.length + 1), scope);
+    const second = bossRulesFor(WAVE_BOSS_INTERVAL * 2, scope);
+    const deep = bossRulesFor(WAVE_BOSS_INTERVAL * 8, scope);
 
+    // Consecutive fights are never structurally identical - the per-fight
+    // creep on the floor covers the gaps between combo/phase steps.
     expect(second.surviveSec).toBeGreaterThan(first.surviveSec);
-    expect(second.comboToDefeat).toBeGreaterThan(first.comboToDefeat);
+    // And a deep fight is harder on every axis, not just longer.
+    expect(deep.comboToDefeat).toBeGreaterThan(first.comboToDefeat);
+    expect(deep.phases.length).toBeGreaterThan(first.phases.length);
+    expect(deep.scopeBias!).toBeGreaterThan(first.scopeBias!);
     // A repeat visit announces itself rather than reading as the same fight.
-    expect(second.name).not.toBe(first.name);
+    expect(bossRulesFor(WAVE_BOSS_INTERVAL * (BOSS_ROSTER.length + 1), scope).name).not.toBe(first.name);
+  });
+
+  it('never runs a fight shorter than the 30-second minimum', () => {
+    for (const ordinal of ORDINALS) {
+      const wave = ordinal * WAVE_BOSS_INTERVAL;
+      expect(bossMinFightSec(wave)).toBeGreaterThanOrEqual(BOSS_MIN_SURVIVE_SEC);
+      // And the endurance route always has headroom above the floor for
+      // timer cuts to bite into. Collapse these two and "good answers
+      // shorten the fight" silently stops being true.
+      expect(bossSurviveSecFor(wave)).toBeGreaterThan(bossMinFightSec(wave));
+    }
+  });
+
+  it('always leaves room to actually land the combo', () => {
+    // The mastery route must be reachable at EVERY wave. It was not: each
+    // exact answer cut 2.6s off a 20s clock on top of the seconds spent
+    // thinking, so survival always won the race and the measured mastery
+    // rate was 0% everywhere. The fight's floor is what guarantees the room,
+    // which makes this a relationship between constants rather than a
+    // property of any one of them.
+    const secPerAnswer = 5.5;
+    for (const ordinal of ORDINALS) {
+      const wave = ordinal * WAVE_BOSS_INTERVAL;
+      const rules = bossRulesFor(wave, DEFAULT_CURRICULUM_LADDER);
+      expect(rules.comboToDefeat * secPerAnswer).toBeLessThanOrEqual(bossMinFightSec(wave));
+    }
+  });
+
+  it('opens every fight unshielded, however deep the run is', () => {
+    // Authored bosses were all written this way so the shield is introduced
+    // rather than sprung. Generating the phases must not quietly drop it.
+    for (const ordinal of ORDINALS) {
+      const rules = bossRulesFor(ordinal * WAVE_BOSS_INTERVAL, DEFAULT_CURRICULUM_LADDER);
+      expect(rules.phases[0].shieldedSec).toBe(0);
+    }
+  });
+
+  it('only ever calls in adds a struggling player can answer', () => {
+    // A reinforcement is a consequence of not engaging with the maths, so
+    // it has to be answerable. A two-layer bulwark or a shielded sentinel
+    // is a second problem stacked on the one being failed.
+    for (const ordinal of ORDINALS) {
+      const rules = bossRulesFor(ordinal * WAVE_BOSS_INTERVAL, DEFAULT_CURRICULUM_LADDER);
+      for (const phase of rules.phases) {
+        expect(['bulwark', 'sentinel']).not.toContain(phase.addArchetype);
+      }
+    }
+  });
+
+  it('never hands a later boss an easier finale than an earlier one', () => {
+    const scope = DEFAULT_CURRICULUM_LADDER;
+    let previous = bossRulesFor(WAVE_BOSS_INTERVAL, scope).finaleProblem;
+    for (const ordinal of ORDINALS.slice(1)) {
+      const finale = bossRulesFor(ordinal * WAVE_BOSS_INTERVAL, scope).finaleProblem;
+      const index = FINALE_ORDER.indexOf(finale);
+      expect(index).toBeGreaterThanOrEqual(FINALE_ORDER.indexOf(previous));
+      previous = finale;
+    }
   });
 
   it('takes its maths from the scope it is handed, not from the roster', () => {

@@ -1,4 +1,4 @@
-import type { RuntimeState, EnemyInstance } from './RuntimeState';
+import type { RuntimeState, EnemyInstance, BossState } from './RuntimeState';
 import type { PlayerProfile } from './PlayerProfile';
 import type { BossPhase, Curriculum } from '../levels/LevelDefinition';
 import type { EnemyArchetypeId } from '../levels/enemyArchetypes';
@@ -11,6 +11,7 @@ import { enemyArchetype, stepMovement, clampLane, GLOBAL_FALL_SPEED_MULTIPLIER }
 import { buildFormation } from '../levels/waves';
 import {
   arcadeDifficultyFor,
+  bossMinFightSec,
   bossOrdinal,
   bossRulesFor,
   bossScopeForWave,
@@ -214,7 +215,7 @@ function bossScope(profile: PlayerProfile): Curriculum[] {
  * the whole fight reviews everything learned so far. */
 function problemForCurrentPhase(state: RuntimeState, profile: PlayerProfile): ProblemDefinition {
   if (state.runPhase === 'boss' && state.boss && state.bossRules) {
-    return generateBossProblem(state.bossRules.scope, state.boss.progress);
+    return generateBossProblem(state.bossRules.scope, state.boss.progress, state.bossRules.scopeBias);
   }
   return generateProblem(curriculumForWave(curriculumLadder(profile), state.waveNumber));
 }
@@ -620,11 +621,38 @@ function resolveEnemyShot(
 
 // --- Boss phase ---
 
+/**
+ * Shortens the survive clock, but never below the time still owed to the
+ * fight's minimum duration.
+ *
+ * A boss is the point of a run, and one that flashes past in twelve seconds
+ * isn't an event. So a good answer COMPRESSES a fight rather than skipping
+ * it: `progress` still moves on every cut, which means a strong player
+ * walks the whole phase ladder inside the minimum window instead of seeing
+ * only the opening phase.
+ *
+ * It also keeps the mastery route reachable. Cuts used to race the player
+ * into the endurance ending - each exact answer took 2.6s off the clock on
+ * top of the seconds spent thinking, so stringing together the combo was
+ * arithmetically impossible at every wave (measured: 0% mastery rate for
+ * every modelled player). The floor is what leaves room to finish a combo.
+ *
+ * The combo itself is deliberately exempt: reaching `comboRequired` ends
+ * the fight immediately whatever the floor says.
+ */
+function cutSurviveClock(boss: BossState, amountMs: number): void {
+  if (amountMs <= 0) return;
+  const owedMs = Math.max(0, boss.minFightMs - boss.elapsedMs);
+  boss.surviveRemainingMs = Math.max(owedMs, boss.surviveRemainingMs - amountMs);
+  boss.progress = 1 - boss.surviveRemainingMs / boss.surviveTotalMs;
+}
+
 function refreshBossProblem(state: RuntimeState): void {
   const boss = state.boss!;
+  const rules = currentBossRules(state);
   boss.problem = boss.inFinale
-    ? buildAuthoredProblem(currentBossRules(state).finaleProblem)
-    : generateBossProblem(currentBossRules(state).scope, boss.progress);
+    ? buildAuthoredProblem(rules.finaleProblem)
+    : generateBossProblem(rules.scope, boss.progress, rules.scopeBias);
 }
 
 function rollWeakPointOffset(): number {
@@ -677,6 +705,8 @@ function startBossPhase(state: RuntimeState, profile: PlayerProfile): void {
     sprite: rules.sprite,
     surviveRemainingMs: surviveTotalMs,
     surviveTotalMs,
+    elapsedMs: 0,
+    minFightMs: bossMinFightSec(state.waveNumber) * 1000,
     combo: 0,
     comboRequired: rules.comboToDefeat,
     bestCombo: 0,
@@ -687,7 +717,7 @@ function startBossPhase(state: RuntimeState, profile: PlayerProfile): void {
     xPct: 50,
     driftDirection: 1,
     driftSpeed: openingPhase.driftSpeed,
-    problem: generateBossProblem(rules.scope, 0),
+    problem: generateBossProblem(rules.scope, 0, rules.scopeBias),
     progress: 0,
     missStreak: 0,
     inFinale: false,
@@ -786,12 +816,15 @@ function resolveBossShot(
   if (boss.combo > 0) gameEvents.emit({ type: 'boss-combo', combo: boss.combo, required: boss.comboRequired });
 
   if (outcome.surviveCutMs > 0) {
-    boss.surviveRemainingMs = Math.max(0, boss.surviveRemainingMs - outcome.surviveCutMs);
-    boss.progress = 1 - boss.surviveRemainingMs / boss.surviveTotalMs;
+    const before = boss.surviveRemainingMs;
+    cutSurviveClock(boss, outcome.surviveCutMs);
     state.score += BOSS_ANSWER_SCORE;
     gameEvents.emit({
       type: 'boss-timer-cut',
-      amountMs: outcome.surviveCutMs,
+      // What the cut actually took, not what it offered - the minimum-
+      // duration floor can absorb it, and the HUD must not count down time
+      // the fight didn't lose.
+      amountMs: before - boss.surviveRemainingMs,
       remainingMs: boss.surviveRemainingMs,
     });
   }
@@ -849,10 +882,13 @@ function applyBomb(state: RuntimeState, profile: PlayerProfile, layersStripped: 
     for (let i = 0; i < cleared; i++) awardCurrency(profile, 0.5);
 
     if (cleared > 0) {
-      const cut = cleared * BOMB_BOSS_CUT_PER_ADD_MS;
-      boss.surviveRemainingMs = Math.max(0, boss.surviveRemainingMs - cut);
-      boss.progress = 1 - boss.surviveRemainingMs / boss.surviveTotalMs;
-      gameEvents.emit({ type: 'boss-timer-cut', amountMs: cut, remainingMs: boss.surviveRemainingMs });
+      const before = boss.surviveRemainingMs;
+      cutSurviveClock(boss, cleared * BOMB_BOSS_CUT_PER_ADD_MS);
+      gameEvents.emit({
+        type: 'boss-timer-cut',
+        amountMs: before - boss.surviveRemainingMs,
+        remainingMs: boss.surviveRemainingMs,
+      });
     }
     if (boss.surviveRemainingMs <= 0) onBossDefeated(state, profile, 'survival');
     return;
@@ -1051,6 +1087,10 @@ function updateBossPhase(state: RuntimeState, profile: PlayerProfile, dt: number
 
   // The survive clock runs regardless of Freeze - freezing the adds is
   // meant to buy breathing room, not to stall the fight it's meant to win.
+  //
+  // `elapsedMs` advances from the tick ALONE. It is what the minimum-
+  // duration floor measures against, so a timer cut must never touch it.
+  boss.elapsedMs += dt * 1000;
   boss.surviveRemainingMs = Math.max(0, boss.surviveRemainingMs - dt * 1000);
   boss.progress = 1 - boss.surviveRemainingMs / boss.surviveTotalMs;
 

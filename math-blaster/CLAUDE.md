@@ -145,6 +145,17 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   test everything up to it. It must stay ordered easiest-first:
   `generateBossProblem` weights selection toward the end of the array as a
   fight goes on, so an out-of-order scope would make a fight get *easier*.
+- **A boss's maths gets harder with the wave number ONLY UP TO THE GRADE
+  CEILING, and that is not a shortfall.** `BossRules.scopeBias` (from the boss
+  ordinal) is where a fight *starts* on the easy-to-hard slope
+  `generateBossProblem` already walks, so a wave-40 boss opens leaning hard
+  instead of sampling its scope as evenly as wave 5's did, and the finale is
+  picked by ordinal rather than by roster entry so a later boss never inherits
+  an earlier one's easier finale. But the scope itself is still capped by
+  `cumulativeScopeForGrade()`, so all of this escalates *within* the grade and
+  then holds. A wave-60 G1 boss is longer, faster, more phased and leaning at
+  the hard end of G1 - and still never asks times tables. That is the
+  grade-not-wave rule above doing its job, not this one failing.
 - **`resolveGrade()` in `gradeSource.ts` is the only place the grade is
   decided**, and it exists to be swapped: the grade is meant to come from a
   service that already knows it, and that function's body is all that should
@@ -229,9 +240,9 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   `timeBonusMs` as *actually granted* - the clock has a ceiling, and the banner
   must not promise time the player didn't get.
 - **A boss is a kind of wave**, arriving on every `WAVE_BOSS_INTERVAL`th one
-  (5). Boss *identity* (name, sprite, phases, finale) cycles the authored
-  `BOSS_ROSTER`, escalating `surviveSec`/`comboToDefeat` and taking a tier
-  prefix on each pass; boss *maths* arrives separately as `scope`. That split
+  (5). The `BOSS_ROSTER` supplies **identity only** - name, sprite, theme, and
+  the phase *names* that give a fight its voice (plus a tier prefix on each
+  pass through it). Boss *maths* arrives separately as `scope`. That split
   is what lets a boss appear on wave 5 for any curriculum - only 2 of the 7
   authored bundles wrote a boss at all. Because the rules are generated rather
   than authored per stage, the run holds them in `RuntimeState.bossRules` for
@@ -239,6 +250,28 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   Problems are drawn from a *cumulative* scope, weighted progressively harder
   as the fight goes on, culminating in an authored finale problem for the last
   15% of the survive timer.
+- **EVERY NUMBER THAT DECIDES HOW HARD A BOSS IS COMES FROM THE WAVE NUMBER**,
+  not from which roster entry it is. `bossRulesFor` generates `surviveSec`,
+  `comboToDefeat`, the whole `phases` ladder, the finale and `scopeBias`; the
+  roster contributes none of them. It used to contribute all of them, and
+  because the roster cycles and its three entries are ordered easiest-first,
+  **difficulty went backwards every third fight**: wave 15 fought a 3-phase
+  boss at `surviveSec` 28, then wave 20 fought "Elder Sum Slime King" with 2
+  phases, `surviveSec` 24 and an easier finale. Don't move any of these back
+  onto the roster. `waveProgression.test.ts` pins monotonicity out past
+  ordinal 24, that the opening phase is never shielded, and that adds are
+  never `bulwark`/`sentinel`.
+- **Three boss constants are DERIVED, and the derivation is the point.**
+  `BOSS_MIN_FIGHT_CAP_SEC` = survive cap / headroom factor, and
+  `BOSS_COMBO_CAP` = floor cap / `BOSS_SEC_PER_COMBO_ANSWER`. Both encode a
+  *relationship* that silently breaks if either side is hand-set:
+  - Collapse `surviveSec` onto the fight's floor and timer cuts go inert -
+    there's no headroom left to cut, so "good answers shorten the fight"
+    stops being true while still looking implemented.
+  - Let the combo cap exceed what the floor permits and the deepest bosses
+    become unkillable, leaving only the endurance route.
+  To allow a longer combo, raise `BOSS_SURVIVE_CAP_SEC` - that is the actual
+  constraint.
 - **Beating a boss drops straight into the next wave.** No stage-clear screen,
   no Continue button, no victory state. The banner in GameCanvas is the only
   thing that reports how the fight was won, so don't remove it - and since
@@ -259,6 +292,29 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   resets its shield window, so a phase change is a window rather than an
   ambush - tests that set up a shield state must let the phase change land
   first or it overwrites them.
+- **A FIGHT HAS A MINIMUM DURATION, AND CUTS COMPRESS IT RATHER THAN SKIPPING
+  IT.** `BossState.minFightMs` (from `bossMinFightSec`) is the floor
+  `cutSurviveClock()` clamps against, so a player answering perfectly walks
+  the *whole* phase ladder inside that window instead of seeing only the
+  opening phase - `progress` still moves on every cut, which is what makes
+  that work. Two things to keep straight:
+  - `BossState.elapsedMs` is **not** derivable from
+    `surviveTotalMs - surviveRemainingMs`; cuts inflate that difference, so it
+    measures progress through a fight, not time spent in one. The floor needs
+    the latter, which is why the field exists. Advance it from the tick alone.
+  - The floor is on **outlasting** a boss, not on killing one. Reaching
+    `comboRequired` ends the fight immediately whatever the floor says.
+  `boss-timer-cut` reports what a cut *actually took*, since the floor can
+  absorb it and the HUD must not count down time the fight didn't lose.
+- **`BOSS_SEC_PER_COMBO_ANSWER` is what makes the mastery route reachable at
+  all**, and it is the least obvious number in the boss code. The floor is
+  `comboToDefeat` x this, because a fight has to leave room to actually finish
+  a combo. Before it existed the mastery route was *arithmetically impossible
+  at every wave*: each exact answer cut 2.6s off a 20s clock on top of the
+  seconds the player spent thinking, so answering well raced the player into
+  the endurance ending. The balance harness measured a 0% mastery rate for all
+  three modelled players. Set this below a real child's think time and the
+  mastery route silently becomes decorative again.
 - **Boss adds are ordinary enemies.** Shooting one no longer damages the boss
   (it used to). They matter because they threaten the run clock, nothing else.
 - **Partial credit uses place-value digit matching** (ones/tens/etc. compared by
@@ -314,7 +370,10 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
 - **Still untuned placeholders**: skill costs and the currency rate (a weak
   run earns ~55, against 60 for one More Time level - so the shop is roughly
   two runs per early upgrade, which nobody has checked is right), knockback
-  distances, boss surviveSec/comboToDefeat, the boss timer-cut amounts.
+  distances, the boss timer-cut amounts, and the boss bounty multipliers.
+  `surviveSec`/`comboToDefeat` are no longer placeholders and no longer
+  authored - they are derived in `waveProgression.ts` against the harness (see
+  the boss-escalation block there for what each number answers).
 - **A boss fight can still be arithmetically unwinnable by endurance**, and
   that's deliberate: walk in with less clock than its `surviveSec` and the
   combo is the only way out. Wave-clear payouts make that recoverable rather

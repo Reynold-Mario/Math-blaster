@@ -81,6 +81,27 @@ export interface BossState {
    * further by good answers; reaching 0 wins the fight. */
   surviveRemainingMs: number;
   surviveTotalMs: number;
+  /**
+   * Real milliseconds this fight has been on screen. Advanced from the tick
+   * only, never touched by timer cuts.
+   *
+   * NOT derivable from `surviveTotalMs - surviveRemainingMs`, which is the
+   * whole reason it exists: cuts inflate that difference, so it measures
+   * "progress through the fight", not "time spent in it". The minimum-
+   * duration floor needs the latter.
+   */
+  elapsedMs: number;
+  /**
+   * The shortest this fight may last. Timer cuts clamp against it, so
+   * answering well compresses the phase ladder into this window rather
+   * than skipping past it - and the combo stays landable, which it is not
+   * if good answers can end a fight before the combo has room to finish.
+   *
+   * The combo route is deliberately exempt: reaching `comboRequired` ends
+   * the fight immediately whatever this says. That is what defeating a
+   * boss means.
+   */
+  minFightMs: number;
   /** Consecutive exact/equivalent answers landed on the boss. Anything
    * less than exact resets it to 0. */
   combo: number;
