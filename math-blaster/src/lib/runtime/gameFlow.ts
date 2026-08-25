@@ -89,12 +89,21 @@ const WAVE_CLEAR_BONUS_MS = 9500;
 /** Paid per qualifying kill in the cleared wave. An enemy that got through
  * costs the player this as well as the impact penalty. */
 const WAVE_CLEAR_PER_KILL_BONUS_MS = 3000;
-/** Paid for DEFEATING a boss - the mastery route only. Outlasting the
+/**
+ * Paid for DEFEATING a boss - the mastery route only. Outlasting the
  * survive clock is escaping a boss, not killing it, and pays nothing at
  * all: the cost of failing to defeat one is the half-minute spent on it
- * with nothing to show. Halved from 25s when it stopped being paid on
- * both routes, so the two changes don't compound into a wall. */
-const BOSS_CLEAR_BONUS_MS = 12500;
+ * with nothing to show.
+ *
+ * Cut from 25s when it stopped being paid on both routes, then raised
+ * again against the harness. Withholding it from the survival route,
+ * shrinking it, and giving every fight a 30s+ floor all push the same
+ * direction, and the youngest players wear all three at once - this is
+ * the knob that buys them back. Retune it HERE rather than by paying the
+ * survival route something, which is the distinction the whole change
+ * rests on.
+ */
+const BOSS_CLEAR_BONUS_MS = 18000;
 /** Cut from the clock by one enemy reaching the impact line. Every point of
  * this compounds for a weak player, who leaks on most waves - it was 5s,
  * which was most of why a slow run died before the second boss. */
