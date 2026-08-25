@@ -181,7 +181,7 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   `timeRemainingMs` starts at 50s (+ More Time) and drains continuously, but
   clearing a wave pays time back: a flat `WAVE_CLEAR_BONUS_MS` plus
   `WAVE_CLEAR_PER_KILL_BONUS_MS` per qualifying kill, and `BOSS_CLEAR_BONUS_MS`
-  for surviving a boss. That's what makes a long run possible at all - as a
+  for *defeating* a boss (the mastery route only - see below). That's what makes a long run possible at all - as a
   drain-only budget it ran out around wave 4 and no player ever saw a boss.
   Every payout goes through `addRunTime()`, so the ceiling can't be bypassed by
   a new one forgetting about it, and it returns what was *actually* granted -
@@ -214,6 +214,20 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   on the HUD and end-of-run screen only - it isn't persisted. `PlayerProfile.currency`
   is the persistent spendable resource, earned per kill (`Bounty` skill increases
   the flat amount) and spent in the Base skill tree shop between runs.
+- **ONLY DEFEATING A BOSS PAYS, AND DEFEATING MEANS THE COMBO.** Outlasting the
+  survive clock is *escaping* a boss, not killing it - the player never answered
+  it down, so `onBossDefeated` grants neither bounty nor run time on the
+  `survival` route. The cost of failing to defeat a boss is the half-minute
+  spent on it for nothing; there is deliberately no extra penalty stacked on
+  top, and the run still advances either way. `BOSS_CLEAR_BONUS_MS` was halved
+  (25s -> 12.5s) at the same time so the two changes don't compound into a wall.
+  The bounty is a *multiplier* on the ordinary per-kill amount
+  (`BOSS_BOUNTY_MULTIPLIER` + `BOSS_BOUNTY_MULTIPLIER_PER_FIGHT` per boss
+  ordinal, plus `MASTERY_BOUNTY_MULTIPLIER`) rather than its own flat figure,
+  so it goes through `awardCurrency` and the `Bounty` skill keeps applying to
+  the one kill that matters most. `boss-defeated` carries `bountyEarned` and
+  `timeBonusMs` as *actually granted* - the clock has a ceiling, and the banner
+  must not promise time the player didn't get.
 - **A boss is a kind of wave**, arriving on every `WAVE_BOSS_INTERVAL`th one
   (5). Boss *identity* (name, sprite, phases, finale) cycles the authored
   `BOSS_ROSTER`, escalating `surviveSec`/`comboToDefeat` and taking a tier
@@ -227,7 +241,11 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   15% of the survive timer.
 - **Beating a boss drops straight into the next wave.** No stage-clear screen,
   no Continue button, no victory state. The banner in GameCanvas is the only
-  thing that reports how the fight was won, so don't remove it.
+  thing that reports how the fight was won, so don't remove it - and since
+  escaping a boss pays nothing, the banner is also the only place that *says*
+  so (no float text appears for a payout that never happened). `audio.ts`
+  reads the same distinction independently: the victory sting is reserved for
+  a mastery finish, an escape takes the ordinary wave-clear cue.
 - **Bosses have NO health bar.** Don't add one back. A fight ends one of two
   ways: the player outlasts `surviveSec`, or lands `comboToDefeat` consecutive
   exact/equivalent answers (the mastery route - anything less than exact resets

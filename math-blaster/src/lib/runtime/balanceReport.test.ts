@@ -32,6 +32,7 @@ const enabled = process.env.BALANCE_REPORT === '1';
         'past w5': `${Math.round(s.pastFirstBoss * 100)}%`,
         'past w10': `${Math.round(s.pastSecondBoss * 100)}%`,
         'boss win': `${Math.round(s.bossWinRate * 100)}%`,
+        'boss kill': `${Math.round(s.bossMasteryRate * 100)}%`,
         'run sec': Math.round(s.meanRunSec),
       });
 

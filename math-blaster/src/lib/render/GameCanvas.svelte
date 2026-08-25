@@ -153,11 +153,14 @@
         break;
       case 'boss-defeated':
         // The stage-clear screen used to report how a fight was won. There
-        // isn't one any more, so the banner has to carry it.
-        pushBanner(
-          event.by === 'mastery' ? `MASTERED - ${event.bestCombo} IN A ROW!` : 'BOSS OUTLASTED!',
-          COLOR_COMBO
-        );
+        // isn't one any more, so the banner has to carry it - including the
+        // fact that outlasting a boss pays nothing, which is otherwise
+        // invisible: no float text appears for a payout that never happened.
+        if (event.by === 'mastery') {
+          pushBanner(`MASTERED - ${event.bestCombo} IN A ROW!`, COLOR_COMBO);
+        } else {
+          pushBanner('BOSS ESCAPED - NO BOUNTY', COLOR_MISS);
+        }
         break;
       case 'boss-phase-changed':
         pushBanner(event.name.toUpperCase(), COLOR_MISS);
