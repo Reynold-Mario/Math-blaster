@@ -518,8 +518,9 @@ function tryReinforce(state: RuntimeState, profile: PlayerProfile): void {
 }
 
 /** Splitter debris. Spawned at the parent's position so the split reads as
- * one thing becoming two, and deliberately not counted toward the level
- * quota (see the archetype's countsTowardClear). */
+ * one thing becoming two, and deliberately not counted as a kill (see the
+ * archetype's countsTowardClear) - so it pays no wave-clear share. It still
+ * has to leave the board before the wave ends, like anything else. */
 function spawnSplit(state: RuntimeState, profile: PlayerProfile, parent: EnemyInstance, count: number): void {
   let spawned = 0;
   for (let i = 0; i < count; i++) {

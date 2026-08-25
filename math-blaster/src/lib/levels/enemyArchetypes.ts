@@ -64,7 +64,11 @@ export interface EnemyArchetype {
   /** How many `spore` minis it breaks into when destroyed. 0 = none. */
   splitsInto: number;
   /**
-   * Whether killing it counts toward the level's enemiesToClear quota.
+   * Whether killing it is counted as a real kill - which decides the
+   * per-kill share of the wave-clear time bonus and the bounty. It does NOT
+   * decide whether the thing has to leave the board: a wave ends when the
+   * board is empty, so uncounted debris still has to be dealt with. (This
+   * used to gate a level's `enemiesToClear` quota, which no longer exists.)
    * Split debris deliberately doesn't - otherwise a splitter would be
    * three cheap points of progress instead of a complication.
    */

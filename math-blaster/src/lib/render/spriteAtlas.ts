@@ -70,7 +70,6 @@ const ASSET_BASE = `${import.meta.env.BASE_URL}sprites/`;
 
 const decoded = new Map<SpriteKey, DecodedAnimation>();
 let loadStarted = false;
-let loadFailed = false;
 
 /**
  * Decodes every sprite. Resolves once they are all in, or once they have all
@@ -99,19 +98,12 @@ export async function loadSpriteAtlas(): Promise<void> {
 
   const failures = results.filter((r) => r.status === 'rejected');
   if (failures.length > 0) {
-    loadFailed = true;
     console.error(
       `[sprites] ${failures.length}/${SPRITE_KEYS.length} sprites failed to decode; ` +
         'drawing silhouettes instead.',
       failures.map((f) => (f as PromiseRejectedResult).reason)
     );
   }
-}
-
-/** True once every sprite has decoded. False while loading, and false
- * forever if any of them failed. */
-export function spritesReady(): boolean {
-  return !loadFailed && decoded.size === SPRITE_KEYS.length;
 }
 
 /** The on-screen size of a sprite. Available before the art has loaded -
