@@ -219,7 +219,7 @@
         <li>🎯 Only an exact answer takes an enemy out</li>
         <li>👍 Close answers shove it back up the screen - no penalty for trying</li>
         <li>🛡 Shielded enemies only break on an exact answer</li>
-        <li>⚡ Beat a boss by outlasting it - or by nailing its combo</li>
+        <li>⚡ Beat a boss with its combo - just surviving one earns nothing</li>
         <li>⏱ Race the clock - enemies that get through cost you time</li>
         <li>💰 Defeat enemies to earn currency for permanent upgrades</li>
       </ul>
