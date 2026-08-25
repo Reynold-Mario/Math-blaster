@@ -47,3 +47,8 @@ including it alongside an unrelated change.
 See [`math-blaster/CLAUDE.md`](../math-blaster/CLAUDE.md) for architecture notes and
 AI-agent guidance, and [`math-blaster/README.md`](../math-blaster/README.md) for a
 gameplay/feature overview.
+
+For where the repository is headed — a multi-game monorepo with a landing page and
+per-profile progression — see [`ROADMAP.md`](../ROADMAP.md). It carries the ordered list
+of changes and a set of platform-level invariants worth reading before you restructure
+anything.
