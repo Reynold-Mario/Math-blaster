@@ -1,6 +1,7 @@
 # Pixel Math Blaster
 
-A pixel-art arcade math shooter for kids — line up, type the answer, fire.
+A pixel-art arcade math shooter for kids, set in space — line up, type the
+answer, fire.
 Built to feel like a genuine arcade game first, with the math practice
 built directly into the mechanics rather than bolted on as quiz screens
 between "real" gameplay.
@@ -84,10 +85,10 @@ recoloured sprite:
 
 | Enemy | Behaviour |
 |---|---|
-| **Drifter** | Falls straight down its lane. The baseline. |
-| **Weaver** | Sine-weaves across lanes, so you have to lead it. |
+| **Drifter** | A scout drone falling straight down its lane. The baseline. |
+| **Weaver** | A swarmer that sine-weaves across lanes, so you have to lead it. |
 | **Diver** | Hangs back near the top, then commits and accelerates hard. |
-| **Bulwark** | Takes two problems, not one — a fresh question appears when you break its first layer. |
+| **Bulwark** | An armoured hulk that takes two problems, not one — a fresh question appears when you break its first layer. |
 | **Sentinel** | Two layers *behind a shield*. Only an exact answer strips the shield, and that costs the whole shot. |
 | **Splitter** | Breaks into two fast-weaving spores when destroyed. The debris doesn't count toward clearing the level. |
 
@@ -148,9 +149,11 @@ everything from K up through the run's grade, because waves teach the
 current grade and a boss reviews the ground already covered.
 
 The backdrop travels continuously through ten palettes as the wave count
-climbs. It's the only thing on screen that shows how far you've come, which
-is why it blends rather than switching — and why it settles at the last one
-instead of looping back to the opening garden.
+climbs — low orbit, a satellite field, the twilight terminator, nebulae, ring
+systems, and finally the void. It's the only thing on screen that shows how
+far you've come, which is why it blends rather than switching, and why it
+settles at the last one instead of looping back to low orbit. Three layers of
+parallax stars drift past behind it.
 
 ## Progression systems
 
@@ -212,9 +215,16 @@ if runs feel unfair rather than tight.
 
 ## Tech stack
 
-Svelte 5 (runes) + TypeScript + Vite. Gameplay renders on `<canvas>`;
-Svelte handles menus, HUD, and the skill tree shop. See `CLAUDE.md` for
-the full architectural breakdown.
+Svelte 5 (runes) + TypeScript + Vite, and no runtime dependencies. Gameplay
+renders on `<canvas>`; Svelte handles menus, HUD, and the skill tree shop.
+
+Sprites are animated APNGs. The art is composed from pixel grids in
+`tools/spriteFrames.mjs` and baked into `public/sprites/*.apng` at build time
+by `npm run sprites` (the generated files are committed, so the build never
+depends on the tool). At runtime they're decoded to per-frame bitmaps once, so
+each enemy can sit at its own point in its animation cycle rather than the
+whole formation moving in lockstep. See `CLAUDE.md` for the full
+architectural breakdown.
 
 ## Running it
 

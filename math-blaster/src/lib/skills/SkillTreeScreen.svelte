@@ -52,14 +52,14 @@
     'progression',
   ];
   const CATEGORY_BRIGHT: Record<BaseSkillCategory, string> = {
-    economy: 'var(--marquee-yellow)',
-    movement: 'var(--accent-blue)',
+    economy: 'var(--accent-warm)',
+    movement: 'var(--accent-cyan)',
     defense: 'var(--accent-green)',
-    firing: 'var(--marquee-red)',
-    active: 'var(--accent-pink)',
+    firing: 'var(--accent-hot)',
+    active: 'var(--accent-violet)',
     progression: '#a78bfa',
   };
-  const ROOT_COLOR = '#f4d35e';
+  const ROOT_COLOR = '#f7b955';
   const NODE_ICON: Record<string, string> = {
     'skills-root': '🌟',
     'branch-economy': '💰',
@@ -403,7 +403,7 @@
             y1={halfExtent + edge.y1}
             x2={halfExtent + edge.x2}
             y2={halfExtent + edge.y2}
-            stroke="var(--ink)"
+            stroke="var(--edge-strong)"
             stroke-width="3"
           />
         {/each}
@@ -444,8 +444,8 @@
     flex-direction: column;
     min-height: 420px;
     max-height: 70vh;
-    background: var(--panel);
-    border: 4px solid var(--ink);
+    background: var(--surface);
+    border: 4px solid var(--edge);
     border-radius: 14px;
     overflow: hidden;
   }
@@ -467,15 +467,17 @@
   .grade-btn {
     min-width: 30px;
     height: 30px;
-    border: 2px solid var(--ink);
+    border: 2px solid var(--edge);
     border-radius: 7px;
-    background: #fff;
+    background: var(--surface-alt);
+    color: var(--text);
     font-family: 'Press Start 2P', monospace;
     font-size: 10px;
     cursor: pointer;
   }
   .grade-btn.selected {
-    background: var(--marquee-yellow);
+    background: var(--accent-warm);
+    color: var(--bg);
   }
 
   .tree-header {
@@ -483,8 +485,9 @@
     align-items: center;
     justify-content: space-between;
     padding: 10px 14px;
-    background: var(--marquee-yellow);
-    border-bottom: 3px solid var(--ink);
+    background: var(--surface-alt);
+    color: var(--accent-warm);
+    border-bottom: 3px solid var(--edge);
   }
   .tree-header h2 {
     font-family: 'Press Start 2P', monospace;
@@ -494,8 +497,8 @@
   .currency-badge {
     font-family: 'Press Start 2P', monospace;
     font-size: 12px;
-    background: #fff;
-    border: 2px solid var(--ink);
+    background: var(--surface-alt);
+    border: 2px solid var(--edge);
     border-radius: 8px;
     padding: 4px 8px;
   }
@@ -505,7 +508,7 @@
     flex-wrap: wrap;
     gap: 10px 16px;
     padding: 8px 14px;
-    border-bottom: 2px solid var(--ink);
+    border-bottom: 2px solid var(--edge);
     font-family: 'Press Start 2P', monospace;
     font-size: 8px;
   }
@@ -521,13 +524,13 @@
     opacity: 0.4;
   }
   .legend-item.locked .legend-dot {
-    background: #94a3b8 !important;
+    background: #55637f !important;
   }
   .legend-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    border: 1px solid var(--ink);
+    border: 1px solid var(--edge-strong);
   }
 
   .radial-viewport {
@@ -567,8 +570,8 @@
     width: 56px;
     height: 56px;
     border-radius: 50%;
-    border: 3px solid var(--ink);
-    background: #cbd5e1;
+    border: 3px solid var(--edge);
+    background: #26314c;
     cursor: pointer;
     display: flex;
     flex-direction: column;
@@ -610,7 +613,7 @@
     opacity: 1;
   }
   .pip-box.maxed {
-    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.25), 0 0 0 3px var(--marquee-yellow);
+    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.25), 0 0 0 3px var(--accent-warm);
   }
   .pip-icon {
     font-size: 20px;
@@ -629,8 +632,8 @@
     top: -8px;
     right: -8px;
     font-size: 13px;
-    color: var(--marquee-yellow);
-    text-shadow: 0 0 2px var(--ink);
+    color: var(--accent-warm);
+    text-shadow: 0 0 2px var(--bg);
   }
   .installment-dots {
     position: absolute;
@@ -642,19 +645,19 @@
     width: 5px;
     height: 5px;
     border-radius: 50%;
-    border: 1px solid rgba(20, 33, 61, 0.4);
-    background: #fff;
+    border: 1px solid rgba(230, 237, 249, 0.45);
+    background: transparent;
   }
   .dot.filled {
-    background: var(--ink);
-    border-color: var(--ink);
+    background: var(--text);
+    border-color: var(--text);
   }
 
   .pip-popover {
     position: absolute;
     width: 190px;
-    background: var(--ink);
-    color: #fff;
+    background: var(--tooltip);
+    color: var(--text);
     padding: 10px 12px;
     border-radius: 10px;
     font-size: 12px;
@@ -677,7 +680,7 @@
     left: 50%;
     transform: translateX(-50%);
     border: 6px solid transparent;
-    border-top-color: var(--ink);
+    border-top-color: var(--tooltip);
   }
   .pip-popover.dir-s {
     top: calc(100% + 12px);
@@ -691,7 +694,7 @@
     left: 50%;
     transform: translateX(-50%);
     border: 6px solid transparent;
-    border-bottom-color: var(--ink);
+    border-bottom-color: var(--tooltip);
   }
   .pip-popover.dir-e {
     left: calc(100% + 12px);
@@ -705,7 +708,7 @@
     top: 50%;
     transform: translateY(-50%);
     border: 6px solid transparent;
-    border-right-color: var(--ink);
+    border-right-color: var(--tooltip);
   }
   .pip-popover.dir-w {
     right: calc(100% + 12px);
@@ -719,7 +722,7 @@
     top: 50%;
     transform: translateY(-50%);
     border: 6px solid transparent;
-    border-left-color: var(--ink);
+    border-left-color: var(--tooltip);
   }
   .pip-popover.dir-ne {
     bottom: calc(100% + 8px);
@@ -759,7 +762,7 @@
     opacity: 0.9;
   }
   .popover-next {
-    color: var(--marquee-yellow);
+    color: var(--accent-warm);
   }
   .popover-progress {
     opacity: 0.75;
@@ -770,7 +773,7 @@
     font-size: 11px;
   }
   .popover-maxed {
-    color: var(--marquee-yellow);
+    color: var(--accent-warm);
     text-align: center;
     font-weight: 700;
   }
@@ -779,14 +782,14 @@
     font-size: 10px;
     padding: 8px;
     background: var(--accent-green);
-    color: var(--ink);
-    border: 2px solid #fff;
+    color: var(--bg);
+    border: 2px solid rgba(6, 10, 22, 0.45);
     border-radius: 6px;
     cursor: pointer;
   }
   .buy-btn:disabled {
-    background: #64748b;
-    color: #cbd5e1;
+    background: #2a3550;
+    color: #6c7c9c;
     cursor: not-allowed;
   }
 
@@ -797,16 +800,16 @@
     flex-wrap: wrap;
     justify-content: space-between;
     padding: 10px 14px;
-    border-top: 3px solid var(--ink);
-    background: var(--panel);
+    border-top: 3px solid var(--edge);
+    background: var(--surface);
   }
   .play-btn {
     font-family: 'Press Start 2P', monospace;
     font-size: 13px;
     padding: 10px 20px;
-    background: var(--marquee-red);
+    background: var(--accent-hot);
     color: #fff;
-    border: 3px solid var(--ink);
+    border: 3px solid var(--edge);
     border-radius: 10px;
     cursor: pointer;
     box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);

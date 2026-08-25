@@ -46,15 +46,15 @@ interface SpriteMeta {
  * them was tuned against those sizes.
  */
 const SPRITE_META: Record<SpriteKey, SpriteMeta> = {
-  slime: { nativeW: 32, nativeH: 24, scale: 2 }, // 64x48, was 63x45
-  bat: { nativeW: 36, nativeH: 28, scale: 2 }, // 72x56, was 72x54
-  robot: { nativeW: 32, nativeH: 32, scale: 2 }, // 64x64, was 63x63
+  drone: { nativeW: 32, nativeH: 24, scale: 2 }, // 64x48, was 63x45
+  swarmer: { nativeW: 36, nativeH: 28, scale: 2 }, // 72x56, was 72x54
+  hulk: { nativeW: 32, nativeH: 32, scale: 2 }, // 64x64, was 63x63
   // 19 rows, not 30: the player is drawn top-anchored at 88% of a 320-tall
   // canvas, so 38px is all that is ever visible. See the note on `player`
   // in tools/spriteFrames.mjs.
   player: { nativeW: 36, nativeH: 19, scale: 2 }, // 72x38 of a 72x60 slot
-  boss1: { nativeW: 35, nativeH: 30, scale: 4 }, // 140x120, was 140x119
-  boss2: { nativeW: 35, nativeH: 35, scale: 4 }, // 140x140, was 140x140
+  dreadnought: { nativeW: 35, nativeH: 30, scale: 4 }, // 140x120, was 140x119
+  leviathan: { nativeW: 35, nativeH: 35, scale: 4 }, // 140x140, was 140x140
   explosion: { nativeW: 32, nativeH: 32, scale: 2 },
   muzzle: { nativeW: 16, nativeH: 16, scale: 2 },
   bolt: { nativeW: 8, nativeH: 16, scale: 2 },

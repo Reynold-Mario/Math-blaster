@@ -9,7 +9,7 @@ function makePlayer(xPct: number): PlayerState {
 function makeEnemy(overrides: Partial<EnemyInstance> & { uid: number; xPct: number; y: number }): EnemyInstance {
   return {
     archetype: 'drifter',
-    kind: 'slime',
+    kind: 'drone',
     mini: false,
     problem: arithmeticProblem('+', 1, 1),
     layersRemaining: 1,
@@ -27,7 +27,7 @@ function makeEnemy(overrides: Partial<EnemyInstance> & { uid: number; xPct: numb
 function makeBoss(overrides: Partial<BossState> = {}): BossState {
   return {
     name: 'Test Boss',
-    sprite: 'boss1',
+    sprite: 'dreadnought',
     surviveRemainingMs: 20000,
     surviveTotalMs: 20000,
     elapsedMs: 0,

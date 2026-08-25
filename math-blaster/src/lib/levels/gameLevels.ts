@@ -96,8 +96,8 @@ const skyWaves: WavePlan = {
 
 export const k1: LevelDefinition = {
   id: 'k1',
-  name: 'Sprout Sums',
-  theme: { name: 'Sprout Garden', sky1: '#bbf7d0', sky2: '#fef9c3', ground: '#86efac' },
+  name: 'Orbit Sums',
+  theme: { name: 'Low Orbit', sky1: '#3a63a8', sky2: '#060b12', ground: '#202f46' },
   curriculum: kCurriculum,
   arcadeDifficulty: { fallSpeed: [8, 12], maxConcurrent: 3 },
   waves: kWaves,
@@ -107,8 +107,8 @@ export const k1: LevelDefinition = {
 
 export const l1: LevelDefinition = {
   id: 'l1',
-  name: 'Meadow Muddle',
-  theme: { name: 'Sunny Meadow', sky1: '#8ec9ff', sky2: '#eaf9ff', ground: '#7cc576' },
+  name: 'Debris Muddle',
+  theme: { name: 'Satellite Field', sky1: '#217383', sky2: '#040d0e', ground: '#163238' },
   curriculum: meadowCurriculum,
   arcadeDifficulty: { fallSpeed: [10, 15], maxConcurrent: 3 },
   waves: meadowWaves,
@@ -116,14 +116,14 @@ export const l1: LevelDefinition = {
 
 export const l2: LevelDefinition = {
   id: 'l2',
-  name: 'Cave Carry',
-  theme: { name: 'Twilight Cave', sky1: '#93a6ff', sky2: '#c9d3ff', ground: '#6b8f6a' },
+  name: 'Shadow Carry',
+  theme: { name: 'Twilight Terminator', sky1: '#5b4a95', sky2: '#0a0810', ground: '#2b263f' },
   curriculum: caveCurriculum,
   arcadeDifficulty: { fallSpeed: [12, 17], maxConcurrent: 4 },
   waves: caveWaves,
   boss: {
-    name: 'Sum Slime King',
-    sprite: 'boss1',
+    name: 'The Sum Reactor',
+    sprite: 'dreadnought',
     surviveSec: 20,
     comboToDefeat: 5,
     scope: [...cumulativeScope(k1, l1), caveCurriculum],
@@ -133,7 +133,7 @@ export const l2: LevelDefinition = {
     // points while there's still plenty of clock left.
     phases: [
       {
-        name: 'Slime Surge',
+        name: 'Reactor Surge',
         weight: 1,
         driftSpeed: 12,
         addInterval: [3.2, 4.2],
@@ -142,7 +142,7 @@ export const l2: LevelDefinition = {
         shieldedSec: 0,
       },
       {
-        name: 'Crystal Crust',
+        name: 'Hull Plating',
         weight: 1,
         driftSpeed: 17,
         addInterval: [2.6, 3.4],
@@ -152,7 +152,7 @@ export const l2: LevelDefinition = {
       },
     ],
     finaleProblem: { operator: '+', left: 18, right: 15 },
-    theme: { name: 'Sunset Showdown', sky1: '#ff9a76', sky2: '#ffd97d', ground: '#7cc576' },
+    theme: { name: 'Crimson Rift', sky1: '#8a4a5e', sky2: '#0f080a', ground: '#3b252c' },
   },
 };
 
@@ -161,7 +161,7 @@ export const l2: LevelDefinition = {
 export const g2a: LevelDefinition = {
   id: 'g2a',
   name: 'Century Count',
-  theme: { name: 'Golden Fields', sky1: '#fef3c7', sky2: '#fde68a', ground: '#ca8a04' },
+  theme: { name: 'Ember Nebula', sky1: '#a05a2a', sky2: '#120a05', ground: '#422a1a' },
   curriculum: g2aCurriculum,
   arcadeDifficulty: { fallSpeed: [12, 16], maxConcurrent: 4 },
   waves: centuryWaves,
@@ -169,21 +169,21 @@ export const g2a: LevelDefinition = {
 
 export const g2b: LevelDefinition = {
   id: 'g2b',
-  name: 'Grouping Grove',
-  theme: { name: 'Grouping Grove', sky1: '#fde68a', sky2: '#d9f99d', ground: '#84cc16' },
+  name: 'Grouping Grid',
+  theme: { name: 'Golden Nebula', sky1: '#8a6a2e', sky2: '#0f0c05', ground: '#3b301b' },
   curriculum: g2bCurriculum,
   arcadeDifficulty: { fallSpeed: [11, 15], maxConcurrent: 4 },
   waves: groveWaves,
   boss: {
-    name: 'Hundred Hydra',
-    sprite: 'boss1',
+    name: 'Carrier Hydra',
+    sprite: 'dreadnought',
     surviveSec: 24,
     comboToDefeat: 6,
     scope: [...cumulativeScope(k1, l1, l2, g2a), g2bCurriculum],
     arcadeDifficulty: { fallSpeed: [15, 21], maxConcurrent: 4 },
     phases: [
       {
-        name: 'Many Heads',
+        name: 'Launch Bays',
         weight: 1,
         driftSpeed: 13,
         addInterval: [3.0, 4.0],
@@ -192,7 +192,7 @@ export const g2b: LevelDefinition = {
         shieldedSec: 0,
       },
       {
-        name: 'Scaled Hide',
+        name: 'Ablative Armour',
         weight: 1.2,
         driftSpeed: 18,
         addInterval: [2.4, 3.2],
@@ -201,7 +201,7 @@ export const g2b: LevelDefinition = {
         shieldedSec: 4.5,
       },
       {
-        name: 'Regrowth',
+        name: 'Rebuild Cycle',
         weight: 1,
         driftSpeed: 22,
         addInterval: [2.0, 2.8],
@@ -211,7 +211,7 @@ export const g2b: LevelDefinition = {
       },
     ],
     finaleProblem: { operator: '×', left: 3, right: 9 },
-    theme: { name: "Hydra's Grove", sky1: '#fbbf24', sky2: '#f59e0b', ground: '#84cc16' },
+    theme: { name: "Hydra's Drift", sky1: '#5a5348', sky2: '#0a0908', ground: '#282622' },
   },
 };
 
@@ -219,8 +219,8 @@ export const g2b: LevelDefinition = {
 
 export const l3: LevelDefinition = {
   id: 'l3',
-  name: 'Forest Factors',
-  theme: { name: 'Whispering Forest', sky1: '#a78bfa', sky2: '#ddd6fe', ground: '#4c7a4a' },
+  name: 'Nebula Factors',
+  theme: { name: 'Violet Nebula', sky1: '#7a3a6e', sky2: '#0d060c', ground: '#351f31' },
   curriculum: forestCurriculum,
   arcadeDifficulty: { fallSpeed: [11, 16], maxConcurrent: 4 },
   waves: forestWaves,
@@ -228,14 +228,14 @@ export const l3: LevelDefinition = {
 
 export const l4: LevelDefinition = {
   id: 'l4',
-  name: 'Sky Division',
-  theme: { name: 'Cloud Peaks', sky1: '#7dd3fc', sky2: '#bae6fd', ground: '#4c7a4a' },
+  name: 'Void Division',
+  theme: { name: 'Sapphire Rings', sky1: '#4a2c9c', sky2: '#080511', ground: '#241a40' },
   curriculum: skyCurriculum,
   arcadeDifficulty: { fallSpeed: [13, 18], maxConcurrent: 5 },
   waves: skyWaves,
   boss: {
-    name: 'The Math Overlord',
-    sprite: 'boss2',
+    name: 'The Void Overlord',
+    sprite: 'leviathan',
     surviveSec: 28,
     comboToDefeat: 7,
     scope: [...cumulativeScope(k1, l1, l2, g2a, g2b, l3), skyCurriculum],
@@ -270,7 +270,7 @@ export const l4: LevelDefinition = {
       },
     ],
     finaleProblem: { operator: '×', left: 9, right: 10 },
-    theme: { name: "Overlord's Arena", sky1: '#312e81', sky2: '#4c1d95', ground: '#334155' },
+    theme: { name: 'Void Arena', sky1: '#22285e', sky2: '#04040a', ground: '#121427' },
   },
 };
 
