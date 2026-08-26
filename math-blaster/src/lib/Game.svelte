@@ -6,7 +6,8 @@
   import { createInitialRuntimeState, resetRun, tick, handleInputAction } from './runtime/gameFlow';
   import type { RuntimeState } from './runtime/RuntimeState';
   import type { PlayerProfile } from './runtime/PlayerProfile';
-  import { loadPlayerProfile, savePlayerProfile } from './runtime/PlayerProfile';
+  import { createLocalStorageStore } from './progression/localStorageStore';
+  import { profileCodec, PROFILE_STORAGE_KEY } from './progression/profileCodec';
   import {
     checkpointWave,
     freeStartWave,
@@ -26,9 +27,26 @@
   import { wireAudioToEvents, setMuted, isMuted } from './audio';
   import type { GamePhase } from './types';
 
+  /**
+   * Progression reaches the game through a store rather than a module
+   * function, so that a networked one can arrive without this file
+   * learning that a network exists. The key is passed in because Math
+   * Blaster's predates the convention and must not move.
+   */
+  const store = createLocalStorageStore({ keyFor: () => PROFILE_STORAGE_KEY });
+  const progress = store.open(profileCodec);
+
   let phase = $state<GamePhase>('boot');
   let runtime = $state<RuntimeState>(createInitialRuntimeState());
-  let profile = $state<PlayerProfile>(loadPlayerProfile());
+  /**
+   * SYNCHRONOUS at boot - `progress.current` is readable the instant the
+   * handle exists, so there is no loading phase and no `0 banked` flash.
+   *
+   * This object is MUTATED IN PLACE and never reassigned. `installSkill-
+   * TreeDebugTools` captures it by reference, so `profile = next` would
+   * leave the dev tools silently holding a detached copy.
+   */
+  let profile = $state<PlayerProfile>(progress.current);
   let countdownValue = $state(3);
   let muted = $state(isMuted());
   let finalScore = $state(0);
@@ -77,16 +95,30 @@
     phase = 'gameover';
   }
 
+  /** Record the change; the store decides when it actually gets written.
+   * Called on every kill, which is exactly why the store debounces. */
+  function save() {
+    progress.put(profile);
+  }
+  /** ...and for the handful of moments worth a guaranteed write: money has
+   * changed hands, or the run is over. Losing one of these to a closed tab
+   * would be visible to the player. */
+  function saveNow() {
+    progress.put(profile);
+    progress.flush();
+  }
+
   function handleFlowEvent(event: GameEvent) {
     switch (event.type) {
       case 'game-over':
         endRun();
+        saveNow();
         break;
       case 'currency-earned':
       case 'wave-record':
         // Both change what persists - currency banked, and how far a future
-        // run may start from - so both are worth writing out mid-run.
-        savePlayerProfile(profile);
+        // run may start from - so both are worth recording mid-run.
+        save();
         break;
       default:
         break;
@@ -105,13 +137,18 @@
     profile.skillProgress = result.progress;
     profile.skillSubProgress = result.subProgress;
     profile.currency -= result.pointsSpent;
-    savePlayerProfile(profile);
+    // Keep the monotone total in step with the balance. `currency` is
+    // `earnedTotal - spentTotal` by construction, and the merge relies on
+    // that holding - a spend that skips this one line reappears as free
+    // money the next time two copies of the profile meet.
+    profile.spentTotal += result.pointsSpent;
+    saveNow();
   }
   /** The grade is a profile setting, so it's owned here alongside the other
    * profile mutations - SkillTreeScreen only reads it and calls back. */
   function selectGrade(grade: GradeLevel) {
     profile.selectedGrade = grade;
-    savePlayerProfile(profile);
+    saveNow();
   }
   /** Leaving the shop picks a starting wave rather than starting the run:
    * where a run begins is a decision about the run, not a purchase. */
@@ -127,12 +164,13 @@
     const purchase = purchaseSkip(profile, startWave, target);
     if (!purchase) return;
     profile.currency = purchase.profile.currency;
+    profile.spentTotal += purchase.spent;
     startWave = purchase.startWave;
-    savePlayerProfile(profile);
+    saveNow();
   }
   function startRun() {
     resetRun(runtime, profile, startWave);
-    savePlayerProfile(profile);
+    saveNow();
     countdownValue = 3;
     phase = 'countdown';
   }
@@ -166,6 +204,18 @@
     }
   }
 
+  /** Phases where nothing is being simulated, so replacing the profile
+   * cannot race a mutation in flight. */
+  const SAFE_TO_APPLY: GamePhase[] = ['boot', 'skillTree', 'runSetup', 'gameover'];
+  let pendingRemote: PlayerProfile | null = null;
+
+  $effect(() => {
+    if (pendingRemote === null || !SAFE_TO_APPLY.includes(phase)) return;
+    // In place, never a reassignment - see the note on `profile`.
+    Object.assign(profile, pendingRemote);
+    pendingRemote = null;
+  });
+
   $effect(() => {
     if (phase !== 'countdown') return;
     if (countdownValue <= 0) {
@@ -179,7 +229,17 @@
   });
 
   onMount(() => {
-    if (import.meta.env.DEV) installSkillTreeDebugTools(profile);
+    if (import.meta.env.DEV) installSkillTreeDebugTools(profile, saveNow);
+
+    // Nothing produces remote state yet - the localStorage store has no
+    // "elsewhere" to hear from. It is wired now because the rule is easy to
+    // get wrong later: `gameFlow` mutates `profile` directly during tick(),
+    // so state landing mid-run would race awardCurrency(). Hold it until a
+    // phase where nothing is being simulated.
+    const unbindRemote = progress.onRemote((merged) => {
+      if (SAFE_TO_APPLY.includes(phase)) Object.assign(profile, merged);
+      else pendingRemote = merged;
+    });
 
     const unbindKeyboard = input.attachKeyboard(window);
     const unbindAudio = wireAudioToEvents();
@@ -213,7 +273,9 @@
       unbindAudio();
       unbindFlow();
       unbindInput();
+      unbindRemote();
       cancelAnimationFrame(raf);
+      progress.dispose();
     };
   });
 </script>

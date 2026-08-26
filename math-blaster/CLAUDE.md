@@ -40,9 +40,19 @@ lib/skills/         SkillTree.ts = generic, content-free engine (nodes, prereqs,
                     costPerLevel, purchase logic). baseSkillTree.ts = the concrete
                     combat/economy nodes. SkillTreeScreen.svelte = the shop UI.
 
+lib/progression/     THE PERSISTENCE SEAM. ProgressionStore/Codec/Handle:
+                    WHERE profile state lives (a store) is separated from what
+                    it MEANS (a codec). localStorageStore.ts is the only
+                    implementation; profileCodec.ts owns the merge, and
+                    PlayerProfile.ts owns validation. Boot is synchronous
+                    through it - there is no 'loading' phase and there must
+                    not become one.
+
 lib/runtime/         RuntimeState (resets every run) vs PlayerProfile (currency +
-                    skill levels, PERSISTS across runs via localStorage - these
-                    were once the same object; keep them separate).
+                    skill levels, PERSISTS across runs through lib/progression -
+                    these were once the same object; keep them separate).
+                    PlayerProfile.ts is now PURE - the type and
+                    normalizeProfile(), touching no storage at all.
                     gameFlow.ts owns the loop and MUTATES state/profile directly
                     (unlike the pure layers above) - that's deliberate, matches
                     how Svelte's $state gets consumed.
@@ -518,10 +528,28 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   and `audio.ts`'s event handlers (they interpret independently; neither should
   need the other to know a new event exists).
 - Persisted localStorage key in use: `pixelMathBlaster.profile.v1` (currency,
-  skill progress, selected grade, furthest wave reached). Every field added
-  since v1 has been additive with a validated fallback, which is why the suffix
-  hasn't moved - bump it only for a change that makes an old profile *wrong*
-  rather than incomplete.
+  lifetime earned/spent totals, skill progress, selected grade, furthest wave
+  reached). Every field added since v1 has been additive with a validated
+  fallback, which is why the suffix hasn't moved - bump it only for a change
+  that makes an old profile *wrong* rather than incomplete. The key now lives
+  in `progression/profileCodec.ts` and is passed INTO the store rather than
+  derived from the game slug: it predates the namespacing convention, and
+  moving it would strand every current player's currency and skills.
+- **`currency` is a balance; `earnedTotal`/`spentTotal` are MONOTONE.** The
+  invariant `currency === earnedTotal - spentTotal` holds everywhere, and every
+  path that moves currency maintains both sides - `awardCurrency()` in gameFlow,
+  both purchase paths in Game.svelte, and devTools. They exist because a merge
+  needs something `max` is meaningful on, and `max` of two *balances* hands back
+  money that was already spent. A spend that forgets its `spentTotal += n`
+  fails silently and locally; it reappears as free money the first time two
+  copies of a profile meet.
+- **Saves are DEBOUNCED, and the profile is MUTATED IN PLACE.** The game calls
+  `progress.put(profile)` on every kill and the store decides when that reaches
+  storage (~2s trailing, ~15s ceiling, immediate on purchases, grade changes,
+  game-over and `pagehide` - never `beforeunload`, which is unreliable on iOS
+  Safari and blocks bfcache). Never reassign `profile`: `installSkillTreeDebug-
+  Tools` captured it by reference, so a reassignment leaves the dev console
+  silently editing a detached object. Use `Object.assign(profile, next)`.
   There is no leaderboard/high-score persistence - a run ends at a "Play Again"
   / "Skill Tree" choice, nothing is saved beyond the profile. The end-of-run
   screen reports the wave reached, which is the number that means something in

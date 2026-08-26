@@ -569,6 +569,11 @@ function emitHitEvent(result: AnswerResult, xPct: number, y: number, targetId: n
 function awardCurrency(profile: PlayerProfile, multiplier = 1): number {
   const amount = Math.max(1, Math.round((BASE_CURRENCY_PER_KILL + currentBountyBonus(profile)) * multiplier));
   profile.currency += amount;
+  // The monotone counterpart. `currency` is a balance and goes down when
+  // the player spends; `earnedTotal` only ever rises, which is what makes
+  // reconciling two copies of a profile possible at all - `max` means
+  // something on a total and nothing on a balance.
+  profile.earnedTotal += amount;
   gameEvents.emit({ type: 'currency-earned', amount, total: profile.currency });
   return amount;
 }
