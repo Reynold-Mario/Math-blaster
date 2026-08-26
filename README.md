@@ -7,4 +7,7 @@ The project lives in [`math-blaster/`](./math-blaster) — see
 Where this is going — multiple games, a catalog page, and per-profile progression — is in
 [`ROADMAP.md`](./ROADMAP.md), along with the ordered list of changes to get there.
 
+What has to be true before this runs in production — and what is currently blocked on
+an approval — is in [`todo.md`](./todo.md).
+
 Contributing? See [`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md).

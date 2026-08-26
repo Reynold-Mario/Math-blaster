@@ -18,7 +18,11 @@ create table public.profile_achievements (
   profile_id      uuid not null references public.profiles(id) on delete cascade,
   achievement_key text not null references public.achievements(key),
   unlocked_at     timestamptz not null default now(),
-  -- For the incremental ones ("defeat 5 bosses"). Rises only.
+  -- For the incremental ones - those that accumulate rather than fire once.
+  -- Rises only. NO EXAMPLE ON PURPOSE: what may count toward an achievement
+  -- is an open decision (ROADMAP.md PR 3), and boss outcomes and topic
+  -- completion are both already ruled out. A comment naming a criterion is
+  -- how an undecided one starts getting treated as settled.
   progress        int not null default 0 check (progress >= 0),
   primary key (profile_id, achievement_key)
 );
