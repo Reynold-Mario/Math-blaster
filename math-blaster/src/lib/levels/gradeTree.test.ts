@@ -1,8 +1,10 @@
 import {
+  AUTHORED_GRADES,
   GRADE_ORDER,
   GRADE_TOPICS,
   curriculumLadderForGrade,
   cumulativeScopeForGrade,
+  nearestAuthoredGrade,
   topicsForGrade,
   type GradeLevel,
 } from './gradeTree';
@@ -189,5 +191,55 @@ describe('the topic id is the join key', () => {
     // fluency-within-10 and regrouping. A code is a label, not a key.
     const codes = curriculumLadderForGrade('1').map((c) => c.standardCode);
     expect(codes).toEqual(['1.OA.6', '1.OA.6']);
+  });
+});
+
+/**
+ * Mapping a grade asserted from outside the game onto one it teaches.
+ *
+ * The interesting case is not the clamp itself but WHY it is not the
+ * every-curriculum fallback `curriculumLadderForGrade` uses: that fallback is
+ * right for a grade the player picked and wrong for one a service asserted,
+ * because it opens a Grade 7 player on Kindergarten addition.
+ */
+describe('nearestAuthoredGrade', () => {
+  it('passes an authored grade through untouched', () => {
+    for (const grade of AUTHORED_GRADES) {
+      expect(nearestAuthoredGrade(grade)).toBe(grade);
+    }
+  });
+
+  it('clamps a grade past the authored ceiling to the hardest maths there is', () => {
+    const hardest = AUTHORED_GRADES[AUTHORED_GRADES.length - 1];
+    expect(nearestAuthoredGrade('7')).toBe(hardest);
+    expect(nearestAuthoredGrade('12')).toBe(hardest);
+    // Past school entirely is still past every grade this game authors.
+    expect(nearestAuthoredGrade('college')).toBe(hardest);
+    expect(nearestAuthoredGrade('adult')).toBe(hardest);
+  });
+
+  it('has no opinion about a value it does not recognise', () => {
+    // Not a clamp to K: an unparseable answer from a service must leave the
+    // player's own pick standing rather than silently overrule it.
+    for (const junk of ['', 'kindergarten', 'K ', 'year 4', '13', 'null']) {
+      expect(nearestAuthoredGrade(junk)).toBeNull();
+    }
+  });
+
+  it('only ever returns a grade that has maths authored for it', () => {
+    // The property that survives authoring Grade 4 later. A returned grade
+    // landing in the every-curriculum fallback would defeat the whole point.
+    for (const value of [...GRADE_ORDER, 'college', 'adult']) {
+      const mapped = nearestAuthoredGrade(value);
+      if (mapped === null) continue;
+      expect(topicsForGrade(mapped).length).toBeGreaterThan(0);
+      expect(curriculumLadderForGrade(mapped).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('agrees with the grades the picker offers', () => {
+    // One predicate, one place. If these drift, a child can pick a grade the
+    // platform can never assert, or vice versa.
+    expect(AUTHORED_GRADES).toEqual(GRADE_ORDER.filter((g) => topicsForGrade(g).length > 0));
   });
 });

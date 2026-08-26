@@ -16,7 +16,7 @@
     type SkillNode,
   } from './SkillTree';
   import type { PlayerProfile } from '../runtime/PlayerProfile';
-  import { GRADE_ORDER, topicsForGrade, type GradeLevel } from '../levels/gradeTree';
+  import { AUTHORED_GRADES, type GradeLevel } from '../levels/gradeTree';
 
   interface Props {
     profile: PlayerProfile;
@@ -28,8 +28,10 @@
 
   /** Only the grades that actually have maths authored for them. Grades 4-12
    * are typed but unauthored, so offering them would promise content that
-   * doesn't exist. */
-  const PLAYABLE_GRADES: GradeLevel[] = GRADE_ORDER.filter((g) => topicsForGrade(g).length > 0);
+   * doesn't exist. Read from `gradeTree` rather than recomputed here: the
+   * clamp a platform-asserted grade goes through has to agree with what the
+   * picker offers, and two copies of one predicate is how they stop agreeing. */
+  const PLAYABLE_GRADES: GradeLevel[] = AUTHORED_GRADES;
   const GRADE_LABELS: Partial<Record<GradeLevel, string>> = { K: 'K' };
   function gradeLabel(grade: GradeLevel): string {
     return GRADE_LABELS[grade] ?? grade;
