@@ -1,2 +1,20 @@
 .idea
 .DS_Store
+
+# Secrets. No env file is ever committed; `.env.example` documents the shape
+# instead. `.env.local` at this level is where ROADMAP.md puts the Supabase test
+# credentials, and until this rule existed it was untracked but NOT ignored -
+# one `git add -A` away from being committed.
+.env
+.env.*
+!.env.example
+
+# Build output and dependencies. Each workspace carries its own ignore too;
+# these are here so a new workspace is covered before it remembers to.
+node_modules/
+dist/
+
+# Per-user agent state. `.claude/` itself is not ignored - project-level agent
+# config belongs in review.
+.claude/settings.local.json
+.claude/worktrees/
