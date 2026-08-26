@@ -560,19 +560,25 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   bar that clears a layer and strips a shield. close/partial earn a player
   TIME, which is the game's reward for reasoning toward an answer; they are not
   evidence of knowing it, and a signal a teacher may act on must not say so.
-- **THE SUPABASE CLIENT COSTS NOTHING UNTIL IT IS CONFIGURED, and that is
-  load-bearing rather than lucky.** Vite inlines `import.meta.env.*` as literals
-  at build time, so with no credentials `createSupabaseClientFromEnv()`'s guards
-  constant-fold to an unconditional `return null`, the `createClient` call
-  becomes dead code, and `@supabase/supabase-js` is tree-shaken out of the
-  bundle entirely - measured at 125.92 kB / 44.51 kB gzip without credentials
-  against 335.16 kB / 98.65 kB with them. Two consequences. Keep those guards
-  written against `import.meta.env` values so they stay statically decidable: a
-  runtime check the optimiser cannot see (reading the URL from a config object,
-  say) silently puts ~54 kB gzip back into every player's download. And when
-  credentials DO ship, that cost lands on the critical path of a children's
-  game, so a dynamic `import()` behind sign-in is the next move - not a
-  micro-optimisation.
+- **THE SUPABASE CLIENT IS FREE UNTIL CONFIGURED, THEN IT IS A SIDE CHUNK, AND
+  BOTH PROPERTIES ARE FRAGILE.** Vite inlines `import.meta.env.*` as literals,
+  and Rollup folds constants **within a function body but not across a function
+  boundary**. Everything follows from that one fact:
+  - No credentials: the guard in `getSupabaseClient` folds to an unconditional
+    `throw`, the `await import('@supabase/supabase-js')` after it is dead code,
+    and the package is dropped entirely. One chunk, 126.42 kB / 44.70 kB gzip.
+  - With credentials: it becomes a lazily-fetched chunk, so the game is playable
+    while it loads. Main bundle 127.78 kB / 45.35 kB gzip plus a 208.65 kB /
+    53.98 kB gzip side chunk - against 335.19 kB / 98.70 kB in one bundle when
+    it was a static import.
+  **THE GUARD MUST STAY IN THE SAME FUNCTION BODY AS THE `import()`.** An
+  intermediate version of this put the check in a `readSupabaseConfig()` helper
+  and the import in `getSupabaseClient()`, and the 208 kB chunk was emitted on
+  every build even with no credentials - unreachable at runtime, but shipped,
+  and invisible unless you count the files. That is also why the guard is
+  duplicated in `isSupabaseConfigured()` (which `Game.svelte` needs
+  synchronously) rather than shared: two folds in two bodies, not one helper.
+  Do not "clean this up".
 - **`.env.local` lives at the REPO ROOT, and `vite.config.ts` needs
   `envDir: '..'` for that to work.** Without it every `import.meta.env.VITE_*`
   reads `undefined`, the client returns null, and the game falls back to

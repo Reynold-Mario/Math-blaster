@@ -8,8 +8,8 @@
   import type { PlayerProfile } from './runtime/PlayerProfile';
   import { createLocalStorageStore } from './progression/localStorageStore';
   import { createSupabaseProgressionStore } from './progression/supabaseStore';
-  import { createSupabaseClientFromEnv } from './progression/supabaseClient';
-  import { createSupabaseRemote } from './progression/supabaseRemote';
+  import { isSupabaseConfigured, loadSupabaseRemote } from './progression/supabaseClient';
+  import { createLazyRemote } from './progression/lazyRemote';
   import { profileCodec, PROFILE_STORAGE_KEY } from './progression/profileCodec';
   import { createMasteryRecorder, type TopicDelta } from './progression/MasteryRecorder';
   import {
@@ -40,14 +40,18 @@
    * The networked one has now arrived, and note how little changed: the
    * Supabase store WRAPS the localStorage one rather than replacing it, so
    * localStorage is still the boot path and `progress.current` is still
-   * synchronous. With no credentials `createSupabaseClientFromEnv()` returns
-   * null and the whole thing is a pass-through - which is the state the game
-   * ships in today, and the reason wiring this up cannot regress anything.
+   * synchronous. With no credentials `isSupabaseConfigured()` is false and the
+   * whole thing is a pass-through - which is the state the game ships in today,
+   * and the reason wiring this up cannot regress anything.
+   *
+   * `createLazyRemote` is what keeps the Supabase client out of the main
+   * bundle: nothing is imported until the store asks its first question, so
+   * with credentials configured the game is playable WHILE the client loads
+   * rather than after it.
    */
-  const supabase = createSupabaseClientFromEnv();
   const store = createSupabaseProgressionStore({
     cache: createLocalStorageStore({ keyFor: () => PROFILE_STORAGE_KEY }),
-    remote: supabase === null ? null : createSupabaseRemote(supabase),
+    remote: isSupabaseConfigured() ? createLazyRemote(loadSupabaseRemote) : null,
     // Sync failures are never the player's problem: the run keeps going on the
     // local copy. In dev they should still be visible, because "it silently
     // stopped syncing" is otherwise indistinguishable from "it is working".
