@@ -51,6 +51,18 @@ export interface RunQueue {
   flush(): void;
   /** How many runs are waiting. For tests and the dev console. */
   pending(): number;
+  /**
+   * Move the queue to another storage key, once this device learns who is
+   * playing.
+   *
+   * A queued run is worse to mis-attribute than a profile is: `submit_run()`
+   * writes it into a child's permanent practice record, where a profile only
+   * decides how much currency they have. So the runs banked before we knew who
+   * was here are carried over only when this learner also claimed the
+   * anonymous profile - one decision per device, taken in `learnerScope.ts` -
+   * and otherwise stay behind for whoever comes back for them.
+   */
+  rekey(key: string, carryPending: boolean): void;
   dispose(): void;
 }
 
@@ -77,7 +89,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
   const {
     remote,
     storage = defaultStorage(),
-    key: storageKey = PENDING_RUNS_KEY,
+    key: initialKey = PENDING_RUNS_KEY,
     maxQueued = MAX_QUEUED,
     retryBaseMs = RETRY_BASE_MS,
     retryMaxMs = RETRY_MAX_MS,
@@ -85,6 +97,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
     onError = () => {},
   } = options;
 
+  let storageKey = initialKey;
   let queue: RunSubmission[] = read();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let retryDelay = retryBaseMs;
@@ -205,6 +218,22 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
       void drain();
     },
     flush(): void {
+      void drain();
+    },
+    rekey(key: string, carryPending: boolean): void {
+      if (disposed || key === storageKey) return;
+      // Whatever is in hand right now, including anything submitted before
+      // identity resolved. Persisted under the OLD key first if it is staying
+      // behind, so nothing is silently dropped by the switch.
+      const carried = queue;
+      if (!carryPending) persist();
+      clearTimer();
+      storageKey = key;
+      // The new slot may already hold runs from a previous session, and those
+      // come first - they have been waiting longer.
+      queue = carryPending ? [...read(), ...carried] : read();
+      retryDelay = retryBaseMs;
+      persist();
       void drain();
     },
     pending(): number {

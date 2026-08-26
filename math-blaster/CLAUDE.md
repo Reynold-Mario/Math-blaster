@@ -659,6 +659,21 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
 - New `GameEvent` variants: add the type, then update both `GameCanvas.svelte`'s
   and `audio.ts`'s event handlers (they interpret independently; neither should
   need the other to know a new event exists).
+- **STORAGE IS SCOPED TO THE LEARNER, AND THE ANONYMOUS KEY NEVER MOVES.**
+  `pixelMathBlaster.profile.v1` is one slot per BROWSER, which is fine for a
+  game nobody is signed in to and wrong the moment somebody is - two children
+  on one tablet would share currency, skills and each other's queued runs. A
+  named learner gets a SUFFIX (`...v1.<learnerId>`), so the documented key
+  stays a literal prefix and every current player keeps what they have; the
+  un-suffixed key becomes the permanent slot for anyone we cannot name.
+  `pixelMathBlaster.claimedBy.v1` records the ONE learner that adopted the
+  device's anonymous save. Carrying it over unconditionally is the obvious
+  implementation and it is wrong: a child plays signed out, a sibling signs
+  in, and the sibling inherits everything. The marker makes it a one-time
+  event, the anonymous slot is never deleted, and there is deliberately NO
+  merge across that boundary. `learnerScopedStore` takes a store FACTORY
+  rather than a store, so a switch re-points the cache and the network layer
+  together instead of leaving one aimed at a different child from the other.
 - Persisted localStorage key in use: `pixelMathBlaster.profile.v1` (currency,
   lifetime earned/spent totals, skill progress, selected grade, furthest wave
   reached). Every field added since v1 has been additive with a validated
