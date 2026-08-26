@@ -430,10 +430,22 @@ Run against the real project with two dashboard-created users
       the `unavailable` → backoff → `online` listener path, which currently has
       only unit coverage against the fake port. Not drivable from the browser
       tooling available here — it needs the DevTools throttling UI by hand.
-- [ ] **Delete the two junk `auth.users` rows** (`blaster-test-a@`,
-      `blaster-test-b@`): NULL GoTrue token columns, so they look confirmed and
-      cannot sign in. `auth.users` is at 4; two of those are landmines for a
-      future session.
+- [x] ~~Delete the two junk `auth.users` rows.~~ Done. **The stated reason for
+      identifying them was wrong**, which is worth recording: they were supposed
+      to be recognisable by NULL GoTrue token columns, but that was true of all
+      four users including the two working ones. The real signals were
+      `last_sign_in_at IS NULL` and zero `profile_identities` rows, and the
+      delete was guarded on both so a mistyped address could not have taken a
+      real user. Nothing cascaded - `profiles` 3, `profile_identities` 2,
+      `game_progress` 3, `currency_balances` 1, all unchanged - which
+      incidentally proves in practice the invariant that **nothing
+      foreign-keys to `auth.users`**, the property meant to make the identity
+      provider swappable later without a data migration.
+
+      Still present and deliberately kept: one orphan profile (`48eabce6...`)
+      with no `profile_identities` row, so nothing can ever sign in as it. It
+      owns the `currency_balances` row and is the profile that demonstrated the
+      monotone-trigger clamps.
 
 ## Phase 1b — the run lands in one write
 
