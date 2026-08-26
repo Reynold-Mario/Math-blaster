@@ -38,9 +38,13 @@ alternatives.
 migrations are applied to it, and as of 1.1 the committed filenames match the
 ledger exactly. The CLI is initialized but not yet linked — see 1.2.
 
-**Not started:** `ROADMAP.md` PR 3 (achievements), PR 5 (Supabase client), PR 6
-(`submit_run()`); no linter, no formatter, no production build in CI, no error
-handling around the game loop.
+**Done since:** 1.1 migration reconciliation, 1.2 CLI init/link, 1.3 the
+`.env*` gitignore hole, 1.4 `ensure_profile()`, and 1.5 the
+`SupabaseProgressionStore` — so `ROADMAP.md` PR 5's store half is in.
+
+**Not started:** `ROADMAP.md` PR 3 (achievements — now blocked on a design
+decision, see 1b.1), PR 6 (`submit_run()`), dev sign-in (1.6); no linter, no
+formatter, no production build in CI, no error handling around the game loop.
 
 ---
 
@@ -216,7 +220,7 @@ made that a live risk rather than a theoretical one.
       It is documented in `.env.example` rather than hardcoded so a project swap
       is a one-file change.
 
-### 1.4 `ensure_profile()` — written, not yet applied
+### 1.4 ~~`ensure_profile()`~~ — DONE (2026-08-26), applied and verified
 
 `supabase/migrations/20260826135045_ensure_profile.sql`. The RLS grants already
 referenced this function — `20260826113847_rls_and_grants.sql:66` says profiles
@@ -256,47 +260,97 @@ had no way to produce a profile row.
       criteria pass: no table with RLS disabled, no `SECURITY DEFINER` function
       with a mutable `search_path`. See the accepted-findings note in 1.2b.
 
-### 1.5 `SupabaseProgressionStore` — the actual deliverable (`ROADMAP.md` PR 5)
+### 1.5 ~~`SupabaseProgressionStore`~~ — DONE (2026-08-26)
 
-Implements `ProgressionStore` against Supabase behind the interface PR 1 already
-shipped. **The localStorage store stays, and stays the boot path.**
+`ROADMAP.md` PR 5's store half. **It wraps the localStorage store rather than
+replacing it**, which is what keeps every load-bearing property intact.
 
-- [ ] `current` still resolves **synchronously** at construction from the local
-      cache. Boot has no loading phase today and `math-blaster/CLAUDE.md` states
-      it must not grow one.
-- [ ] The remote read is a background fetch, queued and applied only at a safe
-      phase (`boot`, `skillTree`, `runSetup`, `gameover`) — never mid-`tick()`,
-      where it races `awardCurrency()`. `progress.onRemote(...)` is **already
-      wired** in `Game.svelte` and has never fired; this is what fires it.
-- [ ] `revision` is the concurrency check: update `where revision = <what was
-      read>`, and on zero rows affected re-merge through the *game's* merge rather
-      than clobbering. The `furthest` trigger is the net under that, not a
-      substitute for it.
-- [ ] Offline write queue keyed by the same idempotency key `submit_run()` will
-      use, so a replay after a dropped connection is exact rather than doubled.
-- [ ] **Point Vite's `envDir` at the repo root.** `ROADMAP.md:165` puts
-      `.env.local` at the repo root, but Vite resolves env files relative to its
-      own root (`math-blaster/`), so `VITE_SUPABASE_*` will silently read as
-      `undefined` without this. `.env.example` carries the same warning.
-- [ ] Preserve the existing debounce (~2s trailing, ~15s ceiling, immediate on
-      purchase / grade change / game-over / `pagehide`). It was built for
-      localStorage where per-kill writes were free; against a network it is
-      load-bearing.
-- [ ] Keep the `currency === earnedTotal - spentTotal` invariant intact across the
-      remote path. A spend that forgets `spentTotal += n` fails silently and
-      locally, then reappears as free money the first time two copies of a profile
-      meet.
+- [x] `current` still resolves **synchronously** — it is the cache's `current`.
+      No loading phase, no `0 banked` flash. Pinned by a test that reads
+      `handle.current` with no `await` anywhere above it while a fetch is in
+      flight.
+- [x] The remote read is a background fetch delivered through `onRemote`, which
+      `Game.svelte` already only applies at a safe phase. `progress.onRemote(...)`
+      had been wired since PR 1 and had never fired; it fires now.
+- [x] **Late subscribers get a replay.** `Game.svelte` constructs the store
+      during init and subscribes in `onMount`, so on a fast connection the boot
+      fetch resolves before anyone is listening — and that dropped emit would be
+      exactly the one that restores a returning player on a new device.
+- [x] `revision` optimistic concurrency: the revision goes in the WHERE clause,
+      never the payload (the trigger owns bumping it). Zero rows matched is a
+      `conflict`, which re-reads and re-merges through the *game's* merge and
+      retries with the new revision — never the payload that just conflicted.
+- [x] Retry with exponential backoff on `unavailable`, plus an `online`
+      listener, which is a better trigger than whatever a timer happened to be
+      counting down to.
+- [x] Vite `envDir: '..'` and `src/vite-env.d.ts`, so the root `.env.local`
+      is actually found and a typo is a type error rather than a silent
+      local-only fallback.
+- [x] Debounce preserved and a second one added: the cache keeps ~2s/~15s, the
+      push is ~5s/~30s. The cache absorbs the per-kill write rate; the network
+      only has to stay roughly current.
+- [x] `applyPlatformGrade` added to `ProgressionCodec` as an **optional** method.
+      The store must not know that Math Blaster keeps its grade on
+      `selectedGrade` — that is the same reasoning that put `merge` in the codec.
+      `grade_source` decides authority: `'platform'` outranks the local picker,
+      `'self'` does not.
+- [x] 16 new tests against a fake `RemoteProgression`, so the suite needs no
+      network and no `@supabase/*` import. 417 tests total, up from 401.
+
+**`gradeSource.ts` was not touched, and that is the correct outcome** — its own
+docstring already said the platform grade is implemented in the store and that
+`resolveGrade()` keeps validating. See the correction in 1.6.
+
+Deliberately deferred, each with a reason rather than an omission:
+
+- **`currency_balances` is not written.** It is keyed by `profile_id` alone, so
+  it is a *cross-game* aggregate, and whether Math Blaster's currency is shared
+  with a second game is a design decision nobody has taken. Nothing is lost
+  meanwhile: `earnedTotal`/`spentTotal` already ride inside
+  `game_progress.state`. Revisit when game #2 exists or when a platform view
+  needs it.
+- **No run-level offline queue.** `ROADMAP.md` PR 5 item 4 asks for one keyed by
+  `submit_run()`'s idempotency key — but a profile write is a single-row upsert
+  guarded by `revision`, so it is already idempotent and "retry the same
+  payload" is the right shape. A queue of distinct items belongs to runs, which
+  is 1b.2. Half-building it now would mean two mechanisms to reconcile later.
+- **The client is a static import.** See the bundle note below.
+
+**The bundle finding, which is worth knowing before 1.6.** Vite inlines
+`import.meta.env.*` at build time, so with no credentials the client's guards
+constant-fold to an unconditional `return null`, `createClient` becomes dead
+code, and `@supabase/supabase-js` is tree-shaken out completely — measured
+125.92 kB / 44.51 kB gzip without credentials versus 335.16 kB / 98.65 kB with
+them. So the repo's first runtime dependency currently costs its players
+nothing. But the moment credentials ship, ~54 kB gzip lands on the critical path
+of a children's game. **A dynamic `import()` behind sign-in should happen as
+part of 1.6, not later** — and the guards must keep testing
+`import.meta.env` values directly, because a check the optimiser cannot see puts
+the whole cost back silently. Recorded in `math-blaster/CLAUDE.md`.
 
 ### 1.6 Dev-only sign-in, and a real grade
 
 - [ ] Dev-only email/password sign-in. `ROADMAP.md:93` argues for real auth in the
       prototype precisely so the RLS surface gets exercised rather than reached
       around; that reasoning still holds.
-- [ ] `resolveGrade()` in `runtime/gradeSource.ts:28` finally has a platform answer
-      to read (`profiles.grade_level`). Its body is all that changes. Keep
-      validating against `GRADE_ORDER` and falling back to a real grade — a value
-      arriving over the network is exactly the untrusted input that doc comment
-      was written to anticipate.
+- [x] ~~`resolveGrade()` gets a platform answer to read; its body is all that
+      changes.~~ **Corrected: `gradeSource.ts` needs no change at all.** Its
+      docstring already anticipated this — "the store puts it on the profile, and
+      this function keeps validating it exactly as it already does". 1.5
+      implemented that via the codec's `applyPlatformGrade`, and `resolveGrade()`
+      still validates against `GRADE_ORDER` and falls back to a real grade, which
+      is what makes an unknown value arriving over the network safe. Nothing left
+      to do here.
+- [ ] **Move `@supabase/supabase-js` behind a dynamic `import()`** as part of
+      this item, so the ~54 kB gzip is paid by players who sign in rather than by
+      everyone. See the bundle finding in 1.5.
+- [ ] **Decide the sign-up policy before enabling sign-in.** The repo is public,
+      so the project URL is public. `anon` is granted nothing anywhere in the
+      schema, so an unauthenticated stranger reaches nothing — but open email
+      sign-up plus a public URL is unbounded account creation, confined by RLS to
+      each attacker's own rows. That is storage abuse rather than a data leak,
+      and it wants a deliberate answer (invite-only, a fixed dev account, or
+      sign-up disabled in the dashboard).
 
 ### 1.7 Prove it
 
