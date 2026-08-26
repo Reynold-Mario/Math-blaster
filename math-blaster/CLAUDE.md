@@ -47,11 +47,19 @@ lib/progression/     THE PERSISTENCE SEAM, and the mastery one.
                     per-topic attempts/correct for a run - a subscriber like
                     audio.ts, never a participant. ProgressionStore/Codec/Handle:
                     WHERE profile state lives (a store) is separated from what
-                    it MEANS (a codec). localStorageStore.ts is the only
-                    implementation; profileCodec.ts owns the merge, and
+                    it MEANS (a codec). profileCodec.ts owns the merge, and
                     PlayerProfile.ts owns validation. Boot is synchronous
                     through it - there is no 'loading' phase and there must
                     not become one.
+                    TWO STORES, AND THE SECOND WRAPS THE FIRST.
+                    localStorageStore.ts is the cache and the boot path;
+                    supabaseStore.ts composes it and keeps a remote copy in
+                    step, so `current` is still synchronous and a signed-out
+                    or offline player gets exactly the local game. It talks to
+                    the RemoteProgression.ts port, never to Supabase directly -
+                    supabaseRemote.ts is the only file that imports
+                    @supabase/*, which is what lets supabaseStore.test.ts run
+                    under testEnvironment node with no network.
 
 lib/runtime/         RuntimeState (resets every run) vs PlayerProfile (currency +
                     skill levels, PERSISTS across runs through lib/progression -
@@ -552,6 +560,25 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   bar that clears a layer and strips a shield. close/partial earn a player
   TIME, which is the game's reward for reasoning toward an answer; they are not
   evidence of knowing it, and a signal a teacher may act on must not say so.
+- **THE SUPABASE CLIENT COSTS NOTHING UNTIL IT IS CONFIGURED, and that is
+  load-bearing rather than lucky.** Vite inlines `import.meta.env.*` as literals
+  at build time, so with no credentials `createSupabaseClientFromEnv()`'s guards
+  constant-fold to an unconditional `return null`, the `createClient` call
+  becomes dead code, and `@supabase/supabase-js` is tree-shaken out of the
+  bundle entirely - measured at 125.92 kB / 44.51 kB gzip without credentials
+  against 335.16 kB / 98.65 kB with them. Two consequences. Keep those guards
+  written against `import.meta.env` values so they stay statically decidable: a
+  runtime check the optimiser cannot see (reading the URL from a config object,
+  say) silently puts ~54 kB gzip back into every player's download. And when
+  credentials DO ship, that cost lands on the critical path of a children's
+  game, so a dynamic `import()` behind sign-in is the next move - not a
+  micro-optimisation.
+- **`.env.local` lives at the REPO ROOT, and `vite.config.ts` needs
+  `envDir: '..'` for that to work.** Without it every `import.meta.env.VITE_*`
+  reads `undefined`, the client returns null, and the game falls back to
+  local-only - which looks exactly like working software. `src/vite-env.d.ts`
+  declares the two vars so a typo is a type error rather than the same silent
+  fallback.
 - Skill effects are a discriminated union (`BaseSkillEffect`) with `effectAtLevel(0)`
   always meaning "not purchased yet" - safe to call before any purchase exists.
 - New `GameEvent` variants: add the type, then update both `GameCanvas.svelte`'s

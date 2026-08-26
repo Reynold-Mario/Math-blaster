@@ -7,6 +7,9 @@
   import type { RuntimeState } from './runtime/RuntimeState';
   import type { PlayerProfile } from './runtime/PlayerProfile';
   import { createLocalStorageStore } from './progression/localStorageStore';
+  import { createSupabaseProgressionStore } from './progression/supabaseStore';
+  import { createSupabaseClientFromEnv } from './progression/supabaseClient';
+  import { createSupabaseRemote } from './progression/supabaseRemote';
   import { profileCodec, PROFILE_STORAGE_KEY } from './progression/profileCodec';
   import { createMasteryRecorder, type TopicDelta } from './progression/MasteryRecorder';
   import {
@@ -33,8 +36,25 @@
    * function, so that a networked one can arrive without this file
    * learning that a network exists. The key is passed in because Math
    * Blaster's predates the convention and must not move.
+   *
+   * The networked one has now arrived, and note how little changed: the
+   * Supabase store WRAPS the localStorage one rather than replacing it, so
+   * localStorage is still the boot path and `progress.current` is still
+   * synchronous. With no credentials `createSupabaseClientFromEnv()` returns
+   * null and the whole thing is a pass-through - which is the state the game
+   * ships in today, and the reason wiring this up cannot regress anything.
    */
-  const store = createLocalStorageStore({ keyFor: () => PROFILE_STORAGE_KEY });
+  const supabase = createSupabaseClientFromEnv();
+  const store = createSupabaseProgressionStore({
+    cache: createLocalStorageStore({ keyFor: () => PROFILE_STORAGE_KEY }),
+    remote: supabase === null ? null : createSupabaseRemote(supabase),
+    // Sync failures are never the player's problem: the run keeps going on the
+    // local copy. In dev they should still be visible, because "it silently
+    // stopped syncing" is otherwise indistinguishable from "it is working".
+    onError: (where, error) => {
+      if (import.meta.env.DEV) console.error(`[progression:${where}]`, error);
+    },
+  });
   const progress = store.open(profileCodec);
 
   let phase = $state<GamePhase>('boot');

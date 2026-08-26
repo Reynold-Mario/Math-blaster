@@ -60,6 +60,24 @@ export interface ProgressionCodec<S> {
   /** The monotone "how far have they got" scalar, promoted out of the blob
    * so a store can enforce that it never goes backwards. */
   furthest(state: S): number;
+
+  /**
+   * Put a grade the PLATFORM asserts onto the state, if this game has
+   * somewhere to put it. Optional: a game with no notion of a grade omits it.
+   *
+   * This exists for the same reason `merge` does. A store cannot know which
+   * field a game keeps its grade in, and the alternative - a store reaching in
+   * and setting `selectedGrade` because it happens to know Math Blaster - makes
+   * every future game inherit one game's field name.
+   *
+   * The value arrives from the network, so it is UNTRUSTED. An implementation
+   * may store it as-is provided something downstream validates it (Math Blaster
+   * has `resolveGrade()`, which checks it against `GRADE_ORDER` and falls back
+   * to a real grade). Never let it reach a curriculum lookup unchecked: a run
+   * with no problems in it is a far worse failure than a run at the wrong
+   * grade.
+   */
+  applyPlatformGrade?(state: S, grade: string): S;
 }
 
 export interface ProgressionHandle<S> {

@@ -99,4 +99,11 @@ export const profileCodec: ProgressionCodec<PlayerProfile> = {
   parse: normalizeProfile,
   merge: mergeProfiles,
   furthest: (state) => state.highestWaveReached,
+  /**
+   * The platform's grade goes on `selectedGrade`, which is exactly what
+   * `gradeSource.ts` predicted: "the store puts it on the profile, and this
+   * function keeps validating it". So `resolveGrade()` needs no change, and the
+   * unvalidated string is safe here because that is the only reader.
+   */
+  applyPlatformGrade: (state, grade) => ({ ...state, selectedGrade: grade as PlayerProfile['selectedGrade'] }),
 };
