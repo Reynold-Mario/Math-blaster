@@ -579,6 +579,18 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   duplicated in `isSupabaseConfigured()` (which `Game.svelte` needs
   synchronously) rather than shared: two folds in two bodies, not one helper.
   Do not "clean this up".
+- **COMPARE PROGRESSION STATE BY VALUE, NEVER BY `JSON.stringify`.** The
+  Supabase store decides whether to push by comparing the merge result against
+  what the server sent. `JSON.stringify` looks right and is not: `profileCodec`'s
+  `parse` builds its object opening with `currency` while its `merge` opens with
+  `earnedTotal`, so two semantically identical profiles produce different text.
+  The guard never fired and every signed-in player pushed a redundant write on
+  every boot - harmless to the data, because the triggers are monotone, but it
+  burned a revision each time, which makes genuine conflict detection noisier,
+  and it silently removed the only property the guard exists for. Use
+  `stableStringify` in `supabaseStore.ts`. The unit tests missed this because the
+  test codec emitted its keys in the same order from both methods; it is caught
+  now, and the test codec deliberately disagrees with itself on key order.
 - **`.env.local` lives at the REPO ROOT, and `vite.config.ts` needs
   `envDir: '..'` for that to work.** Without it every `import.meta.env.VITE_*`
   reads `undefined`, the client returns null, and the game falls back to

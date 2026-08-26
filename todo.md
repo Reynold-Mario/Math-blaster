@@ -387,19 +387,53 @@ look confirmed and have password hashes, but their token columns are NULL so
 they cannot sign in — delete them from the dashboard before creating real test
 users, or you will debug the wrong user.
 
-### 1.7 Prove it
+### 1.7 ~~Prove it~~ — mostly DONE (2026-08-26), verified in Chrome
 
-- [ ] Play a run signed in, reload, confirm currency, skills and furthest wave
-      survive.
-- [ ] Play with DevTools → Network → Offline. The run must be **uninterrupted**,
-      and must sync on reconnect without doubling.
-- [ ] Sign in as a **second** test user and confirm the first user's rows are
-      invisible. This is the RLS check, and it is the whole reason the prototype
-      uses real auth.
-- [ ] Kill the network mid-run and confirm the game stays playable. Local-first
-      means a Supabase outage costs sync, never the run.
+Run against the real project with two dashboard-created users
+(`mathblastertest1@`, `mathblastertest2@`), signed in via
+`pixelMathBlaster.signIn(...)`.
 
----
+- [x] **`ensure_profile()` ran for real.** `profile_identities` 0 → 2, with
+      `subject` matching `auth.uid()` on both. That function had never executed
+      before.
+- [x] **Progression survives a reload.** Both users hold their own
+      `game_progress` row: `revision` 6, `furthest` 10, currency 8 / 13,
+      3 skills each. The guarded-update path ran five or six times per user
+      under real gameplay, not once.
+- [x] **The `currency == earnedTotal - spentTotal` invariant survived a round
+      trip** on both profiles (115 spent across 3 skills). This is the invariant
+      `CLAUDE.md` warns fails silently and locally, then reappears as free money
+      on the first merge.
+- [x] **RLS proven from the browser**, through the game's own client with a real
+      session — not by inspecting rows as the service role, which bypasses RLS
+      and proves nothing. Signed in as test2:
+
+      | table | rows in table | visible |
+      |---|---|---|
+      | `game_progress` | 3 | **1** |
+      | `profiles` | 3 | **1** |
+      | `profile_identities` | 2 | **`42501` denied** |
+      | `games` | 1 | readable ✅ |
+
+      The `profile_identities` denial is the deny-all posture from
+      `20260826113847_rls_and_grants.sql:43` confirmed even for the owner.
+- [x] **Found and fixed a bug only a live run could surface.** See the
+      `stableStringify` note in `math-blaster/CLAUDE.md`: the store compared
+      state with `JSON.stringify`, the codec emits keys in a different order from
+      `parse`, so every signed-in player pushed a redundant write on every boot.
+      Observed as `revision` 5 → 6 with byte-identical state. Fixed, with two
+      regression tests that genuinely fail without the fix (verified by
+      reverting), and the test codec now disagrees with itself on key order the
+      way the real one does. 423 tests.
+- [ ] **Offline mid-run is still untested.** DevTools → Network → Offline, play
+      through, confirm the run is uninterrupted and syncs on reconnect. This is
+      the `unavailable` → backoff → `online` listener path, which currently has
+      only unit coverage against the fake port. Not drivable from the browser
+      tooling available here — it needs the DevTools throttling UI by hand.
+- [ ] **Delete the two junk `auth.users` rows** (`blaster-test-a@`,
+      `blaster-test-b@`): NULL GoTrue token columns, so they look confirmed and
+      cannot sign in. `auth.users` is at 4; two of those are landmines for a
+      future session.
 
 ## Phase 1b — the run lands in one write
 

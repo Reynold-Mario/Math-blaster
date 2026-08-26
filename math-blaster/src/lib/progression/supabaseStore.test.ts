@@ -41,10 +41,17 @@ const codec: ProgressionCodec<Counter> = {
   },
   // `n` is the monotone record; `label` and `grade` are preferences, so they
   // follow the hint. Same split the real profile codec has.
+  //
+  // NOTE THE KEY ORDER: `parse` above emits n/label/grade, this emits
+  // grade/label/n. That mismatch is deliberate and mirrors the real codec,
+  // whose `parse` opens with `currency` and whose `merge` opens with
+  // `earnedTotal`. An earlier version of this file emitted the same order from
+  // both, which let a `JSON.stringify` comparison in the store look correct
+  // while pushing a redundant write on every boot in production.
   merge: (a, b, hint) => ({
-    n: Math.max(a.n, b.n),
-    label: hint === 'a-is-newer' ? a.label : b.label,
     grade: hint === 'a-is-newer' ? a.grade : b.grade,
+    label: hint === 'a-is-newer' ? a.label : b.label,
+    n: Math.max(a.n, b.n),
   }),
   furthest: (s) => s.n,
   applyPlatformGrade: (s, grade) => ({ ...s, grade }),
@@ -371,6 +378,28 @@ describe('createSupabaseProgressionStore', () => {
 
     // Re-sending an identical payload would burn a request and a revision
     // bump for nothing.
+    //
+    // THIS IS THE REGRESSION TEST FOR A BUG THAT SHIPPED PAST THE FIRST
+    // VERSION OF IT. The store compared with JSON.stringify, the codec emits
+    // its keys in a different order from `parse` (see the note on `merge`
+    // above), so the strings never matched and every signed-in player pushed
+    // on every boot - observed as `revision` 5 -> 6 with byte-identical state.
+    // The comparison must be by value.
+    expect(r.writes).toHaveLength(0);
+  });
+
+  it('treats a state that differs only in key order as unchanged', async () => {
+    // The narrow property, stated on its own so it cannot be lost while
+    // refactoring the test above.
+    const stored = { n: 5, label: 'same', grade: 'K' };
+    const reordered = { grade: 'K', label: 'same', n: 5 } as typeof stored;
+    const r = fakeRemote(snapshotOf(reordered, 3));
+    const { handle } = open(r.remote, { k: JSON.stringify(stored) });
+    void handle;
+
+    await settle();
+    await advance(60000);
+
     expect(r.writes).toHaveLength(0);
   });
 
