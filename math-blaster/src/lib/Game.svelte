@@ -10,8 +10,10 @@
   import { createSupabaseProgressionStore } from './progression/supabaseStore';
   import { isSupabaseConfigured, loadSupabaseRemote } from './progression/supabaseClient';
   import { createLazyRemote } from './progression/lazyRemote';
-  import { createRunQueue } from './progression/runQueue';
+  import { createRunQueue, PENDING_RUNS_KEY } from './progression/runQueue';
   import { createPlatformGradeStore } from './progression/platformGradeStore';
+  import { createLearnerScopedStore } from './progression/learnerScopedStore';
+  import { learnerScopedKey } from './identity/learnerScope';
   import { createConfiguredVtIdentity } from './identity/vtIdentityClient';
   import { resolveGrade } from './runtime/gradeSource';
   import { profileCodec, PROFILE_STORAGE_KEY } from './progression/profileCodec';
@@ -75,9 +77,20 @@
    * not change underneath a run in progress.
    */
   const store = createPlatformGradeStore({
-    inner: createSupabaseProgressionStore({
-      cache: createLocalStorageStore({ keyFor: () => PROFILE_STORAGE_KEY }),
-      remote,
+    inner: createLearnerScopedStore({
+      // Rebuilding the whole stack per key is the point: a learner switch has
+      // to move the cache AND whatever is talking to the network, or one ends
+      // up pointed at a different child from the other.
+      storeFor: (key) =>
+        createSupabaseProgressionStore({
+          cache: createLocalStorageStore({ keyFor: () => key }),
+          remote,
+          onError: reportSyncError,
+        }),
+      anonymousKey: PROFILE_STORAGE_KEY,
+      identity,
+      onScoped: (learnerId, claimedAnonymous) =>
+        runs.rekey(learnerScopedKey(PENDING_RUNS_KEY, learnerId), claimedAnonymous),
       onError: reportSyncError,
     }),
     identity,

@@ -261,3 +261,97 @@ describe('createRunQueue', () => {
     expect(r.seen).toHaveLength(1);
   });
 });
+
+/**
+ * Moving the queue once the device learns who is playing.
+ *
+ * A queued run is worse to mis-attribute than a profile is: `submit_run()`
+ * writes it into a child's permanent practice record, where a profile only
+ * decides how much currency they have.
+ */
+describe('rekey', () => {
+  const RUN = {
+    gameSlug: 'math-blaster',
+    gradeLevel: 'K',
+    waveReached: 4,
+    score: 10,
+    bossesDefeated: 0,
+    durationMs: 1000,
+    mastery: [],
+    achievements: [],
+  };
+  const ADA_KEY = `${PENDING_RUNS_KEY}.ada`;
+
+  function queueAt(map: Map<string, string>, key: string): RunSubmission[] {
+    const raw = map.get(key);
+    return raw === undefined ? [] : (JSON.parse(raw) as RunSubmission[]);
+  }
+
+  function storageWithMap(seed: Record<string, string> = {}) {
+    const map = new Map(Object.entries(seed));
+    const storage: StorageLike = {
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => void map.set(k, v),
+    };
+    return { storage, map };
+  }
+
+  it('carries banked runs to the learner that claimed the device', () => {
+    const { storage, map } = storageWithMap();
+    const queue = createRunQueue({ remote: fakeRemote([{ outcome: 'unavailable' }]).remote, storage });
+    queue.submit(RUN);
+
+    queue.rekey(ADA_KEY, true);
+
+    expect(queueAt(map, ADA_KEY)).toHaveLength(1);
+    expect(queue.pending()).toBe(1);
+  });
+
+  it('leaves them behind for a learner that did not', () => {
+    const { storage, map } = storageWithMap();
+    const queue = createRunQueue({ remote: fakeRemote([{ outcome: 'unavailable' }]).remote, storage });
+    queue.submit(RUN);
+
+    queue.rekey(`${PENDING_RUNS_KEY}.bo`, false);
+
+    // Still on disk under the anonymous key rather than dropped - they are
+    // somebody's practice, just not this child's.
+    expect(queueAt(map, PENDING_RUNS_KEY)).toHaveLength(1);
+    expect(queueAt(map, `${PENDING_RUNS_KEY}.bo`)).toHaveLength(0);
+    expect(queue.pending()).toBe(0);
+  });
+
+  it('keeps the idempotency key across the move', () => {
+    // A fresh key per attempt would defeat `submit_run()`'s dedupe and double
+    // a child's practice record.
+    const { storage, map } = storageWithMap();
+    const queue = createRunQueue({ remote: fakeRemote([{ outcome: 'unavailable' }]).remote, storage });
+    queue.submit(RUN);
+    const before = queueAt(map, PENDING_RUNS_KEY)[0].idempotencyKey;
+
+    queue.rekey(ADA_KEY, true);
+
+    expect(queueAt(map, ADA_KEY)[0].idempotencyKey).toBe(before);
+  });
+
+  it('puts runs already waiting in the learner slot first', () => {
+    const existing = [{ ...RUN, idempotencyKey: 'older' }];
+    const { storage, map } = storageWithMap({ [ADA_KEY]: JSON.stringify(existing) });
+    const queue = createRunQueue({ remote: fakeRemote([{ outcome: 'unavailable' }]).remote, storage });
+    queue.submit(RUN);
+
+    queue.rekey(ADA_KEY, true);
+
+    // They have been waiting longer.
+    expect(queueAt(map, ADA_KEY).map((r) => r.idempotencyKey)[0]).toBe('older');
+    expect(queue.pending()).toBe(2);
+  });
+
+  it('does nothing when the key has not changed', () => {
+    const { storage, map } = storageWithMap();
+    const queue = createRunQueue({ remote: fakeRemote([{ outcome: 'unavailable' }]).remote, storage });
+    queue.submit(RUN);
+    queue.rekey(PENDING_RUNS_KEY, true);
+    expect(queueAt(map, PENDING_RUNS_KEY)).toHaveLength(1);
+  });
+});
