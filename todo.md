@@ -444,9 +444,14 @@ changes in the same PR as 2.1.
       deletes the `tsconfig.jest.json` workaround plus the constraint recorded in
       `math-blaster/CLAUDE.md` that *"an asset import in any `.ts` under `src/`
       breaks `npm test`"* — Vitest runs through the Vite pipeline, so that stops
-      being true. **It also supersedes open PR #11**
-      (`fix/jest-tsconfig-ide-errors`, stale): close that PR rather than rebasing
-      it. Adopt TSE's two-project config (a `node` server project and a browser
+      being true. It will also **delete `tsconfig.jest.json`
+      outright**, which is the config PR #28 just fixed. (An earlier draft of
+      this item said Vitest "supersedes" PR #11 and that it should simply be
+      closed. That was wrong: #11's fix was still live, because `main`'s version
+      of that file inherits `exclude: ["src/**/*.test.ts"]` from
+      `tsconfig.app.json` and therefore type-checked **zero** test files. #11 was
+      re-landed as #28 rather than discarded. The lesson worth keeping: check
+      whether a stale PR is stale before closing it as superseded.) Adopt TSE's two-project config (a `node` server project and a browser
       client project), its `expect: { requireAssertions: true }`, and its pinned
       `TZ`/`LC_ALL`. Keep the `BALANCE_REPORT=1` opt-in gate working.
 - [ ] **3.2** Test the three largest files in the repo, which have **zero** tests:
