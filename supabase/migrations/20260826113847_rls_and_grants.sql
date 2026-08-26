@@ -14,7 +14,7 @@
 
 -- 1. Take everything away, including from tables that do not exist yet.
 --
--- INCOMPLETE for functions - see 20260826120700, which revokes from PUBLIC.
+-- INCOMPLETE for functions - see 20260826114032, which revokes from PUBLIC.
 -- Revoking from anon here is a no-op, because anon inherits function EXECUTE
 -- from the PUBLIC pseudo-role rather than holding a grant of its own.
 alter default privileges in schema public revoke all on tables    from anon, authenticated;
