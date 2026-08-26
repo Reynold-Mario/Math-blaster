@@ -15,13 +15,13 @@
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "@tsconfig/svelte": "^5.0.8",
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.13.3",
+    "@types/node": "^26.2.0",
     "jest": "^30.4.2",
-    "svelte": "^5.56.8",
+    "svelte": "^5.56.10",
     "svelte-check": "^4.7.3",
     "ts-jest": "^29.4.12",
-    "typescript": "~6.0.2",
-    "vite": "^8.2.0"
+    "typescript": "~7.0.2",
+    "vite": "^8.2.2"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4"
