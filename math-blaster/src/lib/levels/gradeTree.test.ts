@@ -138,3 +138,56 @@ describe('problems a grade actually produces', () => {
     }
   });
 });
+
+describe('the topic id is the join key', () => {
+  /**
+   * A curriculum's `id` must equal the id of the topic node that teaches
+   * it. Mastery is recorded against that string, so a topic with two
+   * names splits one child's practice across two rows that never add up -
+   * and nothing would ever throw to tell you.
+   */
+  it('gives every topic node a curriculum that names it', () => {
+    for (const [grade, topics] of Object.entries(GRADE_TOPICS)) {
+      for (const topic of topics ?? []) {
+        const effect = topic.effectAtLevel(1);
+        expect(effect.kind).toBe('unlocked');
+        if (effect.kind !== 'unlocked') continue;
+        expect(effect.curriculum.id).toBe(topic.id);
+        expect(`${grade}:${effect.curriculum.id}`).toBe(`${grade}:${topic.id}`);
+      }
+    }
+  });
+
+  it('never hands the same id to two different curricula', () => {
+    // The failure this catches: copying a curriculum literal instead of
+    // importing it, so two objects claim one topic and then drift apart.
+    const byId = new Map<string, string>();
+    for (const topics of Object.values(GRADE_TOPICS)) {
+      for (const topic of topics ?? []) {
+        const effect = topic.effectAtLevel(1);
+        if (effect.kind !== 'unlocked') continue;
+        const shape = JSON.stringify([effect.curriculum.operations, effect.curriculum.numberRange]);
+        const seen = byId.get(effect.curriculum.id);
+        if (seen !== undefined) expect(shape).toBe(seen);
+        byId.set(effect.curriculum.id, shape);
+      }
+    }
+    expect(byId.size).toBeGreaterThan(0);
+  });
+
+  it('gives every curriculum a non-empty id', () => {
+    for (const grade of GRADE_ORDER) {
+      for (const curriculum of curriculumLadderForGrade(grade)) {
+        expect(typeof curriculum.id).toBe('string');
+        expect(curriculum.id.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('allows two topics to share a standard code', () => {
+    // 1.OA.6 covers add/subtract within 20; the game splits that into
+    // fluency-within-10 and regrouping. A code is a label, not a key.
+    const codes = curriculumLadderForGrade('1').map((c) => c.standardCode);
+    expect(codes).toEqual(['1.OA.6', '1.OA.6']);
+  });
+});

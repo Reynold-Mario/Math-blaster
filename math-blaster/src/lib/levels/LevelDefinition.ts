@@ -11,6 +11,24 @@ export type { GruntKind, BossSpriteKind };
  * from. Kept separate from ArcadeDifficulty so either can be tuned without
  * affecting the other. */
 export interface Curriculum {
+  /**
+   * WHICH TOPIC THIS IS, and the join key mastery is recorded against.
+   *
+   * It matches the id of the `gradeTree` topic node that teaches this
+   * curriculum, because that tree is the curriculum spine and a topic
+   * must not have two names depending on which path a problem arrived
+   * through. Deliberately internal and ours: `standardCode` is the
+   * external name, and it is allowed to be absent, to change, or to be
+   * shared by two topics. This is not.
+   */
+  id: string;
+  /**
+   * The Common Core code, where the topic has one. **Optional and always
+   * will be** - a topic without a standard is still a topic, and nothing
+   * in a run may depend on the mapping existing. These were comments in
+   * `gradeTree.ts` until they became data.
+   */
+  standardCode?: string;
   operations: Operator[];
   numberRange: [number, number];
 }

@@ -1,6 +1,6 @@
 import type { SkillNode } from '../skills/SkillTree';
 import type { Curriculum } from './LevelDefinition';
-import { l1, l2, l3, l4 } from './gameLevels';
+import { k1, g2a, g2b, l1, l2, l3, l4 } from './gameLevels';
 
 /**
  * K-12, even though only K-3 have topics authored below. Adding a later
@@ -42,14 +42,19 @@ function topicNode(
   };
 }
 
+// Each node takes its curriculum from the LEVEL that teaches it rather
+// than restating one, so a topic has exactly one id and exactly one
+// standard code. Both now live on Curriculum in gameLevels.ts - they
+// used to be comments here, which is why this file no longer repeats
+// them. gradeTree.test.ts pins that a node and its curriculum agree.
+
 // --- Kindergarten ---
-// K.OA.5: fluently add and subtract within 5. No existing arcade level
-// yet - this is the tree's true entry point, below l1's range.
+// The tree's entry point, below l1's range.
 const kAddSub5 = topicNode(
   'k-add-sub-5',
   'Add & Subtract within 5',
   'The first building block: adding and subtracting with small numbers.',
-  { operations: ['+', '-'], numberRange: [1, 5] },
+  k1.curriculum,
   [],
   12,
   []
@@ -79,14 +84,13 @@ const g1AddSub20 = topicNode(
 );
 
 // --- Grade 2 ---
-// 2.NBT: fluent add/subtract within 100. 2.OA.4: equal groups as the
-// conceptual foundation for multiplication. Neither has an arcade level
-// yet.
+// Two-digit fluency, and equal groups as the conceptual foundation for
+// multiplication.
 const g2AddSub100 = topicNode(
   'g2-add-sub-100',
   'Add & Subtract within 100',
   'Extends addition and subtraction fluency to two-digit numbers up to 100.',
-  { operations: ['+', '-'], numberRange: [1, 100] },
+  g2a.curriculum,
   [],
   18,
   [{ nodeId: 'g1-add-sub-20', requiredLevel: 1 }]
@@ -96,15 +100,15 @@ const g2MultFoundation = topicNode(
   'g2-mult-foundation',
   'Multiplication Foundations',
   'A first, small-scale introduction to multiplication as equal groups.',
-  { operations: ['×'], numberRange: [2, 3] },
+  g2b.curriculum,
   [],
   20,
   [{ nodeId: 'g1-add-sub-20', requiredLevel: 1 }]
 );
 
 // --- Grade 3 ---
-// 3.OA.7: fluently multiply and divide within 100 - the existing l3/l4
-// pair, requiring both grade-2 strands to be complete first.
+// Multiply and divide within 100 - the l3/l4 pair, requiring both
+// grade-2 strands to be complete first.
 const g3Multiplication = topicNode(
   'g3-multiplication',
   'Multiplication Tables 2-5',
