@@ -25,6 +25,8 @@ lib/levels/         enemyArchetypes.ts = the LEAF module: sprite-kind vocabulary
                     pure stepMovement(). Everything else here depends on it.
                     waves.ts (formation GEOMETRY only - shapes and
                     buildFormation, fully deterministic, no Math.random),
+                    Curriculum now carries `id` (the join key mastery is
+                    recorded against) and an optional `standardCode`.
                     waveProgression.ts (THE PROGRESSION SPINE: turns a wave
                     number into a formation, a difficulty, a curriculum, a
                     boss and a backdrop. Also pure and deterministic),
@@ -40,7 +42,10 @@ lib/skills/         SkillTree.ts = generic, content-free engine (nodes, prereqs,
                     costPerLevel, purchase logic). baseSkillTree.ts = the concrete
                     combat/economy nodes. SkillTreeScreen.svelte = the shop UI.
 
-lib/progression/     THE PERSISTENCE SEAM. ProgressionStore/Codec/Handle:
+lib/progression/     THE PERSISTENCE SEAM, and the mastery one.
+                    MasteryRecorder subscribes to gameEvents and tallies
+                    per-topic attempts/correct for a run - a subscriber like
+                    audio.ts, never a participant. ProgressionStore/Codec/Handle:
                     WHERE profile state lives (a store) is separated from what
                     it MEANS (a codec). localStorageStore.ts is the only
                     implementation; profileCodec.ts owns the merge, and
@@ -522,6 +527,31 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
 
 ## Conventions worth keeping
 
+- **A CURRICULUM'S `id` IS THE TOPIC'S ONE TRUE NAME**, and it equals the id
+  of the `gradeTree` node that teaches it. Mastery is recorded against that
+  string, so a topic with two ids splits one child's practice across two rows
+  that never add up - and nothing throws to tell you. That is why `gradeTree.ts`
+  takes its curricula from the level objects rather than restating them: three
+  nodes used to carry byte-identical copies, which was harmless only while a
+  curriculum was anonymous. `gradeTree.test.ts` pins that a node and its
+  curriculum agree, and that no id is claimed by two different shapes.
+  `standardCode` is the EXTERNAL name and plays by different rules: optional,
+  changeable, and shared by two topics already (both grade-1 nodes are 1.OA.6,
+  because the standard is coarser than the game's split). Never join on it.
+- **Attribute the problem that was ANSWERED, not the one on the enemy.**
+  Breaking a shield and clearing a non-final layer both mint a *fresh* problem
+  on the same enemy, so `applyHitToEnemy` captures `enemy.problem` before
+  resolving. Read it at emit time instead and every multi-layer enemy is
+  mis-filed, silently and plausibly.
+- **An authored problem carries no topic, and that absence is deliberate.**
+  A boss finale is written by hand rather than drawn from a curriculum, so
+  `buildAuthoredProblem` stamps nothing and `MasteryRecorder` skips what it
+  cannot attribute. A fiction in a mastery record is worse than a gap, because
+  a person may eventually act on it.
+- **Only exact/equivalent count as `correct`** in the mastery tally - the same
+  bar that clears a layer and strips a shield. close/partial earn a player
+  TIME, which is the game's reward for reasoning toward an answer; they are not
+  evidence of knowing it, and a signal a teacher may act on must not say so.
 - Skill effects are a discriminated union (`BaseSkillEffect`) with `effectAtLevel(0)`
   always meaning "not purchased yet" - safe to call before any purchase exists.
 - New `GameEvent` variants: add the type, then update both `GameCanvas.svelte`'s

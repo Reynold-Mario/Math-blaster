@@ -1,4 +1,4 @@
-import type { ProblemDefinition } from '../math/ProblemDefinition';
+import type { Operator, ProblemDefinition } from '../math/ProblemDefinition';
 import { arithmeticProblem, authoredArithmeticProblem } from '../math/ProblemDefinition';
 import type { Curriculum, AuthoredProblemRecipe } from './LevelDefinition';
 
@@ -41,6 +41,10 @@ export function generateProblem(curriculum: Curriculum): ProblemDefinition {
     throw new Error('Curriculum has no operations to generate a problem from.');
   }
   const op = curriculum.operations[randInt(0, curriculum.operations.length - 1)];
+  return attribute(build(op, curriculum), curriculum);
+}
+
+function build(op: Operator, curriculum: Curriculum): ProblemDefinition {
   switch (op) {
     case '+':
     case '-':
@@ -50,6 +54,16 @@ export function generateProblem(curriculum: Curriculum): ProblemDefinition {
     case '÷':
       return generateDivision(curriculum);
   }
+}
+
+/**
+ * Stamps the topic onto a generated problem. THE ONLY PLACE this happens,
+ * which is what makes `generateBossProblem` correct for free: it picks a
+ * rung of the boss's scope and delegates here, so a boss answer is
+ * attributed to the rung it actually came from rather than to the fight.
+ */
+function attribute(problem: ProblemDefinition, curriculum: Curriculum): ProblemDefinition {
+  return { ...problem, topicId: curriculum.id, standardCode: curriculum.standardCode };
 }
 
 /**
@@ -90,8 +104,15 @@ export function generateBossProblem(
   return generateProblem(chosen);
 }
 
-/** Turns an authored recipe - e.g. a boss's finale - into a real
- * ProblemDefinition, minting its runtime id only when actually needed. */
+/**
+ * Turns an authored recipe - e.g. a boss's finale - into a real
+ * ProblemDefinition, minting its runtime id only when actually needed.
+ *
+ * Deliberately carries NO topicId. An authored problem was written by
+ * hand, not drawn from a curriculum, so there is no topic it belongs to -
+ * and picking a plausible-looking one would put a fiction into the
+ * mastery record. A recorder skips what it cannot attribute.
+ */
 export function buildAuthoredProblem(recipe: AuthoredProblemRecipe): ProblemDefinition {
   return authoredArithmeticProblem(recipe.operator, recipe.left, recipe.right);
 }

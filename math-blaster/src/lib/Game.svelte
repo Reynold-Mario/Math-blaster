@@ -8,6 +8,7 @@
   import type { PlayerProfile } from './runtime/PlayerProfile';
   import { createLocalStorageStore } from './progression/localStorageStore';
   import { profileCodec, PROFILE_STORAGE_KEY } from './progression/profileCodec';
+  import { createMasteryRecorder, type TopicDelta } from './progression/MasteryRecorder';
   import {
     checkpointWave,
     freeStartWave,
@@ -208,6 +209,9 @@
    * cannot race a mutation in flight. */
   const SAFE_TO_APPLY: GamePhase[] = ['boot', 'skillTree', 'runSetup', 'gameover'];
   let pendingRemote: PlayerProfile | null = null;
+  /** The last finished run's per-topic tally. Read by the dev console
+   * today; handed to the store when there is one to hand it to. */
+  let lastRunMastery: TopicDelta[] = [];
 
   $effect(() => {
     if (pendingRemote === null || !SAFE_TO_APPLY.includes(phase)) return;
@@ -229,7 +233,20 @@
   });
 
   onMount(() => {
-    if (import.meta.env.DEV) installSkillTreeDebugTools(profile, saveNow);
+    /**
+     * Tallies what each run practised. A subscriber like audio.ts, not a
+     * participant: nothing in the game loop knows it is here.
+     *
+     * The deltas have nowhere to go yet - `skill_mastery` arrives with
+     * the Supabase store. It is wired now because ATTRIBUTION is what is
+     * expensive to retrofit: a run played before problems carried a topic
+     * can never be recovered afterwards.
+     */
+    const mastery = createMasteryRecorder((deltas) => {
+      lastRunMastery = deltas;
+    });
+
+    if (import.meta.env.DEV) installSkillTreeDebugTools(profile, saveNow, () => mastery.tally(), () => lastRunMastery);
 
     // Nothing produces remote state yet - the localStorage store has no
     // "elsewhere" to hear from. It is wired now because the rule is easy to
@@ -274,6 +291,7 @@
       unbindFlow();
       unbindInput();
       unbindRemote();
+      mastery.dispose();
       cancelAnimationFrame(raf);
       progress.dispose();
     };

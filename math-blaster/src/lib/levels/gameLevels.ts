@@ -18,13 +18,36 @@ import type { WavePlan } from './waves';
 // old speeds is unreadable rather than hard. Slower descent is what buys
 // the player time to actually read a formation and choose a target.
 
-const kCurriculum: Curriculum = { operations: ['+', '-'], numberRange: [1, 5] };
-const meadowCurriculum: Curriculum = { operations: ['+', '-'], numberRange: [1, 10] };
-const caveCurriculum: Curriculum = { operations: ['+', '-'], numberRange: [10, 20] };
-const g2aCurriculum: Curriculum = { operations: ['+', '-'], numberRange: [1, 100] };
-const g2bCurriculum: Curriculum = { operations: ['×'], numberRange: [2, 3] };
-const forestCurriculum: Curriculum = { operations: ['×'], numberRange: [2, 5] };
-const skyCurriculum: Curriculum = { operations: ['×', '÷'], numberRange: [6, 10] };
+// Each `id` is the id of the gradeTree topic node that teaches it. That
+// correspondence is the whole point of the field - see Curriculum's own
+// doc comment - so if you add a curriculum here, add its topic node too,
+// and give them the same id. `gradeTree.test.ts` pins that they agree.
+//
+// The standard codes were comments in gradeTree.ts. Two grade-1 topics
+// share 1.OA.6 on purpose: the standard covers add/subtract within 20 and
+// the game splits it into fluency-within-10 and regrouping, which is a
+// finer grain than the standard has. A code is not a key.
+const kCurriculum: Curriculum = {
+  id: 'k-add-sub-5', standardCode: 'K.OA.5', operations: ['+', '-'], numberRange: [1, 5],
+};
+const meadowCurriculum: Curriculum = {
+  id: 'g1-add-sub-10', standardCode: '1.OA.6', operations: ['+', '-'], numberRange: [1, 10],
+};
+const caveCurriculum: Curriculum = {
+  id: 'g1-add-sub-20', standardCode: '1.OA.6', operations: ['+', '-'], numberRange: [10, 20],
+};
+const g2aCurriculum: Curriculum = {
+  id: 'g2-add-sub-100', standardCode: '2.NBT.5', operations: ['+', '-'], numberRange: [1, 100],
+};
+const g2bCurriculum: Curriculum = {
+  id: 'g2-mult-foundation', standardCode: '2.OA.4', operations: ['×'], numberRange: [2, 3],
+};
+const forestCurriculum: Curriculum = {
+  id: 'g3-multiplication', standardCode: '3.OA.7', operations: ['×'], numberRange: [2, 5],
+};
+const skyCurriculum: Curriculum = {
+  id: 'g3-mult-div', standardCode: '3.OA.7', operations: ['×', '÷'], numberRange: [6, 10],
+};
 
 // Every plan opens with one or two introductory waves and escalates from
 // there. Each plan is one stretch of the run's single wave ladder, so a

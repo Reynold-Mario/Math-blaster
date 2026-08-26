@@ -534,16 +534,33 @@ function spawnSplit(state: RuntimeState, profile: PlayerProfile, parent: EnemyIn
 
 // --- Combat resolution ---
 
-function emitHitEvent(result: AnswerResult, xPct: number, y: number, targetId: number | 'boss'): void {
+/**
+ * `problem` is the one that was ANSWERED, so callers capture it before
+ * anything else in the turn can replace it - clearing a layer or breaking
+ * a shield both mint a fresh one, and attributing an answer to the
+ * problem that replaced it would quietly mis-file every multi-layer
+ * enemy's mastery.
+ *
+ * gameFlow still knows nothing about mastery. It reports what the problem
+ * was; whoever cares interprets that, exactly like every other event here.
+ */
+function emitHitEvent(
+  result: AnswerResult,
+  problem: ProblemDefinition,
+  xPct: number,
+  y: number,
+  targetId: number | 'boss'
+): void {
+  const topic = { topicId: problem.topicId, standardCode: problem.standardCode };
   switch (result.verdict) {
     case 'exact':
-      gameEvents.emit({ type: 'hit-exact', xPct, y, targetId });
+      gameEvents.emit({ type: 'hit-exact', xPct, y, targetId, ...topic });
       break;
     case 'equivalent':
-      gameEvents.emit({ type: 'hit-equivalent', xPct, y, targetId });
+      gameEvents.emit({ type: 'hit-equivalent', xPct, y, targetId, ...topic });
       break;
     case 'close':
-      gameEvents.emit({ type: 'hit-close', xPct, y, targetId });
+      gameEvents.emit({ type: 'hit-close', xPct, y, targetId, ...topic });
       break;
     case 'partial':
       gameEvents.emit({
@@ -553,13 +570,14 @@ function emitHitEvent(result: AnswerResult, xPct: number, y: number, targetId: n
         targetId,
         answerDigits: result.digitMatch?.answerDigits ?? '',
         digitMatches: result.digitMatch?.matches ?? [],
+        ...topic,
       });
       break;
     case 'incorrect':
-      gameEvents.emit({ type: 'hit-incorrect', xPct, y, targetId });
+      gameEvents.emit({ type: 'hit-incorrect', xPct, y, targetId, ...topic });
       break;
     case 'invalid':
-      gameEvents.emit({ type: 'hit-invalid', xPct, y, targetId });
+      gameEvents.emit({ type: 'hit-invalid', xPct, y, targetId, ...topic });
       break;
   }
 }
@@ -610,6 +628,9 @@ function applyHitToEnemy(
   enemy: EnemyInstance,
   result: AnswerResult
 ): { defeated: boolean } {
+  // Captured before resolution: breaking a shield replaces enemy.problem
+  // a few lines below, and a cleared non-final layer mints another one.
+  const answered = enemy.problem;
   const outcome = resolveGruntHit(result, enemy, state.missStreak);
   state.missStreak = outcome.missStreak;
 
@@ -622,7 +643,7 @@ function applyHitToEnemy(
     enemy.problem = problemForCurrentPhase(state, profile);
     gameEvents.emit({ type: 'shield-broken', xPct: enemy.xPct, y: enemy.y, targetId: enemy.uid });
   } else {
-    emitHitEvent(result, enemy.xPct, enemy.y, enemy.uid);
+    emitHitEvent(result, answered, enemy.xPct, enemy.y, enemy.uid);
 
     if (outcome.knockbackPct > 0) {
       enemy.y = Math.max(KNOCKBACK_CEILING_Y_PCT, enemy.y - outcome.knockbackPct);
@@ -864,7 +885,7 @@ function resolveBossShot(
     return;
   }
 
-  emitHitEvent(result, fxX, BOSS_FX_Y_PCT, 'boss');
+  emitHitEvent(result, boss.problem, fxX, BOSS_FX_Y_PCT, 'boss');
 
   if (outcome.shieldBroken) {
     dropBossShield(state, currentBossPhase(state));

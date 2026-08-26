@@ -27,6 +27,18 @@ export interface ProblemDefinition {
   /** The canonical, correct answer as a MathValue, not a bare number, so
    * the evaluator can support equivalence across fractions/decimals later. */
   answer: MathValue;
+  /**
+   * Which topic this problem exercises, copied from the curriculum it was
+   * generated from. Optional because an AUTHORED problem - today, only a
+   * boss finale - is written by hand rather than drawn from a curriculum,
+   * so there is no topic to attribute it to and inventing one would put a
+   * fiction into the mastery record.
+   *
+   * This file stays pure: carrying the id is not the same as knowing what
+   * a topic is, and nothing here reads it.
+   */
+  topicId?: string;
+  standardCode?: string;
 }
 
 export function evaluateExpression(expr: Expression): MathValue {

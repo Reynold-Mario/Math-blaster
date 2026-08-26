@@ -313,7 +313,7 @@ returning-player path is covered end-to-end (real key, real codec, real store) r
 than only as units, and the `skillSubProgress` level-boundary trap has a test named after
 what it would cost.
 
-### - [ ] PR 2 — Make the topic a first-class field
+### - [x] PR 2 — Make the topic a first-class field
 
 **The item that gets expensive to retrofit, so it happens early.** There is currently no
 way to say which topic a given answer exercised: `ProblemDefinition` carries no
@@ -322,7 +322,10 @@ names CCSS codes **in comments only**. This makes them data.
 
 All additive, respecting every existing layer boundary:
 
-1. `Curriculum` gains `id: string` and `standardCode?: string`.
+1. `Curriculum` gains `id: string` and `standardCode?: string`. **`id` is required**, and
+   matches the id of the `gradeTree` topic node that teaches it - mastery is recorded
+   against that string, so a topic with two names splits one child's practice across two
+   rows that never add up, and nothing throws to say so.
 2. `generateProblem()` copies both onto `ProblemDefinition`. **`EnemyInstance` grows no
    field** — the renderer must stay a pure function of `(runtime, theme, nowMs)`.
 3. `topicId` / `standardCode` are added to the existing `hit-*` variants in `events.ts`.
@@ -336,9 +339,26 @@ Locally the deltas go nowhere; PR 5 gives them a destination. Splitting this fro
 migrations means the client change and the schema change are each reviewable on their own
 terms — previously they were one PR, and the schema is the half that is hard to undo.
 
+**`gradeTree.ts` restated three curricula that already existed in `gameLevels.ts`** —
+byte-identical literals for K, `g2-add-sub-100` and `g2-mult-foundation`. Harmless while a
+curriculum was anonymous; the moment it carries an id, two objects claim one topic and can
+drift apart. Those three now read `k1.curriculum` / `g2a.curriculum` / `g2b.curriculum`
+like the other four already did, so there is exactly one object per topic.
+
 *Verify:* `npm test`. Drive a synthetic event stream through `MasteryRecorder` and assert
 the tally. Confirm a run whose curriculum has no `standardCode` still records a `topicId`
 — the CCSS code is optional and always will be.
+
+*Shipped:* 401 tests, up from 380; 120 files, 0 errors, 0 warnings. Two things worth
+knowing:
+- **The answered problem must be captured before resolution.** Breaking a shield and
+  clearing a non-final layer both mint a *fresh* problem on the same enemy, so reading
+  `enemy.problem` at emit time attributes the answer to the problem that replaced it.
+  Every multi-layer enemy would have been mis-filed, silently and plausibly.
+- **Authored problems stay unattributed.** A boss finale is written by hand, not drawn
+  from a curriculum, so `buildAuthoredProblem` sets no `topicId` and the recorder skips
+  what it cannot attribute. Inventing a plausible topic would put a fiction into a record
+  that a teacher may eventually read.
 
 ### - [ ] PR 3 — Achievements and a personal best
 

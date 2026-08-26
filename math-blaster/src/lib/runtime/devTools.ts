@@ -1,5 +1,6 @@
 import { BASE_SKILL_NODES } from '../skills/baseSkillTree';
 import { createEmptyProfile, type PlayerProfile } from './PlayerProfile';
+import type { TopicDelta } from '../progression/MasteryRecorder';
 
 declare global {
   interface Window {
@@ -7,6 +8,7 @@ declare global {
       resetProfile: () => void;
       addCurrency: (amount?: number) => void;
       unlockAll: () => void;
+      mastery: () => void;
     };
   }
 }
@@ -21,7 +23,12 @@ declare global {
  * caller owns the profile object, and handing back a fresh one here would
  * detach it from the component holding the same reference.
  */
-export function installSkillTreeDebugTools(profile: PlayerProfile, save: () => void): void {
+export function installSkillTreeDebugTools(
+  profile: PlayerProfile,
+  save: () => void,
+  liveTally: () => TopicDelta[],
+  lastRunTally: () => TopicDelta[]
+): void {
   window.pixelMathBlaster = {
     resetProfile(): void {
       const empty = createEmptyProfile();
@@ -50,8 +57,17 @@ export function installSkillTreeDebugTools(profile: PlayerProfile, save: () => v
       save();
       console.log('[pixelMathBlaster] every skill maxed out.');
     },
+    /** What this run has practised so far, and what the last finished run
+     * did. The only way to see the mastery tally until it has somewhere
+     * to be written. */
+    mastery(): void {
+      console.log('[pixelMathBlaster] this run so far:');
+      console.table(liveTally());
+      console.log('[pixelMathBlaster] last finished run:');
+      console.table(lastRunTally());
+    },
   };
   console.log(
-    '[pixelMathBlaster] debug tools ready - pixelMathBlaster.resetProfile() / .addCurrency(1000) / .unlockAll()'
+    '[pixelMathBlaster] debug tools ready - pixelMathBlaster.resetProfile() / .addCurrency(1000) / .unlockAll() / .mastery()'
   );
 }

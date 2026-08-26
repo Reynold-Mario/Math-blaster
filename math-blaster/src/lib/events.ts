@@ -12,12 +12,26 @@ import type { BossDefeatCause } from './runtime/RuntimeState';
  * position alone. */
 export type HitTargetId = number | 'boss';
 
+/**
+ * What the answered problem was exercising, carried on every `hit-*`
+ * variant. Attribution, not presentation: `GameCanvas` and `audio.ts`
+ * ignore it entirely, and a recorder that cares about mastery reads it
+ * without gameFlow knowing anything about mastery.
+ *
+ * Both optional. A boss finale is authored rather than generated, so it
+ * has no topic; and a topic need not have a Common Core code.
+ */
+export interface TopicAttribution {
+  topicId?: string;
+  standardCode?: string;
+}
+
 export type GameEvent =
   | { type: 'shot-fired'; guessText: string; xPct: number }
-  | { type: 'hit-exact'; xPct: number; y: number; targetId: HitTargetId }
-  | { type: 'hit-equivalent'; xPct: number; y: number; targetId: HitTargetId }
-  | { type: 'hit-close'; xPct: number; y: number; targetId: HitTargetId }
-  | {
+  | ({ type: 'hit-exact'; xPct: number; y: number; targetId: HitTargetId } & TopicAttribution)
+  | ({ type: 'hit-equivalent'; xPct: number; y: number; targetId: HitTargetId } & TopicAttribution)
+  | ({ type: 'hit-close'; xPct: number; y: number; targetId: HitTargetId } & TopicAttribution)
+  | ({
       type: 'hit-partial';
       xPct: number;
       y: number;
@@ -27,9 +41,9 @@ export type GameEvent =
        * of the correct answer the player already had right. */
       answerDigits: string;
       digitMatches: boolean[];
-    }
-  | { type: 'hit-incorrect'; xPct: number; y: number; targetId: HitTargetId }
-  | { type: 'hit-invalid'; xPct: number; y: number; targetId: HitTargetId }
+    } & TopicAttribution)
+  | ({ type: 'hit-incorrect'; xPct: number; y: number; targetId: HitTargetId } & TopicAttribution)
+  | ({ type: 'hit-invalid'; xPct: number; y: number; targetId: HitTargetId } & TopicAttribution)
   /** A shot that never landed: it bounced off an intact shield, whether
    * a sentinel's or a boss's. Distinct from a miss - the answer may well
    * have been right, it just wasn't right *enough*. */
