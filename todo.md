@@ -527,13 +527,30 @@ changes in the same PR as 2.1.
       become both live *and* forbidden the moment ESLint exists. The correct fix is
       a path-scoped `no-console: off` override for that file plus `tools/**` and
       `runtime/devTools.ts`, each line commented with why.
-- [ ] **2.3** Fix the CI job that lies. `.github/workflows/ci.yml` is named
-      "Build, Check & Test" and **never runs `npm run build`** — a Vite build break
-      passes CI today. Split into separate required checks (`Lint`, `Build`,
-      `svelte-check`, `Unit tests`), add `--fail-on-warnings` to `svelte-check`
-      (the codebase reportedly passes clean, so this is cheap now and expensive
-      later), add `permissions: { contents: read }` and per-job `timeout-minutes`.
+- [x] **2.3** ~~Fix the CI job that lies.~~ DONE (2026-08-26).
+      `.github/workflows/ci.yml` was named "Build, Check & Test" and never ran
+      `npm run build`, so a Vite build failure passed CI and surfaced on
+      someone's machine instead. Added the build step (first, because it is the
+      cheapest way to fail), `--fail-on-warnings` on `svelte-check` to match
+      `the-student-experience`'s zero-warning contract, `permissions:
+      contents: read`, and `timeout-minutes: 10`.
+      **Proved the gate gates** rather than assuming: broke an import, watched
+      the build fail, reverted, watched it pass. Worth noting the demonstration
+      was imperfect — a bad import is caught by `tsc` too. What the build
+      genuinely adds is what type-checking cannot see: a plugin or config
+      failure, an unresolvable asset, a Svelte compile error `tsc` is happy
+      with. The comment in `ci.yml` says so accurately.
       *This is `ROADMAP.md` PR 8 — tick it there too.*
+- [ ] **2.3b** Split into one job per gate (`Lint` / `Build` / `svelte-check` /
+      `Unit tests`), so a failure names itself instead of hiding inside one
+      combined check. **Deliberately not done here:** `"Build, Check & Test"` is
+      the *required status check* on `main`, so renaming or splitting the job
+      leaves branch protection waiting forever on a context that no longer
+      reports — the PR sits `BLOCKED` with nothing to fix, which is exactly the
+      failure mode that cost time on #26 and #30 today. Doing it means updating
+      the protection rule in the same change, which is a repo-settings edit
+      rather than a code one. Bundle it with 2.1, which adds the `Lint` job
+      anyway.
 - [ ] **2.4** `.github/dependabot.yml`, using `eng-mcp-server`'s version: npm
       weekly grouped by `dependency-type`, github-actions monthly,
       `open-pull-requests-limit: 5`, `labels: [dependencies]`.
