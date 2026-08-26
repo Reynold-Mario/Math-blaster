@@ -1,0 +1,546 @@
+# Production readiness
+
+The production-readiness ladder, alongside [`ROADMAP.md`](./ROADMAP.md) (the
+feature ladder). `ROADMAP.md` says what the platform becomes; this file says what
+has to be true before it can be run in production.
+
+**For agents:** cite items by number (`todo.md 1.3`) the way `ROADMAP.md` is cited
+by PR number. Keep the numbering stable — renumber only by appending. When an item
+lands, tick it and leave the text; a struck item is a record of a decision.
+
+**Current goal: a working prototype backed by a real database.** Netlify approval,
+the repo transfer, and everything downstream of them are deferred — see
+[Deferred](#deferred-needs-an-approval-first). Do not start Phase 2 work at the
+cost of Phase 1.
+
+---
+
+## Where things stand (2026-08-26)
+
+Standards baseline is `the-student-experience` (same stack: Svelte 5 + TS + Vite +
+Netlify, same audience), with `student-onboarding-orchestration` for release and
+deploy patterns and `eng-mcp-server` for small-repo hygiene.
+
+**Landed on `main`:** `ROADMAP.md` PRs 0, 1, 2 and 4 (#21–#25). The progression
+seam exists (`ProgressionStore` / `ProgressionCodec` / `ProgressionHandle`,
+localStorage-only), the topic is a first-class field, `MasteryRecorder` tallies
+per-topic attempts, and `supabase/migrations/` holds the full schema — 9 tables,
+RLS policies, and the monotone triggers.
+
+**Already good, do not redo:** ~401 unit tests, strict TS with zero
+`@ts-ignore`, zero TODO markers, no committed secrets, `.nvmrc`-driven CI,
+`package-lock.json` v3, colocated tests, imperative commit messages, and two
+documents (`math-blaster/CLAUDE.md`, `ROADMAP.md`) that record rejected
+alternatives.
+
+**The Supabase project exists:** `svelte-games-met-st`, ref
+`wyfceserpwwkxowauyld`, us-west-2, Postgres 17, `ACTIVE_HEALTHY`. All 7
+migrations are applied to it, and as of 1.1 the committed filenames match the
+ledger exactly. The CLI is initialized but not yet linked — see 1.2.
+
+**Not started:** `ROADMAP.md` PR 3 (achievements), PR 5 (Supabase client), PR 6
+(`submit_run()`); no linter, no formatter, no production build in CI, no error
+handling around the game loop.
+
+---
+
+## Decisions taken here
+
+Recorded so they are not re-litigated. Each is also written into the file that
+actually owns it.
+
+| Date | Decision | Lives in |
+|---|---|---|
+| 2026-08-26 | Migrations are applied by the CLI from committed files, never by MCP or the dashboard. Applied SQL is never edited. | 1.1, → root `CLAUDE.md` (4.1) |
+| 2026-08-26 | **Exception:** comment-only edits to an applied migration are allowed. Executable SQL is not. | 1.1 |
+| 2026-08-26 | Achievements are **not** based on defeating bosses, and **not** on completing topics. What they *are* based on stays open until discussed. | `ROADMAP.md` PR 3 item 3 |
+| 2026-08-26 | Drift fixed by renaming local files to the applied versions, not `migration repair`. | 1.1 |
+| 2026-08-26 | Docker is optional; only `supabase login` blocks Phase 1. | 1.2 / 1.2b |
+
+---
+
+## Phase 1 — A working prototype on a real database
+
+The current goal. Delivers `ROADMAP.md` PR 5, plus the two setup gaps that PR 5
+cannot land without. Order matters: 1.1 through 1.3 are prerequisites, not
+parallel work.
+
+### 1.1 ~~Reconcile the migration drift~~ — DONE (2026-08-26)
+
+**What was wrong.** The 7 committed migrations and the 7 applied ones had the same
+names and different version numbers (`20260826120000_profiles` vs
+`20260826113641_profiles`, and so on). They had been applied out-of-band via MCP
+`apply_migration` rather than by the CLI from the files — the giveaway is that each
+ledger row holds the whole file as a *single* statement, which is what
+`apply_migration` does and `db push` does not. The CLI therefore considered all 7
+local files unapplied and would have tried to run them again.
+
+**What was verified first.** Comment-stripped, whitespace-normalised SQL was
+compared per migration against `supabase_migrations.schema_migrations`. All 7 are
+**byte-identical in executable SQL** (same statement count, same md5). Every
+difference is comments. So the live schema is exactly what the committed files
+describe, and no DDL needed to change.
+
+Three files did differ in prose, worth knowing:
+
+- `rls_and_grants` and `revoke_public_execute_on_functions` — the committed
+  versions carry *better* comments than the applied ones (the committed
+  `revoke_public_execute` adds "Caught by `get_advisors` on first apply, not by
+  review" and sharpens the closing note). Committed text kept.
+- `achievements` line 21 — committed said `("defeat 5 bosses")`, applied said
+  `("practise 15 topics")`. **Both are now invalid**: boss outcomes and topic
+  completion are each ruled out as achievement criteria (decision of 2026-08-26,
+  recorded in `ROADMAP.md` PR 3 item 3). So the fix was not to pick one but to
+  write a comment that names no criterion at all, since the criteria are
+  undecided. Done under the comment-only exception below — this was its first use.
+
+**The fix taken: the 7 local files were renamed to the applied version numbers.**
+Chosen over `supabase migration repair` for three reasons — it writes nothing to
+the database, it needs no credentials, and `repair` inserts ledger rows with *no*
+recorded SQL text, losing the applied statements that are currently there. The
+relative order is unchanged (both sequences are monotonic in the same order).
+`rls_and_grants.sql:17`'s internal cross-reference was updated from
+`20260826120700` to `20260826114032` so it does not dangle.
+
+- [x] Confirm the applied SQL and the committed SQL are identical — done, all 7.
+- [x] Reconcile so the ledger and the directory agree — done by rename; all 7
+      filenames now match a ledger row, in the same order, with identical SQL.
+- [x] **Confirmed by the CLI**, not just by the ledger comparison.
+      `supabase migration list` shows all 7 with `local == remote`, in order,
+      nothing pending. Independent verification of the rename.
+- [ ] Write the rule into the root `CLAUDE.md` (item 4.1), **with its one
+      exception**. Until 4.1 lands, it lives here:
+
+      > **Migrations are applied by the CLI from committed files** — never by MCP
+      > `apply_migration`, never by the dashboard. **An applied migration's SQL is
+      > never edited**; a change to schema is a new migration.
+      >
+      > **Exception, comments only.** Prose inside an applied migration may be
+      > corrected in place. A comment is not schema: nothing replays it, nothing
+      > depends on it, and a stale one that misstates a decision does active harm
+      > by looking authoritative. The trade-off to know about is that the ledger's
+      > stored `statements` keep the *original* prose, so file and ledger will
+      > diverge in comments by design — that is expected, not drift, and
+      > `migration list` compares versions rather than text so it stays green.
+      > Executable SQL changing by so much as a whitespace character is **not**
+      > covered by this exception.
+
+      Hard rule (minus the exception) in `student-onboarding-orchestration`, for
+      exactly the reason 1.1 exists.
+
+### 1.2 Supabase CLI — initialized; only `login` actually blocks
+
+`supabase init` is done: `supabase/config.toml` committed with
+`major_version = 17` (matching the project's Postgres 17.6), plus a generated
+`supabase/.gitignore` covering `.temp`, `.branches` and `.env.local` — which also
+clears the untracked `supabase/.temp/` noise.
+
+**Docker is NOT a blocker.** It is needed only for the *local* stack. Everything
+Phase 1 actually needs runs against the real project with a login alone:
+
+| Command | Docker |
+|---|---|
+| `supabase link`, `supabase migration list` | no |
+| `supabase db push` — applies pending migrations to the project | **no** |
+| `supabase db reset`, `supabase start` — local stack | yes |
+
+- [x] `supabase init`, commit `config.toml`.
+- [x] `supabase login` + `supabase link --project-ref wyfceserpwwkxowauyld`.
+      **Note for next time: the in-session `!` prefix is non-TTY**, so the browser
+      login flow fails there with `LegacyLoginMissingTokenError`. Run it in a real
+      terminal, or pass `--token` / `-p` explicitly. Credentials persist to
+      `~/.supabase` and the keychain, so this is a one-time cost.
+- [x] `supabase migration list` — all 8 aligned, `local == remote` throughout.
+- [ ] Pin the CLI version the way SOO does (`SUPABASE_CLI_VERSION`) so local and
+      CI cannot drift. Currently 2.115.0.
+
+### 1.2b The from-empty replay test — deferred, needs a container runtime or a branch
+
+`ROADMAP.md` PR 4's own verification step (`supabase db reset` applying cleanly
+from empty, twice) **has never been runnable** — there was no `config.toml` until
+1.2. It is what catches a migration that only applies to a database already
+holding the previous state. It is worth having before a second environment
+exists; it is not urgent while there is exactly one.
+
+Three ways to get it, none blocking Phase 1:
+
+- **A container runtime** (`brew install colima docker && colima start`, or Docker
+  Desktop) → `supabase db reset` twice. First run pulls several GB.
+- **A Supabase branch** — a real ephemeral Postgres with the full auth stack,
+  migrations replayed from empty, no Docker. Paid (order of a cent an hour) and
+  needs a cost confirmation.
+- **Not a bare local Postgres.** The migrations reference `auth.uid()` and grant
+  to `anon`/`authenticated`, none of which exist in stock Postgres. Stubbing them
+  means the test passes against a fiction, which is worse than no test.
+
+- [ ] Run it, by whichever route.
+- [ ] `get_advisors` (security) clean against the accepted baseline below.
+
+**Accepted advisor findings, as of 2026-08-26.** Record these so a future run is
+interpretable and does not cause churn — the same reasoning as SOO's
+`.a11y-baseline.json`. Five findings, all intentional:
+
+- INFO `rls_enabled_no_policy` on `public.profile_identities`. Deliberate:
+  `20260826113847_rls_and_grants.sql:43` says "RLS AND NO POLICIES. Deny-all: the
+  only things that may resolve an identity are the SECURITY DEFINER functions. Do
+  not add a policy here, however convenient it looks."
+- WARN `authenticated_security_definer_function_executable` ×4, for
+  `can_read_profile(uuid)`, `current_profile_id()`, `owns_profile(uuid)` and
+  `ensure_profile()`. All four are *supposed* to be callable by a signed-in user
+  — that is what `grant execute ... to authenticated` is for, and revoking it
+  would break both the policies and sign-in. Each returns only the caller's own
+  profile id, or a boolean about the caller's own access, so there is nothing to
+  leak. `anon` holds none of them.
+
+If a sixth finding appears, it is real. Re-check this list when a new
+`SECURITY DEFINER` function or a new table lands.
+
+### 1.3 ~~Close the credentials footgun~~ — DONE (2026-08-26)
+
+The root `.gitignore` was two lines (`.idea`, `.DS_Store`) and did not ignore
+`.env*`, while `ROADMAP.md:165` puts `.env.local` at the **repo root** — untracked
+but not ignored, one `git add -A` from being committed. 1.4 is the commit that
+made that a live risk rather than a theoretical one.
+
+- [x] Root `.gitignore`: `.env` / `.env.*` with a `!.env.example` negation, plus
+      `node_modules/`, `dist/`, and per-user agent state
+      (`.claude/settings.local.json`, `.claude/worktrees/` — `.claude/` itself is
+      deliberately **not** ignored, so project-level agent config stays in
+      review). Verified with `git check-ignore`: `.env.local` and
+      `.env.production` ignored, `.env.example` still trackable.
+- [x] Root `.env.example`, following `eng-mcp-server`'s convention where each
+      value is *a sentence saying where to get it* rather than a placeholder. Two
+      variables, both `VITE_`-prefixed and neither secret; the file states outright
+      that anything added there ships in the JS bundle.
+- [x] Only the **publishable** key may be committed (`ROADMAP.md` invariant 12).
+      It is documented in `.env.example` rather than hardcoded so a project swap
+      is a one-file change.
+
+### 1.4 `ensure_profile()` — written, not yet applied
+
+`supabase/migrations/20260826135045_ensure_profile.sql`. The RLS grants already
+referenced this function — `20260826113847_rls_and_grants.sql:66` says profiles
+are created by it and there is deliberately **no insert policy** on `profiles`,
+and `profile_identities` has RLS with no policies at all — so until now sign-in
+had no way to produce a profile row.
+
+- [x] `SECURITY DEFINER`, `set search_path = ''`, returns the profile id.
+      Idempotent: the client calls it on every boot, not only the first, so a
+      second call for the same auth subject returns the existing id rather than
+      minting a second profile.
+- [x] Takes **no arguments, and specifically not a grade.** `grade_level`
+      defaults to `'K'` with `grade_source = 'self'`, and the picker updates it
+      through `profiles_update_own`. Accepting a grade at creation would let a
+      client assert one ahead of any platform that actually knows it, which is
+      the distinction `grade_source` exists to hold.
+- [x] Fails **loudly** on an anonymous caller (`raise exception`, errcode
+      `28000`) rather than returning null the way `current_profile_id()` does. A
+      policy needs to fail closed silently; an explicit write path called without
+      a session is a client bug, and a null profile id would get carried around
+      instead of reported.
+- [x] Handles the two-tabs race on the `(provider, subject)` primary key:
+      `on conflict do nothing`, then `get diagnostics row_count`, and on a loss
+      it deletes the profile it just created — otherwise that row is an orphan no
+      identity points at and nothing cleans up — and returns the winner's id.
+- [x] `revoke all ... from public` then `grant execute ... to authenticated`,
+      explicitly rather than trusting `20260826114032`'s
+      `alter default privileges` to match, since those apply only to objects
+      created by the role that set them.
+- [x] **Applied via `supabase db push`** (dry-run first), not through MCP
+      `apply_migration` — the path that caused 1.1. Applying cleanly is also what
+      validated the SQL.
+- [x] Verified in `pg_proc`: `prosecdef = true`, `provolatile = 'v'`,
+      `proconfig = {search_path=""}`, returns `uuid`. Grants are
+      `postgres, service_role, admin, authenticated` — **no `anon`, no `PUBLIC`**.
+- [x] `get_advisors` (security) re-run. Both of `ROADMAP.md` PR 4's stated
+      criteria pass: no table with RLS disabled, no `SECURITY DEFINER` function
+      with a mutable `search_path`. See the accepted-findings note in 1.2b.
+
+### 1.5 `SupabaseProgressionStore` — the actual deliverable (`ROADMAP.md` PR 5)
+
+Implements `ProgressionStore` against Supabase behind the interface PR 1 already
+shipped. **The localStorage store stays, and stays the boot path.**
+
+- [ ] `current` still resolves **synchronously** at construction from the local
+      cache. Boot has no loading phase today and `math-blaster/CLAUDE.md` states
+      it must not grow one.
+- [ ] The remote read is a background fetch, queued and applied only at a safe
+      phase (`boot`, `skillTree`, `runSetup`, `gameover`) — never mid-`tick()`,
+      where it races `awardCurrency()`. `progress.onRemote(...)` is **already
+      wired** in `Game.svelte` and has never fired; this is what fires it.
+- [ ] `revision` is the concurrency check: update `where revision = <what was
+      read>`, and on zero rows affected re-merge through the *game's* merge rather
+      than clobbering. The `furthest` trigger is the net under that, not a
+      substitute for it.
+- [ ] Offline write queue keyed by the same idempotency key `submit_run()` will
+      use, so a replay after a dropped connection is exact rather than doubled.
+- [ ] **Point Vite's `envDir` at the repo root.** `ROADMAP.md:165` puts
+      `.env.local` at the repo root, but Vite resolves env files relative to its
+      own root (`math-blaster/`), so `VITE_SUPABASE_*` will silently read as
+      `undefined` without this. `.env.example` carries the same warning.
+- [ ] Preserve the existing debounce (~2s trailing, ~15s ceiling, immediate on
+      purchase / grade change / game-over / `pagehide`). It was built for
+      localStorage where per-kill writes were free; against a network it is
+      load-bearing.
+- [ ] Keep the `currency === earnedTotal - spentTotal` invariant intact across the
+      remote path. A spend that forgets `spentTotal += n` fails silently and
+      locally, then reappears as free money the first time two copies of a profile
+      meet.
+
+### 1.6 Dev-only sign-in, and a real grade
+
+- [ ] Dev-only email/password sign-in. `ROADMAP.md:93` argues for real auth in the
+      prototype precisely so the RLS surface gets exercised rather than reached
+      around; that reasoning still holds.
+- [ ] `resolveGrade()` in `runtime/gradeSource.ts:28` finally has a platform answer
+      to read (`profiles.grade_level`). Its body is all that changes. Keep
+      validating against `GRADE_ORDER` and falling back to a real grade — a value
+      arriving over the network is exactly the untrusted input that doc comment
+      was written to anticipate.
+
+### 1.7 Prove it
+
+- [ ] Play a run signed in, reload, confirm currency, skills and furthest wave
+      survive.
+- [ ] Play with DevTools → Network → Offline. The run must be **uninterrupted**,
+      and must sync on reconnect without doubling.
+- [ ] Sign in as a **second** test user and confirm the first user's rows are
+      invisible. This is the RLS check, and it is the whole reason the prototype
+      uses real auth.
+- [ ] Kill the network mid-run and confirm the game stays playable. Local-first
+      means a Supabase outage costs sync, never the run.
+
+---
+
+## Phase 1b — the run lands in one write
+
+Finishes the data story. `MasteryRecorder` currently tallies per-topic attempts
+that **have nowhere to go** (visible only via `pixelMathBlaster.mastery()` in the
+dev console); this is the destination.
+
+- [ ] **1b.1** `ROADMAP.md` PR 3 — achievements and a personal best. It comes
+      first because `submit_run()` writes achievement rows. **Blocked on a design
+      decision, not on code:** as of 2026-08-26 what an achievement may be based
+      on is deliberately open, with boss outcomes and topic completion both ruled
+      out. The personal-best half (`bestScore`, staying in `game_progress.state`
+      and never promoted to a column) is unblocked and can land on its own if
+      1b.2 needs it sooner.
+- [ ] **1b.2** `ROADMAP.md` PR 6 — `submit_run()`, `SECURITY DEFINER`, idempotent
+      on `(profile_id, idempotency_key)`, sole writer of session, mastery and
+      achievement rows, one transaction so a partial run never lands. It does not
+      re-derive achievements (the rules live in the client); it does enforce
+      `correct <= attempts`, `spent <= earned`, and first-unlock-wins.
+- [ ] **1b.3** Confirm a replayed idempotency key is a no-op rather than a second
+      run. This is the one that matters after 1.5's offline queue exists.
+
+---
+
+## Phase 2 — Quality gates
+
+The largest gap after the database. There is **no linter and no formatter**, and
+`.github/CONTRIBUTING.md:33` currently states that as *policy* — so that file
+changes in the same PR as 2.1.
+
+- [ ] **2.1** ESLint + Prettier, mirroring `the-student-experience`.
+      `math-blaster/eslint.config.js`: flat config with `js`/`ts`/`svelte`
+      recommended, `eslint-config-prettier`, `svelte.configs.prettier`, TSE's
+      `includeIgnoreFile('.gitignore')` trick, `no-console: error` with commented
+      path exemptions, and `parserOptions.projectService: true` on `**/*.svelte`.
+      `math-blaster/prettier.config.js`: TSE's exact settings — `useTabs: true`,
+      `singleQuote: true`, `trailingComma: 'none'`, `printWidth: 100`, plus
+      `prettier-plugin-svelte`.
+      Skip TSE's `no-restricted-globals: fetch` (no server here) and its
+      inline-`<svg>` ban (everything is canvas).
+      **Sequencing:** the first `prettier --write` rewrites nearly every file. Keep
+      it as its own commit so a rebase can take it wholesale, and land it when no
+      long-lived branch is open.
+- [ ] **2.2** Adopt TSE's zero-suppressions rule: no `eslint-disable`, no
+      `svelte-ignore`, machine-enforced via `no-warning-comments` plus a
+      `no-restricted-syntax` selector on `SvelteHTMLComment`. Note
+      `src/lib/runtime/balanceReport.test.ts:39,41,56,58` already carries four
+      `// eslint-disable-next-line no-console` comments that are inert today and
+      become both live *and* forbidden the moment ESLint exists. The correct fix is
+      a path-scoped `no-console: off` override for that file plus `tools/**` and
+      `runtime/devTools.ts`, each line commented with why.
+- [ ] **2.3** Fix the CI job that lies. `.github/workflows/ci.yml` is named
+      "Build, Check & Test" and **never runs `npm run build`** — a Vite build break
+      passes CI today. Split into separate required checks (`Lint`, `Build`,
+      `svelte-check`, `Unit tests`), add `--fail-on-warnings` to `svelte-check`
+      (the codebase reportedly passes clean, so this is cheap now and expensive
+      later), add `permissions: { contents: read }` and per-job `timeout-minutes`.
+      *This is `ROADMAP.md` PR 8 — tick it there too.*
+- [ ] **2.4** `.github/dependabot.yml`, using `eng-mcp-server`'s version: npm
+      weekly grouped by `dependency-type`, github-actions monthly,
+      `open-pull-requests-limit: 5`, `labels: [dependencies]`.
+- [ ] **2.5** A migration-drift guard in CI, once 1.1 is settled — the automated
+      version of the rule 1.1 writes down. Both student apps run one
+      (`supabase-migration-drift.yml`); a PR-time dry-run plus a check that the
+      ledger matches the directory is enough here.
+- [ ] **2.6** `.husky/pre-push`, following TSE's stated doctrine: only checks CI
+      cannot surface fast enough, with the reasoning in the hook file. For this
+      repo that is probably nothing yet, so **add the file when there is a first
+      candidate, not before.** Do not add `lint-staged` — TSE deliberately does
+      not, and a repo-wide Prettier pass makes staged-file formatting redundant.
+
+---
+
+## Phase 3 — Resilience and structure
+
+- [ ] **3.1** Migrate Jest → Vitest. Enables 3.2, matches both student apps, and
+      deletes the `tsconfig.jest.json` workaround plus the constraint recorded in
+      `math-blaster/CLAUDE.md` that *"an asset import in any `.ts` under `src/`
+      breaks `npm test`"* — Vitest runs through the Vite pipeline, so that stops
+      being true. **It also supersedes open PR #11**
+      (`fix/jest-tsconfig-ide-errors`, stale): close that PR rather than rebasing
+      it. Adopt TSE's two-project config (a `node` server project and a browser
+      client project), its `expect: { requireAssertions: true }`, and its pinned
+      `TZ`/`LC_ALL`. Keep the `BALANCE_REPORT=1` opt-in gate working.
+- [ ] **3.2** Test the three largest files in the repo, which have **zero** tests:
+      `Game.svelte` (838 L), `SkillTreeScreen.svelte` (821 L),
+      `GameCanvas.svelte` (819 L) — 2,478 lines untested because the test env is
+      `node`. Use TSE's approach: `@vitest/browser-playwright` +
+      `vitest-browser-svelte` against real headless Chromium, plus its
+      `svelte-warnings.ts` setup file that turns Svelte runtime warnings into
+      failures. Priority order: the `GamePhase` machine and HUD wiring;
+      purchase/affordability/prereq rendering in the shop; and for the canvas,
+      assert the `gameEvents` subscriptions fire and overlay geometry comes from
+      `spriteSize()` — **not** pixel snapshots, which would break on every art
+      change.
+- [ ] **3.3** Make a thrown exception visible. There is no `try/catch` around
+      `tick(runtime, profile, dt)` at `src/lib/Game.svelte:281` and no
+      `window.onerror`. One throw inside the rAF loop freezes the game with no
+      message and no signal — the worst possible failure for a seven-year-old, and
+      the one `math-blaster/CLAUDE.md` already warns is easy to misdiagnose (a
+      throttled background tab looks identical). Add an `error` member to the
+      `GamePhase` union in `src/lib/types.ts`, catch around the tick, cancel the
+      loop, render a plain "something went wrong — play again" panel, and wire the
+      same handler to `window.onerror` / `unhandledrejection`.
+- [ ] **3.4** Self-host the two fonts. `src/app.css:1` `@import`s Baloo 2 and Press
+      Start 2P from Google Fonts — the app's **only** third-party network
+      dependency. For a children's product that is a third-party request tied to a
+      child's IP, a render-blocking dependency on an origin outside any future
+      CSP, and a first-paint stall if it is slow. Vendor the woff2 files into
+      `public/fonts/` with local `@font-face` and `font-display: swap`.
+- [ ] **3.5** Split `src/lib/runtime/gameFlow.ts` — 1,236 lines, 62 functions, the
+      god-module. It is well-commented with 65 test cases, so this is
+      maintainability work, not a bug fix, and it runs **after** 3.1/3.2 so the
+      tests move first and can prove the split is behaviour-neutral. Seams, along
+      the layering `CLAUDE.md` already documents: boss lifecycle
+      (`startBossPhase`, `resolveBossShot`, `updateBossPhase`) →
+      `runtime/bossFlow.ts`; spawning and reinforcement (`spawnEnemy`,
+      `tryReinforce`) → `runtime/spawning.ts`; economy (`awardCurrency`,
+      `addRunTime`) → `runtime/economy.ts`. `tick()` and `handleInputAction` stay
+      as the orchestrator, and the ~25 named tuning constants stay together —
+      they are read as a group when balancing, and `balanceSim.ts` drives the real
+      functions. The 65 existing cases must pass **unmodified**; if a test needs
+      editing, the split changed behaviour.
+
+---
+
+## Phase 4 — Docs and conventions
+
+- [ ] **4.1** Add a root `CLAUDE.md`. There is only `math-blaster/CLAUDE.md` today.
+      Follow TSE's progressive disclosure: root holds repo-wide rules only (lint
+      policy, zero suppressions, the migration rule from 1.1, commit conventions,
+      a pointer to this file), and the nested file keeps owning game architecture.
+- [ ] **4.2** Update `.github/CONTRIBUTING.md`. Its Code style section states the
+      repo has no linter *by policy*; that must change with 2.1, and gain the local
+      commands plus the zero-suppressions rule.
+- [ ] **4.3** Settle one genuine conflict between the two baselines and record the
+      decision. TSE's CLAUDE.md says **"Don't add docs. Code documents itself"**
+      and forbids resurrecting `docs/`; SOO ships 160+ docs and 28 ADRs. This repo
+      sits closer to SOO — a 624-line CLAUDE.md and an 862-line ROADMAP — and those
+      documents are its best asset, so **do not import TSE's anti-docs rule
+      wholesale.** Recommended: keep `ROADMAP.md` and both CLAUDE.md files
+      first-class, and adopt TSE's **`PONYTAIL-DEBT.md`** ledger for tracked
+      shortcuts, since it is grep-regenerable from `ponytail:` source comments and
+      so cannot rot the way a hand-maintained list does. The "Known gaps" section
+      of `math-blaster/CLAUDE.md` is already that file in everything but name.
+
+---
+
+## Deferred — needs an approval first
+
+Not "later"; **blocked**. Do not start these.
+
+- **Repo transfer to the `varsitytutors` org.** The remote is
+  `git@github.com:Reynold-Mario/Math-blaster.git`, a personal account. Shipping
+  under `varsitytutors.com` needs it: the org release pattern requires
+  `varsitytutors/vt-workflows/.github/actions/generate-app-token@v6.1.1` (classic
+  PATs are org-deactivated), CODEOWNERS needs `@varsitytutors/*` teams, and
+  Netlify sites are org-provisioned. Blocks CODEOWNERS, the release workflow, and
+  the deploy.
+- **Netlify site and deploy approval.** `ROADMAP.md` Track C is held on this. When
+  it lands: note that org policy blocks connecting a repo to the Netlify GitHub
+  App, so the deploy must run from Actions via `netlify-cli` — design for that
+  shape from the start. Covers `netlify.toml`, security headers and CSP, the
+  `release-YYYY-MM-DD_HH-MM-SS` tag → `deploy-production-on-release` handoff (a
+  production deploy must never be a merge side-effect), and a deploy smoke check.
+  *= `ROADMAP.md` PR 12.*
+- **vt-router path allocation** (`/games/*`) and the asset-origin story. TSE hit
+  this hard: the app is served at `varsitytutors.com/learner` while chunks come
+  from the Netlify origin, forcing an assets base plus a permissive
+  `Access-Control-Allow-Origin` on immutable assets. Vite's knobs are `base` and
+  `build.assetsDir`.
+- **Observability.** There is no error reporting or telemetry at all. When it comes:
+  a typed telemetry registry as the single emission seam (TSE's contract verbatim —
+  snake_case names and keys, values limited to `string | number | boolean | null`
+  because PostHog freezes a property's type on first ingest, `.strict()` schemas,
+  never any PII), a deterministic exception fingerprint, and a **capture rate
+  limiter** (SOO uses 5 per 60s) because a throw inside a 60fps loop emits
+  thousands of identical events per second. Route through a same-origin relay that
+  strips `Cookie` and `Authorization`.
+- **Privacy / Legal sign-off on telemetry for under-13 users.** The audience is
+  K-3. Analytics, and especially session replay on a child's screen, is a COPPA
+  question rather than an engineering one. Needs a written answer before any
+  telemetry ships. Default to no replay and no stable per-child identifier.
+- **Accessibility.** One item here is a safety issue rather than polish and should
+  jump the queue the moment anyone outside the team plays it:
+  **honour `prefers-reduced-motion`.** `GameCanvas.svelte` runs hit-flash, screen
+  shake, one-shot explosions and three-layer parallax; for a photosensitive child
+  that is a hazard. Both student apps force `reducedMotion: 'reduce'` in
+  Playwright, which is what the org treats as default. Add an in-game toggle too —
+  a child on a school device may not control the OS setting. Then: WCAG AA
+  contrast on `Press Start 2P` at small sizes, visible focus rings and no keyboard
+  traps across `GamePhase` transitions, a written screen-reader boundary (a
+  real-time canvas arcade game is not screen-reader playable; saying so is better
+  than an audit that pretends otherwise), and an a11y CI gate scoped to the Svelte
+  chrome with the canvas baselined and commented.
+- **`LICENSE`.** There is none. `eng-mcp-server` ships MIT, but a VT-owned consumer
+  product is probably proprietary — confirm rather than copy.
+
+---
+
+## Out of scope
+
+- **Coverage thresholds.** **None of the four reference repos sets one.** SOO uses
+  mutation testing and suppression ratchets; TSE uses `requireAssertions` plus SQL
+  contract tests. Adding one here would be a divergence, not an improvement.
+- **Retuning any balance number.** `math-blaster/CLAUDE.md` documents these as
+  measured against `balanceSim.ts` and interacting with each other; the grade-K
+  boss-economy regression is a known, deliberately-unpatched decision with a
+  stated fix route (a curriculum exception, not a boss-knob retune). Not a
+  production-readiness matter.
+- **Fixing client-authoritative currency.** Documented and accepted at
+  `ROADMAP.md:741` for a single-player kids' game. It has a stated revisit trigger;
+  until that trips, leave it.
+- **`ROADMAP.md` PRs 7, 9–12, 13–16** (the workspace move, the site, the landing
+  page, the catalog). Their own ladder, and most of it waits on the Netlify
+  approval above.
+
+---
+
+## Open questions
+
+1. **Does the game ship inside an authenticated shell, or standalone?** Decides
+   whether the telemetry relay is load-bearing on day one, and whether
+   `resolveGrade()` gets a real grade service in this scope (1.6) or later.
+2. **`ROADMAP.md` PR 7 moves the game into an npm workspace under `apps/`.**
+   Should Phase 2's tooling be authored at the repo root (anticipating that) or
+   inside `math-blaster/` and moved later? This file assumes
+   `math-blaster/`-scoped configs with root-level CI, matching today's layout.
+   Root-first is less churn if PR 7 is near-term.
+3. **Is the first ship one game or the catalog?** If it is genuinely just Math
+   Blaster, `ROADMAP.md` PRs 7, 10, 11 and 16 can all be deferred past launch.
+4. **Who owns this in production?** Needed for CODEOWNERS, the Netlify site owner,
+   and the on-call path when the game breaks at 8pm.

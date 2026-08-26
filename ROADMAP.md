@@ -374,11 +374,18 @@ game-over. **`RuntimeState` and `gameFlow` gain nothing.**
    [Bosses produce no achievements](#bosses-produce-no-achievements). This is the rule a
    future contributor is most likely to break, because a boss looks like the obvious thing
    to hang an achievement on.
-3. Achievements are expressed in the game's own units — waves reached, exact-answer
-   streaks, topics practised, shields broken, currency earned. **None may reference
-   damage, health, or a kill count that includes leaked enemies**: the first two do not
-   exist, and the third would reward standing still, which is exactly what the wave-clear
-   payout is shaped to prevent.
+3. **What an achievement may be based on is deliberately still open**, and two things
+   are already ruled out: **defeating a boss** (see
+   [Bosses produce no achievements](#bosses-produce-no-achievements)) and **completing a
+   topic**. Neither is available, and neither is to be reintroduced as "just an example"
+   in a comment or a test fixture. The remaining space — waves reached, exact-answer
+   streaks, shields broken, currency earned, something not yet thought of — stays
+   undecided until it is discussed properly, because an achievement set is a statement
+   about what the game wants a child to do and that is not a detail to settle in passing.
+   Two constraints hold whatever is chosen: achievements are expressed in the game's own
+   units, and **none may reference damage, health, or a kill count that includes leaked
+   enemies** — the first two do not exist, and the third would reward standing still,
+   which is exactly what the wave-clear payout is shaped to prevent.
 4. `PlayerProfile` grows `achievements: Record<string, number>` (unlock timestamp, absent
    = locked) and `bestScore: number`. Additive with validated fallbacks, so **the storage
    key stays `pixelMathBlaster.profile.v1`** — an old profile is incomplete, not wrong.
@@ -737,8 +744,9 @@ boss numbers. Hanging achievements off boss defeats would stack another mastery-
 payout onto exactly the players who cannot reach the first one, which is the regression
 that work exists to absorb.
 
-Achievements therefore live in waves, streaks, topics, shields and currency — the parts of
-the game that are not already a reward system.
+Achievements therefore live somewhere in the parts of the game that are not already a
+reward system — but *where* exactly is an open question, and topic completion is out too.
+See PR 3 item 3.
 
 ### Achievement definitions live in code
 
