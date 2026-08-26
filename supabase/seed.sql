@@ -10,16 +10,17 @@ insert into public.games (slug) values ('math-blaster')
 
 insert into public.achievements (key, game_slug) values
   -- Waves. The number that means something in an endless run.
-  ('first-blood',        'math-blaster'),
+  ('first-wave',         'math-blaster'),
   ('wave-10',            'math-blaster'),
   ('wave-25',            'math-blaster'),
   ('wave-50',            'math-blaster'),
-  -- Bosses. DEFEATED, never escaped - `boss-defeated` fires on both routes and
-  -- only `by = 'mastery'` counts. Outlasting a boss pays nothing, and an
-  -- achievement is a payment.
-  ('boss-slayer',        'math-blaster'),
-  ('boss-slayer-5',      'math-blaster'),
-  ('flawless-finish',    'math-blaster'),
+  -- NOTHING HERE NAMES A BOSS OUTCOME, and that is deliberate rather than an
+  -- omission. Defeating a boss already pays bounty and run time; escaping one
+  -- already pays nothing. An achievement on top would be a second payment for
+  -- an already-paid event, through a channel with different rules - and it
+  -- would land on the mastery route, which the youngest players reach about
+  -- 11% of the time and which the curriculum work is currently trying to
+  -- absorb rather than pile onto.
   -- Answering well, in the units the game actually runs on.
   ('exact-streak-10',    'math-blaster'),
   ('clean-sweep',        'math-blaster'),

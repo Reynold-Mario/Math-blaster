@@ -35,7 +35,6 @@ alter table public.currency_balances    enable row level security;
 alter table public.skill_mastery        enable row level security;
 alter table public.achievements         enable row level security;
 alter table public.profile_achievements enable row level security;
-alter table public.leaderboard_entries  enable row level security;
 
 -- profile_identities gets RLS AND NO POLICIES. Deny-all: the only things that
 -- may resolve an identity are the SECURITY DEFINER functions. Do not add a
@@ -108,8 +107,12 @@ create policy currency_update_own on public.currency_balances
   with check ((select public.owns_profile(profile_id)));
 
 -- Read-only for clients. `submit_run()` (a SECURITY DEFINER RPC, arriving in
--- its own PR) is the sole writer of all four, so that one idempotent call
+-- its own PR) is the sole writer of all three, so that one idempotent call
 -- lands a whole run or none of it.
+--
+-- There is no leaderboard table here and there is not going to be one. The
+-- highscore is a personal best, and it rides in `game_progress.state` - which
+-- the client already writes directly, and which needs no policy of its own.
 create policy sessions_read on public.game_sessions
   for select to authenticated
   using ((select public.can_read_profile(profile_id)));
@@ -119,15 +122,6 @@ create policy mastery_read on public.skill_mastery
   using ((select public.can_read_profile(profile_id)));
 
 create policy profile_achievements_read on public.profile_achievements
-  for select to authenticated
-  using ((select public.can_read_profile(profile_id)));
-
--- A player sees their OWN board entry and nobody else's. This is deliberately
--- narrower than a leaderboard needs to be: a public board is blocked on
--- whether these users are minors, and until that is answered the database - not
--- a forgotten `if` in a component - is what stops another player's row being
--- rendered. Widening this policy IS the public-leaderboard change.
-create policy leaderboard_read_own on public.leaderboard_entries
   for select to authenticated
   using ((select public.can_read_profile(profile_id)));
 
@@ -144,7 +138,6 @@ grant select on public.achievements         to authenticated;
 grant select on public.game_sessions        to authenticated;
 grant select on public.skill_mastery        to authenticated;
 grant select on public.profile_achievements to authenticated;
-grant select on public.leaderboard_entries  to authenticated;
 
 grant update (grade_level, grade_source) on public.profiles to authenticated;
 
