@@ -590,7 +590,7 @@ real auth later is one insert into `profile_identities` per user — never a dat
 |---|---|
 | `profiles` | our UUID primary key, `grade_level`, `grade_source ('self' \| 'platform')` |
 | `profile_identities` | `subject` → `profile_id`. **RLS enabled, zero policies — deny-all.** Only `SECURITY DEFINER` functions touch it. |
-| `games` | `slug`, `name`, `enabled` only. Rich metadata stays in the code manifest; a DB-backed one turns copy edits into migrations. |
+| `games` | `slug` and `enabled` only. **All** metadata stays in the code manifest, name included; a DB-backed one turns copy edits into migrations. |
 | `game_progress` | `(profile_id, game_slug)`, `state jsonb`, `revision`, plus a promoted `furthest int` |
 | `skill_mastery` | `(profile_id, topic_id)`, nullable `standard_code`, attempts/correct. **Not keyed by game** — that is the entire point. |
 | `game_sessions` | one row per run, unique on `(profile_id, idempotency_key)` |
