@@ -35,20 +35,24 @@ the Netlify deploy is approved. See
 | Repo layout | Monorepo, npm workspaces |
 | Serving | One Netlify site, path routing |
 | Eventual home | A path on the Varsity Tutors domain (`varsitytutors.com/games/<game>`) |
-| VT relationship | Exploratory — **no identity-provider access yet** |
-| Player surface | Standalone site (not iframe-embedded) |
+| VT relationship | The student experience is a **read-only reference**; only this repo changes |
+| Player surface | Standalone site (not iframe-embedded), launched by full navigation |
+| Launch context | From the VT games catalog, by a learner who is **already signed in** |
 | Who reads progress | The student only, for now |
 | Backend scope now | Local-first SDK, SQL migrations, **and a working Supabase prototype** |
 | Deploy scope now | **Held.** Netlify waits for approval; nothing else waits on Netlify |
 | Mastery join key | Internal topic id, with an optional CCSS `standard_code` alongside |
 | Prototype identity | Real Supabase auth, dev-only test users. Anonymous sessions stay rejected |
+| Real identity | The VT **learner** (per child, not per household), via [Track D](#track-d--vt-identity) |
 | Achievement copy | Lives in code, like the game catalog. The DB stores unlocks only |
 | Highscore shape | **A personal best, and nothing else.** No leaderboard, global or scoped |
 
 ### Why the route shape is `/games/<slug>/` from day one
 
-The intended long-term home is a **path** on the VT domain, but there is no VT identity
-access today and the site has to ship standalone first. So the URL shape is chosen once,
+The intended long-term home is a **path** on the VT domain, and
+[Track D](#track-d--vt-identity) turns out to *require* it — the platform's cookies are
+`SameSite=Lax`, so identity only works same-origin. The site still has to ship standalone
+first. So the URL shape is chosen once,
 now, and never changes:
 
 ```
@@ -127,6 +131,24 @@ Recorded so they are not re-proposed:
   makes the workspace boundary decorative.
 - **SAML SSO via Supabase** — Supabase routes SSO by *email domain*, so a student on
   `@gmail.com` cannot be routed to VT's IdP. Viable only for a future district channel.
+- **A Supabase Edge Function for the token exchange** — it cannot work, rather than merely
+  being worse. The credentials are `httpOnly` cookies first-party to `varsitytutors.com`,
+  so nothing on `*.supabase.co` is ever sent them and the function would have nothing to
+  verify. It has to be same-origin with the game. See
+  [Auth, when it comes](#auth-when-it-comes).
+- **Third-party auth against VT's own JWKS** — provably dead, not blocked: the student
+  experience runs Better Auth with no `jwt` plugin, so there is no VT-issued token of any
+  kind to validate.
+- **`auth.admin.generateLink` + `verifyOtp` to mint a real Supabase user** — works, and
+  yields refresh tokens, but needs an `auth.users` row per child and therefore an email
+  address, therefore a synthetic one that is a lie in a table someone will read. Worse
+  structurally: `auth.uid()` becomes a Supabase uuid, so `profile_identities.subject`
+  stops being the learner id and the one-line provider swap becomes a rewrite.
+- **A shared-secret custom JWT handed to `setSession`** — no refresh path, so a 45-minute
+  run outlives its token, and Supabase is moving off shared-secret verification.
+- **An auth gate inside the game** — `/games` is already in the student experience's
+  `PROTECTED_PAGE_PATH_PREFIXES`, so an unauthenticated visitor is bounced to login before
+  a game is ever launched. A second gate would be a second thing to get wrong.
 - **Anonymous Supabase sessions for the prototype** — every browser mints a billable MAU,
   and it creates a profile-merge problem the prototype would otherwise never have.
   Superseded rather than reversed: see
@@ -407,7 +429,7 @@ that a run containing a boss defeat and a boss escape unlocks **nothing** — th
 one a future contributor will get wrong. An existing `v1` profile loads with no
 achievements and `bestScore: 0`.
 
-### - [ ] PR 4 — The SQL migrations
+### - [x] PR 4 — The SQL migrations
 
 Ships `supabase/migrations/` — the schema described under [Data model](#data-model),
 unused by any client until Track B. Landing it alone keeps schema review as schema review,
@@ -441,7 +463,7 @@ table with RLS disabled, and no `SECURITY DEFINER` function with a mutable `sear
 The first network code in the repo. The goal is a prototype that exercises the *real*
 policy surface, not one that reaches around it.
 
-### - [ ] PR 5 — The Supabase client, dev auth, and `SupabaseProgressionStore`
+### - [x] PR 5 — The Supabase client, dev auth, and `SupabaseProgressionStore`
 
 Implements `ProgressionStore` against Supabase behind the interface PR 1 introduced. The
 localStorage store stays, and stays the boot path.
@@ -472,7 +494,7 @@ survive. Play again with DevTools → Network → Offline and confirm the run is
 and syncs on reconnect. Then sign in as a **second** test user and confirm the first
 user's rows are invisible — that is the RLS check, and it is the reason this track exists.
 
-### - [ ] PR 6 — `submit_run()`: a run lands in one idempotent write
+### - [x] PR 6 — `submit_run()`: a run lands in one idempotent write
 
 A `SECURITY DEFINER` RPC, idempotent on `(profile_id, idempotency_key)`, and the **sole
 writer** of session, mastery and achievement rows. Clients hold read-only policies on all
@@ -534,7 +556,7 @@ and `jest.config.cjs` uses `<rootDir>`, which defaults to the config file's dire
 *Verify:* `npm ci` at the root, then `npm run check --workspaces` and
 `npm run test --workspaces`. 18 test files, 0 errors, 0 warnings.
 
-### - [ ] PR 8 — Run the production build in CI
+### - [x] PR 8 — Run the production build in CI
 
 Adds a root `build` script and one CI step, placed **last** so a bundling failure never
 masks a type or test failure.
@@ -632,14 +654,286 @@ assembly script throws.
   jest config: `tsconfig.jest.json` uses node10 module resolution, which ignores the
   `exports` field, and jest's default `transformIgnorePatterns` excludes `/node_modules/`,
   which is where the workspace symlink lives.
-- [ ] **PR 14** — real VT auth: third-party JWTs or the token-exchange Edge Function,
-  replacing the dev sign-in from PR 5. Blocked on
-  [open question 1](#open-questions-for-varsity-tutors), not on any code here.
+- [x] ~~**PR 14** — real VT auth.~~ **Superseded by [Track D](#track-d--vt-identity).**
+  It was blocked on [open question 1](#open-questions-for-varsity-tutors); that question
+  now has an answer, and the answer changes the shape rather than unblocking the old
+  plan. The two options it framed as alternatives turn out to be one thing — see
+  [Auth, when it comes](#auth-when-it-comes).
 - [ ] **PR 15** — per-game progress summaries on the catalog cards.
 - [ ] **PR 16** — `packages/game-registry`, once a consumer outside `apps/web` exists.
 
 Not deferred, **declined**: a leaderboard. It is not waiting on a dependency — see
 [A personal best, and no leaderboard](#a-personal-best-and-no-leaderboard).
+
+---
+
+## Track D — VT identity
+
+The game is launched from the Varsity Tutors games catalog by a learner who is **already
+signed in**: `/games` sits in that app's `PROTECTED_PAGE_PATH_PREFIXES`, so an
+unauthenticated visitor is bounced to login before any game is reached. **This game
+therefore gates nothing.** What it needs is not a login screen but an answer to *who is
+this, and what grade are they in*.
+
+Everything in this track happens in **this** repo. The student experience is a read-only
+reference; what it would need is written down under
+[Upstream asks](#upstream-asks-the-student-experience) rather than implemented here.
+
+### The constraint everything else follows from
+
+Both credentials are cookies on `.varsitytutors.com`, and both are `httpOnly` **and**
+`SameSite=Lax` — `vt_authentication_token` (a VT JWT) and
+`__Secure-better-auth.session_token`. Two consequences, and the whole track is shaped by
+them:
+
+1. **Browser JS can read neither**, so the game can never hand a bearer token to anything.
+2. **A cross-origin request carries neither**, whatever CORS says. `SameSite` is settled
+   before CORS is consulted, so there is no header that rescues this.
+
+So both phases need the game served from a **path on the VT host**, not from its own
+origin — which is what Track C was already building toward (PR 9). Until that routing
+exists this code ships **inert**: an anonymous answer is the ordinary case and produces
+exactly the game that shipped before identity existed. That is a deployment dependency,
+not a code one, which is why the code lands first.
+
+Note also what is *not* here: the student experience uses **Better Auth**, not Supabase
+auth, and deleted its own Supabase auth bridge — every server read there is service-role
+with explicit filters. **There is no browser `auth.uid()` to borrow.**
+
+### Phase 1 — identity and grade
+
+Reads who is playing and what grade they are in. Depends on nothing being built anywhere
+else, and touches no Supabase.
+
+### - [ ] PR 17 — The identity port, and the one file that knows VT exists
+
+`lib/identity/`: `LearnerIdentity.ts` is the PORT (types only — no `fetch`, no DOM, no
+`import.meta.env`), `vtIdentity.ts` the sole implementation. Exactly the split
+`RemoteProgression.ts` / `supabaseRemote.ts` already makes, and for the same reason:
+everything downstream stays testable under `testEnvironment: node`.
+
+Nothing imports it, so the bundle is byte-identical.
+
+Three properties are pinned because all three fail quietly:
+
+- **`resolve()` never throws**, the same total contract `ProgressionCodec.parse` holds.
+- **It never returns a child's name.** The household payload carries them; `name` and
+  `avatarId` are dropped where the response is parsed, and `LearnerIdentity` offers
+  nowhere to put one. A test asserts the exact key set, so a later edit cannot smuggle
+  one back.
+- **An unvalidated `?learner=` is never believed.** It is user-editable and it decides
+  whose permanent practice record a run lands in, so an unrecognised id falls back to the
+  primary learner — and if the household could not be read *at all*, the whole resolve
+  gives up. "Cannot validate" must never take the same branch as "validated".
+
+`base` is typed as a same-origin **path**, never an origin, so the only configuration that
+can work is the only one the type lets you write. A 200 that is not JSON counts as
+`unavailable`: a standalone build with a base configured but no platform behind it answers
+with its own `index.html` and a 200, which must not read as a signed-out player.
+
+*Verify:* `npm run check && npm test`; the twelve cases cover both fallbacks, a stranger's
+id, an unreadable household, 401, a signed-out 200, HTML-instead-of-JSON, an offline
+reject, an empty household, an unknown grade, memoization, and the no-fetch backstop.
+`npm run build` — main bundle unchanged.
+
+### - [ ] PR 18 — `nearestAuthoredGrade()` in `gradeTree.ts`
+
+The platform's vocabulary is wider than the game's: it emits `'K'|'1'..'12'|'college'|
+'adult'`, and `GRADE_TOPICS` only reaches grade 3.
+
+`curriculumLadderForGrade` falls back to **every authored curriculum** for an unauthored
+grade. That is the right failure for a hand-picked grade (a run with no problems is far
+worse than one at the wrong difficulty) and the **wrong** one for a platform assertion: a
+grade-7 learner would be handed K-through-3 shuffled into a single ladder, starting on
+Kindergarten addition. So clamp instead — above the ceiling means "the hardest thing we
+teach", which is an honest statement of a *content* gap.
+
+Lives in `gradeTree.ts` rather than in `identity/` because it is a question about the
+curriculum, and `SkillTreeScreen.svelte` already computes the same
+`topicsForGrade(g).length > 0` predicate for `PLAYABLE_GRADES`. **The ceiling is derived
+from `GRADE_TOPICS`, never hardcoded**, so authoring grade 4 stays the pure data addition
+`math-blaster/CLAUDE.md`'s known-gaps section promises it is.
+
+Returns `null` for anything unrecognised — the platform has no usable opinion, and the
+local pick stands.
+
+*Verify:* `'K'→'K'`, `'7'→'3'`, `'college'→'3'`, `'kindergarten'→null`, plus a property
+test that any non-null result is a grade with non-empty `topicsForGrade`, so authoring
+grade 4 later cannot break it silently.
+
+### - [ ] PR 19 — The platform grade reaches a run
+
+`platformGradeStore.ts`, composed **outermost**:
+
+```
+localStorage  →  learnerScoped (PR 20)  →  supabase  →  platformGrade
+```
+
+It applies `codec.applyPlatformGrade` and emits through `onRemote`. `gradeSource.ts` is
+**not touched** — its docstring already said the store would put the grade on the profile
+and `resolveGrade()` would keep validating it, which is exactly what happens.
+
+Two rules inside it:
+
+- **The platform grade is applied last, always**, so it outranks both the local picker and
+  a Supabase row whose `grade_source` is `'self'`. A late inner merge re-applies it rather
+  than losing it.
+- **It never calls `put()`.** A background write is the race `ProgressionStore` warns
+  about. It emits; `Game.svelte`'s existing safe-phase `$effect` applies it and the next
+  ordinary save persists it. If the child never triggers one, nothing is lost — the
+  platform re-asserts on the next boot, which is correct for a value the platform owns.
+
+Not an option on `createSupabaseProgressionStore`: that returns `inner` unchanged when
+`remote === null`, which is **precisely the Phase-1 configuration**, so the grade would be
+silently dropped in the only shipping config. And not routed through
+`profiles.grade_source` either, which is dead in Phase 1 for want of a session.
+
+`SkillTreeScreen.svelte` gains `gradeLocked` and hides the picker when a platform grade is
+in force. Without it the child picks grade 1, plays, reloads, and it snaps back with no
+explanation — the control would be lying.
+
+`vtIdentityClient.ts` arrives here, mirroring `supabaseClient.ts` exactly: the **only**
+file reading `VITE_VT_IDENTITY_BASE`, so no `.test.ts` can reach an `import.meta`
+([invariant 6](#invariants)), and `Game.svelte` gets a synchronous
+`isVtIdentityConfigured()` at construction the way it already gets
+`isSupabaseConfigured()`.
+
+*Verify:* with the var unset — **zero requests, unchanged bundle, byte-identical
+behaviour**. That is the ship default and the path that has to be boringly safe. Then
+grade `'2'` emits `selectedGrade: '2'`, `'7'` emits `'3'`, `null` emits *nothing at all*,
+and `current` stays readable synchronously before any promise settles.
+
+### - [ ] PR 20 — Storage is scoped to the learner
+
+`pixelMathBlaster.profile.v1` and `pixelMathBlaster.pendingRuns.v1` are one slot per
+**browser**. Two children on one tablet share currency, skills, and each other's queued
+runs.
+
+**The un-namespaced key never moves.** It becomes the permanent *anonymous slot*, and a
+learner gets a **suffix** — so the documented key stays a literal prefix of the new one and
+the `v1` rule keeps meaning what it meant.
+
+```
+pixelMathBlaster.profile.v1                 anonymous (unchanged, forever)
+pixelMathBlaster.profile.v1.<learnerId>     per learner
+pixelMathBlaster.claimedBy.v1               the ONE learner that adopted the anonymous save
+```
+
+**The claim marker is the point.** A copy alone would hand sibling B whatever sibling A
+built before signing in. Instead the first learner to appear on a device with an anonymous
+save claims it; a later, different learner finds the marker set and starts fresh. The
+anonymous slot is never deleted, so a guest still has it. There is deliberately **no
+merge** across that boundary — merging A into B is the same bug at a different moment.
+
+`runQueue` rekeys against the **same** marker: one claim per device, not one per key.
+Mis-attributing a queued run is worse than mis-attributing a profile, because
+`submit_run()` writes it into a child's permanent mastery record.
+
+Needs a store *factory* rather than a store — `localStorageStore.open()` binds its key
+once — but both keys are already injectable (`keyFor`, `key`), so nothing inside either
+store changes.
+
+*Verify:* in one browser profile — play anonymously then identify as A (carries over);
+reload as B (fresh, A's slot untouched); reload as A (A's profile back).
+
+### Phase 2 — a real Supabase session
+
+Replaces the dev sign-in. **Depends on the routing**, because the exchange is the only
+thing that can see the cookies.
+
+### - [ ] PR 21 — The store re-syncs when identity changes
+
+`supabaseStore` fires `syncFromRemote()` exactly once at `open()` and returns early when
+`currentProfileId()` is `null`. Nothing anywhere subscribes to an auth change, which is
+why `devTools` tells you to reload. Adds one option:
+
+```ts
+onIdentityChange?(listener: () => void): () => void;
+```
+
+Two things it must get right, and both are silent when wrong:
+
+- **A re-entrancy guard.** An identity event racing the boot read produces two reads and
+  two emits, and the second can land a stale merge over the first.
+- **AN IDENTITY CHANGE ADOPTS, IT NEVER MERGES.** `inner.current` still holds the
+  *previous* learner's cached state until the cache rekeys. Merging that into the new
+  learner's row is exactly how sibling A's currency lands on sibling B's account, so the
+  sync after an identity change starts from `codec.empty()` and clears the pending push.
+
+Independently verifiable now: the dev console's "RELOAD THE PAGE" wart goes.
+
+*Verify:* against staging, `signOut()` then `signIn()` as the second test user, and
+confirm the first user's currency is **not** written into the second's `game_progress`
+row.
+
+### - [ ] PR 22 — The session and JWKS functions
+
+A **Netlify Function in the game's own deploy** at `/games/api/session`, because the
+cookies are first-party to `varsitytutors.com` and only a same-origin endpoint ever
+receives them. **This is why it cannot be a Supabase Edge Function** — nothing on
+`*.supabase.co` is ever sent them.
+
+It forwards the request's own `Cookie` header server-side to
+`GET {VT_ORIGIN}/learner/api/auth/get-session`, requires a real session, re-validates the
+requested learner against `/learner/api/learners`, and then signs a short-lived ES256 JWT
+with `sub` = the learner id and `role: "authenticated"`, publishing its public key at
+`/games/api/jwks.json`. **The learner id is re-validated server-side even though the
+client already did it** — the client is the thing being defended against.
+
+The signing key is server-only env and **never `VITE_`-prefixed**, which would inline it
+into the bundle.
+
+### - [ ] PR 23 — The client consumes it, and the dev sign-in goes
+
+Supabase project configured to trust that JWKS as a third-party auth provider; the browser
+supplies the token through supabase-js's `accessToken` callback, which re-mints near
+expiry — so **nothing long-lived sits in a child's browser and there is no refresh token
+at all**.
+
+That forces `persistSession: false` / `autoRefreshToken: false`, and two auth
+configurations cannot coexist in one client, which is why deleting
+`devTools.signIn/signOut` belongs in **this** PR and not a follow-up. The
+[fragility rule](#invariants) still holds: the credential guard must stay in the same
+function body as the `await import('@supabase/supabase-js')`.
+
+One migration, additive. `current_profile_id()` and `ensure_profile()` resolve
+`provider = 'vt'` against `auth.jwt() ->> 'sub'` — not `(auth.uid())::text`, which is
+equivalent for a uuid `sub` but silently returns `null` if a learner id ever is not one.
+Both keep `SECURITY DEFINER` and an explicit `search_path`
+([invariant 14](#invariants)).
+
+**`profile_identities` gains its `('vt', subject)` row with no data migration**, because
+`ensure_profile()` is idempotent and already runs on every boot. The prototype's
+`('supabase', <uuid>)` rows stay as orphaned pointers. Stated honestly: **a dev tester's
+prototype progress does not carry over** — there is no mapping from a test email to a
+learner id, and inventing one would be a data migration in disguise.
+
+The function also writes `profiles.grade_level` / `grade_source = 'platform'`, which
+finally makes that branch of `supabaseStore` *correct* rather than merely reachable.
+**Only a trusted server may write `'platform'`** — the column exists to mean "something
+trusted asserted this", and `profiles_update_own` currently lets the client lie.
+
+*Verify:* on staging, launch as a real learner and play a run; confirm the `profiles` row,
+the `('vt', <learnerId>)` identity row, and `submit_run` landing with its mastery deltas.
+Then the one that actually matters: **two children in the same household, and neither can
+read the other's `game_progress`, `game_sessions` or `skill_mastery` rows.** Then
+`get_advisors` clean.
+
+### Upstream asks (the-student-experience)
+
+This repo cannot implement any of these. Listed so nobody re-derives them.
+
+1. **The catalog appends `?learner=<active learner id>`** to this game's `launchUrl`, or
+   exposes an endpoint returning the active learner. `vt_active_learner` is `httpOnly` and
+   nothing returns it, so the game can read the whole household but not the device's pick.
+   Phase 1 ships without it at a cost of one boot at the wrong difficulty; **Phase 2 must
+   not**, because there the cost is a permanent record on the wrong child.
+2. **Router path allocation for `/games/*`** to this game's deploy, plus the asset-origin
+   story — that app's own `paths.assets` plus a permissive `Access-Control-Allow-Origin`
+   on immutable assets is the precedent. **Both phases depend on this.**
+3. *Optional:* enable Better Auth's `jwt` plugin there, so the exchange could verify a
+   JWKS-signed token instead of calling `get-session`, and we could retire our own signing
+   key.
 
 ---
 
@@ -788,14 +1082,31 @@ leaderboard that would have made cheating other people's problem is
 
 ### Auth, when it comes
 
-The primary option is **Supabase Third-Party Auth** against VT's JWKS, conditional on VT
-being able to mint a `role: "authenticated"` claim. If they cannot, that option is dead.
+**It came, and the two options above were never alternatives.** This section used to
+frame it as Supabase Third-Party Auth against VT's JWKS — "conditional on VT being able to
+mint a `role: "authenticated"` claim" — with a token-exchange function as the fallback.
 
-The fallback — and the one worth actually building — is a **token-exchange Edge
-Function**. The ask on VT is minimal ("sign a 60-second blob containing the user id"), it
-can be stubbed with a local signer in development, it yields real Supabase refresh tokens
-so long sessions survive, and it lets us put `profile_id` directly into `app_metadata`,
-which makes RLS identity resolution free rather than a per-query lookup.
+Reading the student experience settles it. It runs **Better Auth with no `jwt` plugin**,
+so it issues session cookies and no JWT of any kind: there is no VT JWKS to point at, and
+that option looks dead. It is not, because **the old framing assumed VT is the issuer.
+We are the issuer.** The `role` claim is ours to write.
+
+So the shape is both options at once: a **token-exchange function that verifies VT's
+cookie server-side and then signs our own token**, consumed through Third-Party Auth
+against a **JWKS we host**. See [Track D](#track-d--vt-identity) for the ladder. Three
+consequences worth stating here, because each one is a decision the old text got wrong:
+
+- **It is a Netlify Function in the game's own deploy, not a Supabase Edge Function.**
+  The credentials are first-party `httpOnly` cookies on `varsitytutors.com`; nothing on
+  `*.supabase.co` is ever sent them, so an Edge Function would have nothing to verify.
+- **There is no `auth.users` row and no refresh token.** supabase-js's `accessToken`
+  callback re-mints a short-lived JWT on demand, so nothing long-lived sits in a child's
+  browser — and `auth.uid()` *is* the learner id, which keeps
+  `profile_identities.subject` the platform's own id and makes the provider swap the
+  one-line change [the data model](#data-model) was built for.
+- **No email is involved**, which matters while open question 3 stands. The alternatives
+  that mint a real Supabase user (`generateLink` + `verifyOtp`) need one, and a synthetic
+  address is a lie in a table someone will eventually read.
 
 ---
 
@@ -807,9 +1118,12 @@ expensive, quiet consequences.
 1. **A game's id is one string in four places** — the directory under `games/`, the vite
    `base`, the catalog `href`, and the `game_slug` in the database. `scripts/build-site.mjs`
    asserts two of them agree; keep the other two in step by hand.
-2. **Namespace every game's localStorage keys with its id.** All games now share one
-   origin, so an unprefixed key is a collision waiting to happen.
-   `pixelMathBlaster.profile.v1` already complies.
+2. **Namespace every game's localStorage keys with its id, and scope them to the learner
+   when one is known.** All games share one origin, so an unprefixed key is a collision
+   waiting to happen; and one slot per *browser* means two children on a tablet share
+   currency, skills and each other's queued runs. **The un-namespaced key never moves** —
+   it is the anonymous slot, a learner gets a suffix, and relocating it would strand every
+   current player.
 3. **A module moves to `packages/` when it has a second real consumer**, not when it looks
    reusable. With one consumer, every boundary is a guess, and extraction also costs a
    jest `moduleNameMapper` entry and a new class of "works in `vite build`, fails in
@@ -839,12 +1153,28 @@ expensive, quiet consequences.
     See [A personal best, and no leaderboard](#a-personal-best-and-no-leaderboard).
 12. **Only the publishable key is ever committed.** Service-role keys and test credentials
     live in a gitignored `.env.local`. RLS and grants are the only things protecting this
-    data, and a leaked service-role key defeats all of them at once.
+    data, and a leaked service-role key defeats all of them at once. **A signing key is
+    never `VITE_`-prefixed**: the prefix is what inlines a value into the browser bundle,
+    so a private key that picks one up ships to every player.
 13. **Achievement and catalog copy lives in code, not in the database.** The DB stores
     unlocks, ids and an `enabled` flag — never a name, description or icon.
 14. **Every `SECURITY DEFINER` function sets an explicit `search_path`.** Without it the
     caller controls resolution, which turns a helper into a privilege-escalation path.
     `get_advisors` flags this, which is why PR 4 verifies against it.
+15. **No VT-derived value other than the opaque learner id may be persisted or
+    transmitted.** Names, emails, avatars and household ids are dropped at the parse
+    boundary in `vtIdentity.ts`, and the types offer nowhere to put them. An unused field
+    is one refactor away from a used one, which is why they are discarded rather than
+    merely ignored. See [open question 3](#open-questions-for-varsity-tutors).
+16. **Identity is never the boot path.** `resolve()` is a `fetch`; `store.open()` must not
+    await it and there must never be a loading phase. A late identity arrives through
+    `onRemote` at a safe phase, exactly like a remote merge — see
+    [Why progression boot stays synchronous](#why-progression-boot-stays-synchronous).
+17. **An identity change adopts, it never merges**, and **only a trusted server writes
+    `grade_source = 'platform'`.** Merging the previous learner's cached state into the
+    new learner's row is how one sibling's currency lands on another's account; and that
+    column exists to mean "something trusted asserted this", so a client that can write it
+    can lie about it.
 
 ## Open questions for Varsity Tutors
 
@@ -853,15 +1183,26 @@ have needed it answered first — but the highscore is
 [a personal best](#a-personal-best-and-no-leaderboard), so it does not. Three of them
 change the architecture rather than just configuration:
 
-1. **Can the platform mint a JWT with a custom `role: "authenticated"` claim?** This gates
-   third-party auth entirely. If not, the token-exchange path is the only option.
-2. **Does it expose the student's grade level?** This is precisely what `resolveGrade()`
-   was built to consume.
-3. **Are these users minors?** A K–3 game says yes, so COPPA/FERPA likely apply — which
-   decides whether we may store names or emails at all. **Until this is answered, store no
-   personally identifying information.** Nothing currently needs any: the schema has no
-   name, email or date-of-birth column, and dropping the leaderboard removed the one
-   feature that would have wanted a display name.
+1. ~~**Can the platform mint a JWT with a custom `role: "authenticated"` claim?**~~
+   **Answered: no, not today — and it stopped mattering.** The student experience runs
+   Better Auth 1.6.26 with no `jwt` plugin, so it issues session cookies and no JWT at
+   all. This used to "gate third-party auth entirely"; it does not, because we verify the
+   cookie server-side and sign our own token. Downgraded to an
+   [upstream ask](#upstream-asks-the-student-experience) that would let us retire our
+   signing key. See [Auth, when it comes](#auth-when-it-comes).
+2. ~~**Does it expose the student's grade level?**~~ **Answered: yes.**
+   `GET /learner/api/learners` returns `grade` per learner, vocabulary
+   `['K','1'..'12','college','adult']`. Note what this did *not* settle: the mismatch with
+   `GRADE_TOPICS` (authored K–3 only) is a **content** gap, not an integration one, and an
+   unclamped grade-7 learner would land on Kindergarten addition via
+   `curriculumLadderForGrade`'s every-curriculum fallback — hence PR 18 below.
+3. **Are these users minors?** **Answered by implication: yes.** The platform's model is a
+   household owner holding named child learners with an `isPrimary` flag — a family
+   product. So COPPA/FERPA likely apply and the rule stands: **until this is answered
+   formally, store no personally identifying information.** It now has a concrete edge
+   rather than a hypothetical one — the household payload carries children's **names**,
+   and PR 17 drops them at the parse boundary. The one VT-derived value that does reach
+   disk is the opaque learner id, as a storage-key suffix and as `profile_identities.subject`.
 
 Lower stakes, but needed before Track B reaches real users: the stable user id type,
 access-token lifetime and whether the browser can refresh silently, whether tutor and
