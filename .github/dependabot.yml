@@ -1,0 +1,33 @@
+# Dependency updates. Modelled on eng-mcp-server's, which is the best of the
+# sibling repos: grouped so a week of patches is one PR rather than nine, and
+# split by dependency-type so a production bump is never reviewed with the same
+# glance as a devDependency one.
+version: 2
+updates:
+  - package-ecosystem: npm
+    # The game is a nested workspace, not the repo root. `/` here would find no
+    # manifest and Dependabot would silently do nothing.
+    directory: /math-blaster
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      # `@supabase/supabase-js` is the only runtime dependency, and it is the
+      # one that can break a signed-in player rather than a build. Keeping it
+      # out of the dev-tooling group means its bumps are read on their own.
+      production-deps:
+        dependency-type: production
+      development-deps:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      # Monthly: action versions move slowly, and a stale one fails loudly at
+      # the next run rather than silently shipping.
+      interval: monthly
+    labels:
+      - dependencies
+      - github-actions
