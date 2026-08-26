@@ -10,6 +10,8 @@
   import { createSupabaseProgressionStore } from './progression/supabaseStore';
   import { isSupabaseConfigured, loadSupabaseRemote } from './progression/supabaseClient';
   import { createLazyRemote } from './progression/lazyRemote';
+  import { createRunQueue } from './progression/runQueue';
+  import { resolveGrade } from './runtime/gradeSource';
   import { profileCodec, PROFILE_STORAGE_KEY } from './progression/profileCodec';
   import { createMasteryRecorder, type TopicDelta } from './progression/MasteryRecorder';
   import {
@@ -49,17 +51,31 @@
    * with credentials configured the game is playable WHILE the client loads
    * rather than after it.
    */
+  // Sync failures are never the player's problem: the run keeps going on the
+  // local copy. In dev they should still be visible, because "it silently
+  // stopped syncing" is otherwise indistinguishable from "it is working".
+  const reportSyncError = (where: string, error: unknown) => {
+    if (import.meta.env.DEV) console.error(`[progression:${where}]`, error);
+  };
+  /** One remote, shared by the profile store and the run queue, so the client
+   * chunk is fetched once rather than per consumer. */
+  const remote = isSupabaseConfigured() ? createLazyRemote(loadSupabaseRemote) : null;
   const store = createSupabaseProgressionStore({
     cache: createLocalStorageStore({ keyFor: () => PROFILE_STORAGE_KEY }),
-    remote: isSupabaseConfigured() ? createLazyRemote(loadSupabaseRemote) : null,
-    // Sync failures are never the player's problem: the run keeps going on the
-    // local copy. In dev they should still be visible, because "it silently
-    // stopped syncing" is otherwise indistinguishable from "it is working".
-    onError: (where, error) => {
-      if (import.meta.env.DEV) console.error(`[progression:${where}]`, error);
-    },
+    remote,
+    onError: reportSyncError,
   });
   const progress = store.open(profileCodec);
+  /**
+   * Finished runs. Separate from the profile store because they are append-only
+   * events rather than merged state: a run either landed or it has not, and
+   * `submit_run()` is idempotent on a key the queue owns.
+   *
+   * A signed-out player still queues. `submitRun` answers `unavailable` with no
+   * session, so the run waits on disk and lands on the first boot after signing
+   * in - which is the same local-first rule the profile follows.
+   */
+  const runs = createRunQueue({ remote, onError: reportSyncError });
 
   let phase = $state<GamePhase>('boot');
   let runtime = $state<RuntimeState>(createInitialRuntimeState());
@@ -139,6 +155,9 @@
         endRun();
         saveNow();
         break;
+      case 'boss-defeated':
+        if (event.by === 'mastery') bossesDefeatedThisRun += 1;
+        break;
       case 'currency-earned':
       case 'wave-record':
         // Both change what persists - currency banked, and how far a future
@@ -195,6 +214,8 @@
   }
   function startRun() {
     resetRun(runtime, profile, startWave);
+    runStartedAtMs = performance.now();
+    bossesDefeatedThisRun = 0;
     saveNow();
     countdownValue = 3;
     phase = 'countdown';
@@ -236,6 +257,20 @@
   /** The last finished run's per-topic tally. Read by the dev console
    * today; handed to the store when there is one to hand it to. */
   let lastRunMastery: TopicDelta[] = [];
+  /** When the current run began, for `game_sessions.duration_ms`. Wall clock
+   * rather than simulated time: the column records how long a child sat there,
+   * which is not the same as how much the world advanced (the tick clamps at
+   * 50ms, so a throttled tab diverges). */
+  let runStartedAtMs = 0;
+  /**
+   * Bosses DEFEATED this run, which is not the same as bosses met.
+   *
+   * Only the mastery route counts. Outlasting a boss's survive clock is
+   * escaping it, not killing it - the game already refuses to pay bounty or
+   * run time for that, and `game_sessions.bosses_defeated` must not disagree
+   * with the economy about what a defeat is.
+   */
+  let bossesDefeatedThisRun = 0;
 
   $effect(() => {
     if (pendingRemote === null || !SAFE_TO_APPLY.includes(phase)) return;
@@ -268,6 +303,24 @@
      */
     const mastery = createMasteryRecorder((deltas) => {
       lastRunMastery = deltas;
+      // The deltas finally have somewhere to go. Read straight from `runtime`:
+      // this fires on `game-over` before `endRun()` copies anything out, so the
+      // run's own numbers are still live here.
+      runs.submit({
+        gameSlug: profileCodec.gameSlug,
+        // The grade the run actually used, validated - not the raw preference.
+        gradeLevel: resolveGrade(profile),
+        waveReached: runtime.waveNumber,
+        score: runtime.score,
+        bossesDefeated: bossesDefeatedThisRun,
+        durationMs: Math.max(0, Math.round(performance.now() - runStartedAtMs)),
+        mastery: deltas,
+        // Empty until ROADMAP.md PR 3 defines what an achievement may be based
+        // on. `submit_run()` already accepts and de-duplicates the list, and
+        // drops keys it does not recognise, so nothing here changes when they
+        // arrive.
+        achievements: [],
+      });
     });
 
     if (import.meta.env.DEV) installSkillTreeDebugTools(profile, saveNow, () => mastery.tally(), () => lastRunMastery);
@@ -317,6 +370,7 @@
       unbindRemote();
       mastery.dispose();
       cancelAnimationFrame(raf);
+      runs.dispose();
       progress.dispose();
     };
   });

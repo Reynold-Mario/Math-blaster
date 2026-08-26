@@ -1,4 +1,11 @@
-import type { RemoteProgression, RemoteSnapshot, RemoteWrite, RemoteWriteResult } from './RemoteProgression';
+import type {
+  RemoteProgression,
+  RemoteSnapshot,
+  RemoteWrite,
+  RemoteWriteResult,
+  RunSubmission,
+  RunSubmitResult,
+} from './RemoteProgression';
 
 /**
  * A `RemoteProgression` that does not exist until something asks it a question.
@@ -41,6 +48,9 @@ export function createLazyRemote(load: () => Promise<RemoteProgression>): Remote
     },
     async write(input: RemoteWrite): Promise<RemoteWriteResult> {
       return (await get()).write(input);
+    },
+    async submitRun(run: RunSubmission): Promise<RunSubmitResult> {
+      return (await get()).submitRun(run);
     },
   };
 }

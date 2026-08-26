@@ -449,26 +449,56 @@ Run against the real project with two dashboard-created users
 
 ## Phase 1b — the run lands in one write
 
-Finishes the data story. `MasteryRecorder` currently tallies per-topic attempts
-that **have nowhere to go** (visible only via `pixelMathBlaster.mastery()` in the
-dev console); this is the destination.
+- [ ] **1b.1** `ROADMAP.md` PR 3 — achievements and a personal best. **Blocked on
+      a design decision, not on code:** as of 2026-08-26 what an achievement may
+      be based on is deliberately open, with boss outcomes and topic completion
+      both ruled out. The plumbing is already done and waiting — `submit_run()`
+      accepts an achievement key list, de-duplicates it, drops keys it does not
+      recognise, and the `profile_achievements` trigger owns first-unlock-wins;
+      the client passes `achievements: []`. When the decision lands, nothing but
+      that array changes. The personal-best half (`bestScore`, staying in
+      `game_progress.state` and never promoted to a column) is unblocked and can
+      land alone.
+- [x] **1b.2** ~~`submit_run()`~~ — DONE (2026-08-26).
+      `supabase/migrations/20260826171340_submit_run.sql`, `SECURITY DEFINER`,
+      `search_path = ''`, granted to `authenticated` only. Sole writer of
+      `game_sessions`, `skill_mastery` and `profile_achievements`.
+      **The session insert is the idempotency gate**, and the ordering is the
+      design: `on conflict (profile_id, idempotency_key) do nothing` returns
+      before mastery or achievements are touched. Mastery accumulates in the
+      function because the table trigger only takes `greatest` — writing a delta
+      raw would leave the counter stuck at the largest single run instead of a
+      lifetime total. Two defensive choices worth keeping: the payload is
+      aggregated by topic first (a payload naming one topic twice would
+      otherwise fail with "ON CONFLICT DO UPDATE cannot affect row a second
+      time" and take the whole run down), and `correct` is **clamped** to
+      `attempts` rather than rejected (a CHECK violation would abort the
+      transaction and cost the player the run over a client arithmetic bug).
+      Client side: `runQueue.ts` persists a finished run **before** any network
+      call and owns the idempotency key; `RemoteProgression` grew `submitRun`
+      with three outcomes so a permanently-refused run drops instead of wedging
+      the queue. Wired at `game-over` through the existing `MasteryRecorder`
+      callback — **the mastery deltas finally have somewhere to go.**
+      12 new queue tests + 5 for the lazy wrapper. 435 tests, up from 423.
+- [x] **1b.3** ~~Confirm a replayed key is a no-op~~ — verified against the real
+      database, not just the fake port. Two identical `submit_run` calls:
 
-- [ ] **1b.1** `ROADMAP.md` PR 3 — achievements and a personal best. It comes
-      first because `submit_run()` writes achievement rows. **Blocked on a design
-      decision, not on code:** as of 2026-08-26 what an achievement may be based
-      on is deliberately open, with boss outcomes and topic completion both ruled
-      out. The personal-best half (`bestScore`, staying in `game_progress.state`
-      and never promoted to a column) is unblocked and can land on its own if
-      1b.2 needs it sooner.
-- [ ] **1b.2** `ROADMAP.md` PR 6 — `submit_run()`, `SECURITY DEFINER`, idempotent
-      on `(profile_id, idempotency_key)`, sole writer of session, mastery and
-      achievement rows, one transaction so a partial run never lands. It does not
-      re-derive achievements (the rules live in the client); it does enforce
-      `correct <= attempts`, `spent <= earned`, and first-unlock-wins.
-- [ ] **1b.3** Confirm a replayed idempotency key is a no-op rather than a second
-      run. This is the one that matters after 1.5's offline queue exists.
+      | check | result |
+      |---|---|
+      | sessions for the key | **1** — replay inserted nothing |
+      | duplicate topic in payload | aggregated 10+2 / 6+1 → **12 / 7**, not doubled by the replay |
+      | `correct: 99` vs `attempts: 3` | clamped to **3 / 3**, transaction survived |
+      | unknown achievement key | **dropped**, no error |
+      | real achievement key | **unlocked** |
 
----
+      Then the full client path end-to-end: `runQueue` → `submitRun` →
+      `submit_run()` landed a session (wave 12 / score 4321 / 2 bosses /
+      123456ms), its mastery row, and one achievement.
+- [ ] **1b.4** Clean up the probe rows when convenient. `skill_mastery` holds
+      `e2e-probe-topic`, `k-add-within-5` and `k-count-to-10` with fabricated
+      counts on test2's profile, plus 2 `game_sessions`. Harmless in staging,
+      but mastery is described as "a signal a teacher may act on", so fiction in
+      it should not outlive the test that made it.
 
 ## Phase 2 — Quality gates
 

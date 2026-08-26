@@ -4,6 +4,8 @@ import type {
   RemoteSnapshot,
   RemoteWrite,
   RemoteWriteResult,
+  RunSubmission,
+  RunSubmitResult,
 } from './RemoteProgression';
 
 /**
@@ -169,5 +171,55 @@ export function createSupabaseRemote(client: SupabaseClient): RemoteProgression 
     }
   }
 
-  return { currentProfileId, read, write };
+  async function submitRun(run: RunSubmission): Promise<RunSubmitResult> {
+    if (isOffline()) return { outcome: 'unavailable' };
+
+    let profileId: string | null;
+    try {
+      profileId = await currentProfileId();
+    } catch {
+      return { outcome: 'unavailable' };
+    }
+    // No session yet. The run stays queued: signing in later is what makes it
+    // landable, so this is emphatically not a rejection.
+    if (profileId === null) return { outcome: 'unavailable' };
+
+    try {
+      const { error } = await client.rpc('submit_run', {
+        p_game_slug: run.gameSlug,
+        p_idempotency_key: run.idempotencyKey,
+        p_grade_level: run.gradeLevel,
+        p_wave_reached: run.waveReached,
+        p_score: run.score,
+        p_bosses_defeated: run.bossesDefeated,
+        p_duration_ms: run.durationMs,
+        p_mastery: run.mastery.map((d) => ({
+          topic_id: d.topicId,
+          standard_code: d.standardCode ?? null,
+          attempts: d.attempts,
+          correct: d.correct,
+        })),
+        p_achievements: run.achievements,
+      });
+
+      if (error === null) return { outcome: 'submitted' };
+
+      // A returned PostgrestError is a server ANSWER, and the class matters
+      // because it decides retry-forever versus drop-forever.
+      //
+      // 08* is connection failure - retry. Everything else the server bothered
+      // to name (a bad payload, a constraint, a refused auth) will be refused
+      // identically next time, and retrying it forever would wedge the queue
+      // and block every run behind it.
+      if (typeof error.code === 'string' && error.code.startsWith('08')) {
+        return { outcome: 'unavailable' };
+      }
+      return { outcome: 'rejected', reason: `${error.code ?? 'unknown'}: ${error.message}` };
+    } catch {
+      // Thrown, therefore transport. Retry.
+      return { outcome: 'unavailable' };
+    }
+  }
+
+  return { currentProfileId, read, write, submitRun };
 }

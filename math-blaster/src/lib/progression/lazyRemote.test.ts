@@ -24,6 +24,10 @@ function stubRemote(): { remote: RemoteProgression; calls: string[] } {
         calls.push(`write:${input.gameSlug}`);
         return { outcome: 'written' as const, revision: 1 };
       },
+      submitRun: async (run) => {
+        calls.push(`submitRun:${run.idempotencyKey}`);
+        return { outcome: 'submitted' as const };
+      },
     },
   };
 }
