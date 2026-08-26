@@ -1,5 +1,5 @@
 import { BASE_SKILL_NODES } from '../skills/baseSkillTree';
-import { createEmptyProfile, savePlayerProfile, type PlayerProfile } from './PlayerProfile';
+import { createEmptyProfile, type PlayerProfile } from './PlayerProfile';
 
 declare global {
   interface Window {
@@ -16,21 +16,30 @@ declare global {
  * only attached in dev builds (see Game.svelte's onMount, gated on
  * import.meta.env.DEV so this never ships in a production bundle).
  * Mutates the live profile object in place so Svelte's reactivity picks
- * it up immediately - no reload needed.
+ * it up immediately - no reload needed. That in-place rule is why `save`
+ * arrives as a callback rather than this file reaching for a store: the
+ * caller owns the profile object, and handing back a fresh one here would
+ * detach it from the component holding the same reference.
  */
-export function installSkillTreeDebugTools(profile: PlayerProfile): void {
+export function installSkillTreeDebugTools(profile: PlayerProfile, save: () => void): void {
   window.pixelMathBlaster = {
     resetProfile(): void {
       const empty = createEmptyProfile();
       profile.currency = empty.currency;
+      profile.earnedTotal = empty.earnedTotal;
+      profile.spentTotal = empty.spentTotal;
       profile.skillProgress = empty.skillProgress;
       profile.skillSubProgress = empty.skillSubProgress;
-      savePlayerProfile(profile);
+      save();
       console.log('[pixelMathBlaster] profile reset - currency and every skill back to 0.');
     },
     addCurrency(amount = 1000): void {
       profile.currency += amount;
-      savePlayerProfile(profile);
+      // Granted money is still earned money as far as the totals are
+      // concerned - skipping this would make the balance disagree with
+      // `earnedTotal - spentTotal` and the next merge would undo the grant.
+      profile.earnedTotal += amount;
+      save();
       console.log(`[pixelMathBlaster] +${amount} currency - now ${profile.currency}.`);
     },
     unlockAll(): void {
@@ -38,7 +47,7 @@ export function installSkillTreeDebugTools(profile: PlayerProfile): void {
       for (const node of BASE_SKILL_NODES) progress[node.id] = node.maxLevel;
       profile.skillProgress = progress;
       profile.skillSubProgress = {};
-      savePlayerProfile(profile);
+      save();
       console.log('[pixelMathBlaster] every skill maxed out.');
     },
   };

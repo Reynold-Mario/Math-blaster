@@ -17,6 +17,12 @@ import { GRADE_ORDER, type GradeLevel } from '../levels/gradeTree';
  * a real grade rather than letting an unknown value reach the curriculum
  * ladder. A run with no problems in it is a much worse failure than a run
  * at the wrong grade.
+ *
+ * Since the progression store was introduced, "the grade comes from the
+ * platform" has a place to be implemented that is NOT here: the store puts
+ * it on the profile, and this function keeps validating it exactly as it
+ * already does. Which is why the store landing changed nothing in this
+ * file - the seam was already in the right place.
  */
 export function resolveGrade(profile: PlayerProfile): GradeLevel {
   return (GRADE_ORDER as string[]).includes(profile.selectedGrade) ? profile.selectedGrade : DEFAULT_GRADE;

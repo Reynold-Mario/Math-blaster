@@ -233,7 +233,7 @@ No network code, no Supabase client, nothing that can fail at runtime because a 
 down. This track ends with a schema and a client that has everywhere to put its data
 except a database.
 
-### - [ ] PR 1 — Read and write progression through an injected store
+### - [x] PR 1 — Read and write progression through an injected store
 
 Introduces `ProgressionStore` / `ProgressionCodec` / `ProgressionHandle`, defined **inside
 the game** so jest needs no configuration change, with a localStorage implementation only.
@@ -248,10 +248,19 @@ export interface ProgressionCodec<S> {
 }
 export interface ProgressionHandle<S> {
   readonly current: S;           // SYNCHRONOUS at construction — this is the boot path
-  put(next: S): void;            // sync local write + debounced remote write
+  put(next: S): void;            // in-memory now; PERSISTING it is debounced
+  flush(): void;                 // persist pending work now
   onRemote(fn: (merged: S) => void): () => void;
+  dispose(): void;               // flush, and drop the pagehide listener
 }
 ```
+
+Two additions to the sketch above, both found while building it. `flush()` exists because
+item 4 needs guaranteed writes at specific moments and `put()` cannot express that;
+`dispose()` exists because the store registers its own `pagehide` listener, so something
+has to remove it. `MergeHint` resolved to `'a-is-newer' | 'b-is-newer'` — the *only*
+thing a merge cannot work out for itself, since monotone fields give the same answer
+either way and preferences have no "greater" value to compare.
 
 1. Split validation from storage. `PlayerProfile.ts` keeps the type, `isGrade()`,
    `createEmptyProfile()`, and a new **pure** `normalizeProfile(raw: unknown)` holding the
@@ -262,11 +271,17 @@ export interface ProgressionHandle<S> {
    players keep their currency and skills.
 3. Add `earnedTotal` / `spentTotal` beside `currency`, seeded from an old profile as
    `earnedTotal = currency, spentTotal = 0` — *incomplete, not wrong*, so still `v1`.
+   **They are what makes a merge possible at all**, and every path that moves currency
+   has to maintain them: `awardCurrency()`, both purchase paths, and `devTools`. `max` is
+   meaningful on a total and meaningless on a balance, so a spend that skips its
+   `spentTotal += n` reappears as free money the next time two copies of a profile meet.
 4. **Debounce the writes.** `Game.svelte` currently saves on every `currency-earned`
    event — once per kill, 50–150 writes per run. Free against localStorage, catastrophic
    against a network. Trailing ~2s debounce with a ~15s maximum wait, plus an immediate
    flush on game-over, skill purchase, skip purchase, grade change, and `pagehide`
    (**not** `beforeunload`: unreliable on iOS Safari and it blocks bfcache).
+   The maximum wait is not belt-and-braces: without it a run that never goes quiet for
+   two seconds never writes at all, and that describes a *busy* run exactly.
 5. **Mutate the profile in place; never reassign it.** `installSkillTreeDebugTools(profile)`
    captures the object by reference, so `profile = loaded` would leave the dev tools
    silently holding a stale object. Use `Object.assign(profile, merged)`.
@@ -276,6 +291,11 @@ export interface ProgressionHandle<S> {
    it resets to 0 the instant a level completes, so a naive `max` resurrects a paid-off
    installment as credit toward the next level. Follow the higher *level*, and tie-break
    on installments only when the levels agree.
+   Currency falls out of the same reasoning: the merge derives the balance from the two
+   totals rather than merging it, because `max` of two *balances* refunds whatever the
+   more frugal side had not spent yet. This under-counts concurrent earning on two
+   devices — 100 here and 50 there merges to 100, not 150 — which is the deliberate
+   direction to be wrong in.
 7. Rewrite `PlayerProfile.test.ts` against `normalizeProfile`, preserving every assertion;
    the hand-stubbed localStorage moves to a new small store test. `testEnvironment` stays
    `node` — no jsdom.
@@ -287,6 +307,11 @@ export interface ProgressionHandle<S> {
 currency and skills intact. In DevTools → Application → Local Storage, the write count
 during a wave drops from per-kill to a handful. `window.pixelMathBlaster.addCurrency(1000)`
 still works — that one catches the stale-reference bug in item 5.
+
+*Shipped:* 119 files, 0 errors, 0 warnings; 380 tests passing, up from 336. The
+returning-player path is covered end-to-end (real key, real codec, real store) rather
+than only as units, and the `skillSubProgress` level-boundary trap has a test named after
+what it would cost.
 
 ### - [ ] PR 2 — Make the topic a first-class field
 
