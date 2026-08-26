@@ -23,8 +23,8 @@ page, a hosting story (Netlify for the static site, Supabase for progression), a
 progression layer that survives the arrival of real authentication without a rewrite.
 
 **The order has since changed, and the scope has grown.** Progression now goes first and
-runs all the way through to a working Supabase prototype — including achievements and
-highscores, neither of which existed in the original plan. The site track is held until
+runs all the way through to a working Supabase prototype — including achievements and a
+personal best score, neither of which existed in the original plan. The site track is held until
 the Netlify deploy is approved. See
 [Why the progression track goes first](#why-the-progression-track-goes-first).
 
@@ -43,7 +43,7 @@ the Netlify deploy is approved. See
 | Mastery join key | Internal topic id, with an optional CCSS `standard_code` alongside |
 | Prototype identity | Real Supabase auth, dev-only test users. Anonymous sessions stay rejected |
 | Achievement copy | Lives in code, like the game catalog. The DB stores unlocks only |
-| Highscore shape | Personal best first, and **every board is grade-scoped** |
+| Highscore shape | **A personal best, and nothing else.** No leaderboard, global or scoped |
 
 ### Why the route shape is `/games/<slug>/` from day one
 
@@ -135,12 +135,15 @@ Recorded so they are not re-proposed:
   profile through a `SECURITY DEFINER` function callable by `anon` is the fastest route to
   a demo, and any caller can pass any device id. RLS separation would be decorative, so
   the prototype would validate everything except the part that carries the risk.
-- **Achievement and leaderboard copy in Postgres** — same reasoning as the `games` table:
-  it turns a wording fix into a migration and a deploy. See
+- **Achievement copy in Postgres** — same reasoning as the `games` table: it turns a
+  wording fix into a migration and a deploy. See
   [Achievement definitions live in code](#achievement-definitions-live-in-code).
-- **A single global highscore board** — incoherent in this game rather than merely unfair,
-  because the difficulty of the maths is the player's grade and not the wave number. See
-  [Highscores are per-grade](#highscores-are-per-grade-and-a-personal-best-comes-first).
+- **A leaderboard of any kind, global or grade-scoped** — the highscore is a *personal
+  best*, and a table for it would have no second reader. A scoped board was drafted and
+  cut; see [A personal best, and no leaderboard](#a-personal-best-and-no-leaderboard).
+- **Achievements for boss outcomes** — the boss economy already pays for a defeat and
+  already pays nothing for an escape. See
+  [Bosses produce no achievements](#bosses-produce-no-achievements).
 - **Server-authoritative currency and skill purchases** — would mean reimplementing
   `baseSkillTree.ts`'s cost/prerequisite/installment logic in PL/pgSQL and keeping two
   copies in sync, for a single-player game where cheating harms nobody. See
@@ -218,7 +221,7 @@ changes — so C can be taken whenever approval lands without disturbing work al
 with context rather than as an unexplained rename.
 
 A second docs-only PR then re-ordered the ladder into the three tracks below and added
-achievements and highscores to the data model. That it took a whole PR of its own is the
+achievements and a personal best to the data model. That it took a whole PR of its own is the
 point of [invariant 9](#invariants): the plan changed, so the plan got rewritten before
 any code moved.
 
@@ -322,28 +325,35 @@ game-over. **`RuntimeState` and `gameFlow` gain nothing.**
    a predicate over the run tally plus the profile, so "this run" and "ever" achievements
    run through one path. **The copy lives in code**, for the same reason the game catalog
    does; see [Achievement definitions live in code](#achievement-definitions-live-in-code).
-2. **"Defeat a boss" means `by === 'mastery'`.** `boss-defeated` fires on both routes.
-   Outlasting a boss is *escaping* it, and the game already refuses to pay for that — an
-   achievement is a payment, so one that fires on the survival route quietly undoes the
-   distinction the entire boss economy rests on.
-3. Achievements are expressed in the game's own units — waves reached, bosses *defeated*,
-   exact-answer streaks, topics practised, currency earned. **None may reference damage,
-   health, or a kill count that includes leaked enemies**: the first two do not exist, and
-   the third would reward standing still, which is exactly what the wave-clear payout is
-   shaped to prevent.
+2. **No achievement fires on a boss outcome, either way.** See
+   [Bosses produce no achievements](#bosses-produce-no-achievements). This is the rule a
+   future contributor is most likely to break, because a boss looks like the obvious thing
+   to hang an achievement on.
+3. Achievements are expressed in the game's own units — waves reached, exact-answer
+   streaks, topics practised, shields broken, currency earned. **None may reference
+   damage, health, or a kill count that includes leaked enemies**: the first two do not
+   exist, and the third would reward standing still, which is exactly what the wave-clear
+   payout is shaped to prevent.
 4. `PlayerProfile` grows `achievements: Record<string, number>` (unlock timestamp, absent
    = locked) and `bestScore: number`. Additive with validated fallbacks, so **the storage
    key stays `pixelMathBlaster.profile.v1`** — an old profile is incomplete, not wrong.
 5. `score` stays a per-run arcade number everywhere else. Only its *maximum* persists, and
    nothing reads `bestScore` back into a run — it is a record, not a resource.
-6. **The game's own `CLAUDE.md` says "There is no leaderboard/high-score persistence", and
-   that stops being true here.** Update it in the same PR, and keep the point it was
-   making: `highestWaveReached` is still the number that means something in an endless run.
-   `bestScore` sits beside it, it does not replace it.
+6. **`bestScore` stays in the profile blob and is never promoted to a column.** By this
+   document's own escalation rule, `furthest` earned its column because it *gates where a
+   run may start* — losing it would let a player skip ground they had not covered. A
+   personal best gates nothing, nothing queries across it, and losing it is cosmetic. It
+   rides in `state` like everything else.
+7. **The game's own `CLAUDE.md` says "There is no leaderboard/high-score persistence".
+   Half of that stays true.** There is still no leaderboard. Update the line to say a
+   personal best persists and nothing else does, and keep the point it was making:
+   `highestWaveReached` is the number that means something in an endless run, and
+   `bestScore` sits beside it rather than replacing it.
 
-*Verify:* `npm test`, with each achievement unlocked by a synthetic event stream. Pin the
-mastery-versus-survival boss case explicitly — it is the one a future contributor will get
-wrong. An existing `v1` profile loads with no achievements and `bestScore: 0`.
+*Verify:* `npm test`, with each achievement unlocked by a synthetic event stream. Assert
+that a run containing a boss defeat and a boss escape unlocks **nothing** — that is the
+one a future contributor will get wrong. An existing `v1` profile loads with no
+achievements and `bestScore: 0`.
 
 ### - [ ] PR 4 — The SQL migrations
 
@@ -353,18 +363,20 @@ rather than a diff buried under client code.
 
 Ordered so each migration applies independently: extensions and `profiles`; then
 `profile_identities` with `current_profile_id()` and `can_read_profile()`; then the
-per-game tables; then achievements and leaderboards; then RLS policies and grants, last.
+per-game tables; then mastery; then achievements; then RLS policies and grants, last.
 
 - `revoke all ... from anon, authenticated` before anything is granted back.
 - Every policy calls `(select can_read_profile(...))`, never a bare call — see the note
   under [Data model](#data-model) for why the subquery form is the difference between a
   1ms query and a 400ms one.
-- The monotone triggers (`furthest`, `earned`/`spent`, first-unlock-wins on
-  `profile_achievements`, `greatest()` on `leaderboard_entries`) land with their own
-  tables rather than as a follow-up. They are the layer that survives a client merge bug.
+- The monotone triggers (`furthest`, `earned`/`spent`, `attempts`/`correct`, and
+  first-unlock-wins on `profile_achievements`) land with their own tables rather than as a
+  follow-up. They are the layer that survives a client merge bug.
 - Every `SECURITY DEFINER` function sets an explicit `search_path`.
 - Seed rows for `games` and `achievements` go in `supabase/seed.sql`, **not** a migration:
   they are data a copy edit will touch, and a copy edit must not be a schema change.
+- **There is no `leaderboard_entries`.** The highscore is a personal best living in
+  `game_progress.state`; a table would have no second reader.
 
 *Verify:* `npx supabase db reset` applies cleanly from empty, twice in a row. Then apply to
 the project and confirm `get_advisors` returns no security findings — specifically no
@@ -408,26 +420,28 @@ survive. Play again with DevTools → Network → Offline and confirm the run is
 and syncs on reconnect. Then sign in as a **second** test user and confirm the first
 user's rows are invisible — that is the RLS check, and it is the reason this track exists.
 
-### - [ ] PR 6 — `submit_run()`: mastery, achievements and highscores in one write
+### - [ ] PR 6 — `submit_run()`: a run lands in one idempotent write
 
 A `SECURITY DEFINER` RPC, idempotent on `(profile_id, idempotency_key)`, and the **sole
-writer** of mastery, achievement and leaderboard rows. Clients hold read-only policies on
-all three.
+writer** of session, mastery and achievement rows. Clients hold read-only policies on all
+three.
 
-One call at game-over carries the whole run — the session row, the mastery deltas, the
-newly unlocked achievement keys, and the score and wave for the boards — in one
-transaction, so a partial run never lands.
+One call at game-over carries the whole run — the session row, the mastery deltas, and the
+newly unlocked achievement keys — in one transaction, so a partial run never lands. The
+personal best is not in the list: it lives in `game_progress.state`, which the client
+writes directly.
 
 - It does **not** re-derive achievements. It cannot: the rules live in the client. This is
   the same posture as client-authoritative currency and carries the same revisit trigger —
   see [Currency is client-authoritative](#currency-is-client-authoritative-on-purpose).
 - It **does** enforce what the database can enforce cheaply and without duplicating game
-  logic: `correct <= attempts`, `spent <= earned`, first-unlock-wins on achievements,
-  `greatest()` on board entries, and the monotone `furthest`.
+  logic: `correct <= attempts`, `spent <= earned`, first-unlock-wins on achievements, and
+  the monotone `furthest`.
 
 *Verify:* call it twice with the same idempotency key and confirm the second call is a
 no-op rather than a doubling. Confirm a direct client `insert` into `skill_mastery` is
-refused. Confirm a board entry submitted lower than the stored one does not lower it.
+refused. Confirm re-submitting an already-unlocked achievement does not move its
+`unlocked_at` forward.
 
 ---
 
@@ -569,11 +583,11 @@ assembly script throws.
 - [ ] **PR 14** — real VT auth: third-party JWTs or the token-exchange Edge Function,
   replacing the dev sign-in from PR 5. Blocked on
   [open question 1](#open-questions-for-varsity-tutors), not on any code here.
-- [ ] **PR 15** — a *public* leaderboard surface. Blocked on
-  [open question 3](#open-questions-for-varsity-tutors); the schema and the writes ship in
-  Track B, only the rendering of another player's row waits.
-- [ ] **PR 16** — per-game progress summaries on the catalog cards.
-- [ ] **PR 17** — `packages/game-registry`, once a consumer outside `apps/web` exists.
+- [ ] **PR 15** — per-game progress summaries on the catalog cards.
+- [ ] **PR 16** — `packages/game-registry`, once a consumer outside `apps/web` exists.
+
+Not deferred, **declined**: a leaderboard. It is not waiting on a dependency — see
+[A personal best, and no leaderboard](#a-personal-best-and-no-leaderboard).
 
 ---
 
@@ -591,13 +605,12 @@ real auth later is one insert into `profile_identities` per user — never a dat
 | `profiles` | our UUID primary key, `grade_level`, `grade_source ('self' \| 'platform')` |
 | `profile_identities` | `subject` → `profile_id`. **RLS enabled, zero policies — deny-all.** Only `SECURITY DEFINER` functions touch it. |
 | `games` | `slug` and `enabled` only. **All** metadata stays in the code manifest, name included; a DB-backed one turns copy edits into migrations. |
-| `game_progress` | `(profile_id, game_slug)`, `state jsonb`, `revision`, plus a promoted `furthest int` |
+| `game_progress` | `(profile_id, game_slug)`, `state jsonb`, `revision`, plus a promoted `furthest int`. The personal best rides in `state` — see [below](#a-personal-best-and-no-leaderboard) |
 | `skill_mastery` | `(profile_id, topic_id)`, nullable `standard_code`, attempts/correct. **Not keyed by game** — that is the entire point. |
 | `game_sessions` | one row per run, unique on `(profile_id, idempotency_key)` |
 | `currency_balances` | `earned` and `spent` as two **monotone** counters; balance is generated |
 | `achievements` | `key`, `game_slug`, `enabled` only. Copy lives in code, exactly as with `games`. |
 | `profile_achievements` | `(profile_id, achievement_key)`, `unlocked_at`, `progress int`. **First unlock wins** — a trigger keeps the earliest timestamp. |
-| `leaderboard_entries` | `(game_slug, board_key, profile_id)`, upserted with `greatest()`. `board_key` **carries the grade**. |
 | `guardianships` | ships empty; costs nothing and saves rewriting every read policy later |
 
 **A JSONB blob per game, not typed tables.** The existing profile is already a validated
@@ -624,34 +637,63 @@ Two rules that are easy to get wrong:
   Postgres hoist it into an InitPlan and evaluate it **once per query instead of once per
   row** — the difference between a 1ms query and a 400ms one.
 
-`submit_run()` is a `SECURITY DEFINER` RPC and the **sole writer** of mastery, achievement
-and leaderboard rows; clients get read-only policies on all three. It is idempotent on
+`submit_run()` is a `SECURITY DEFINER` RPC and the **sole writer** of session, mastery and
+achievement rows; clients get read-only policies on all three. It is idempotent on
 `(profile_id, idempotency_key)`, so replay from an offline queue is exact.
 
-### Highscores are per-grade, and a personal best comes first
+### A personal best, and no leaderboard
 
-A single global board would be **incoherent in this game**, not merely unfair. Difficulty
-of the maths is the player's grade and not the wave number — that separation is the point
-of `curriculumLadderForGrade()`, and it means a grade-3 player and a kindergartener who
-both reach wave 20 did not do the same thing. So `board_key` carries the grade
-(`furthest_wave:g1`), and an unscoped board is a bug rather than a feature request.
+The highscore is **the player's own best, and there is no board.** Not a global one, not a
+grade-scoped one, not one deferred behind a flag.
 
-Two boards, because the game already has two numbers and they mean different things.
-`furthest_wave` is the one that means something in an endless run — it is what the
-end-of-run screen reports and what gates where a future run may start. `score` is the
-arcade number, and a board is somewhere for it to matter: a strong player's surplus
-currently runs into the run clock's ceiling and stops there, and the game's own notes say
-the fix is to give that surplus somewhere to go rather than to shrink it.
+A scoped board was drafted first, on the reasoning that a *global* board is incoherent
+here — difficulty of the maths is the player's grade and not the wave number, so a grade-3
+player and a kindergartener who both reach wave 20 did not do the same thing. That
+reasoning holds, but it argues for something narrower rather than for something scoped:
+once a board only compares a player against others doing the same maths at the same
+grade, in a single-player game with no social surface, the remaining audience for it is
+the player themself. Which is a personal best.
 
-**The personal best lands first, in the profile blob.** It needs no table, no policy and
-no second player, and for a single-player K–3 game it is most of the value — "beat your
-own record" is the mechanic, and a public board is a feature on top of it.
+So it needs no table, no policy, no `profile_id` on anything, and no second player.
+`bestScore` sits in `game_progress.state` beside the rest of the profile. It is
+deliberately **not** promoted to a column the way `furthest` was: `furthest` earned that
+because it *gates where a run may start*, so losing it would let a player skip ground they
+had never covered, whereas losing a personal best is cosmetic. The escalation rule above
+is a query, and nothing queries across best scores.
 
-**A public board also needs the minors question answered before it ships.** Until then the
-schema exists and the prototype writes to it, but nothing renders another player's row.
-When something does, the display name is an **arcade handle, generated rather than typed**:
-free text from children is a moderation problem the prototype has no business acquiring,
-and a real name is something this document has already committed to not storing.
+Two problems disappear with the board, and they were the expensive ones. A public board
+needed the minors question answered before it could ship, and it needed a display name —
+which meant a generated arcade handle, because free text from children is a moderation
+problem this project has no reason to acquire and a real name is something this document
+has already committed to not storing. Neither is a cost worth paying for a feature whose
+audience is one person.
+
+`highestWaveReached` remains the number that means something in an endless run. `bestScore`
+sits beside it; the arcade score is still per-run everywhere else, and nothing reads a best
+back into a run.
+
+### Bosses produce no achievements
+
+**Defeating a boss pays bounty and run time. Escaping one pays nothing. Neither unlocks an
+achievement**, and that is not an oversight to be corrected later.
+
+The boss economy is already a complete reward system, and it already draws the only
+distinction that matters: `onBossDefeated` grants bounty and `BOSS_CLEAR_BONUS_MS` on the
+mastery route and grants neither on the survival route. An achievement on top would be a
+second payment for an event that is already paid, delivered through a different channel
+with different rules — and the moment those two channels disagree about what a boss is
+worth, the fight has two answers.
+
+The timing makes it worse than redundant. The game's own notes record that making the
+mastery route the only paying one **cost the youngest players the most** — a slow grade-K
+player's median run fell from wave 10 to wave 6, and at roughly an 11% mastery rate they
+almost never collect. The fix is coming from the curriculum, deliberately not from the
+boss numbers. Hanging achievements off boss defeats would stack another mastery-gated
+payout onto exactly the players who cannot reach the first one, which is the regression
+that work exists to absorb.
+
+Achievements therefore live in waves, streaks, topics, shields and currency — the parts of
+the game that are not already a reward system.
 
 ### Achievement definitions live in code
 
@@ -668,6 +710,9 @@ turns out to be broken or unreachable should not require a client release.
 hands it, because the rules are in the client and the alternative is keeping two copies of
 them in sync. Same trade as currency below, same revisit trigger.
 
+And no key may name a boss outcome — see
+[Bosses produce no achievements](#bosses-produce-no-achievements).
+
 ### Currency is client-authoritative, on purpose
 
 It already is — `devTools.ts` ships a console command to grant yourself currency, and the
@@ -679,13 +724,14 @@ copies in sync forever.
 CHECK constraints (`spent <= earned`, `correct <= attempts`) and the monotone trigger do
 the cheap 80% — they stop bugs and casual tampering with no duplicated game logic.
 
-**Revisit when** a *public* leaderboard ships, money is involved, or mastery is shown to a
-parent or tutor. The last is the serious one: a falsified score is trivia, but a falsified
-mastery signal is worse than no data, because a person may act on it.
+**Revisit when** money is involved, or mastery is shown to a parent or tutor. The second is
+the serious one: a falsified score is trivia, but a falsified mastery signal is worse than
+no data, because a person may act on it.
 
-Achievements and the personal best join this trade rather than changing it. A personal
-best a player can edit is between them and themselves; a public board is the trigger, and
-it is deferred for an unrelated reason anyway.
+Achievements and the personal best join this trade rather than changing it, and they are
+the easy case: a personal best a player can edit is between them and themselves. The
+leaderboard that would have made cheating other people's problem is
+[not being built](#a-personal-best-and-no-leaderboard).
 
 ### Auth, when it comes
 
@@ -732,11 +778,12 @@ expensive, quiet consequences.
 9. **Update this file in the same PR that changes what it describes.** A roadmap is exactly
    the kind of document that drifts, and correcting doc drift has already cost this repo
    one dedicated PR.
-10. **An achievement may never reward escaping a boss.** `boss-defeated` fires on both
-    routes and carries `by`; only `'mastery'` is a defeat. The boss economy rests entirely
-    on outlasting a fight paying nothing, and an achievement is a payment.
-11. **No leaderboard is global across grades.** `board_key` carries the grade. See
-    [Highscores](#highscores-are-per-grade-and-a-personal-best-comes-first).
+10. **No achievement fires on a boss outcome, defeat or escape.** The boss economy
+    already pays for one and already pays nothing for the other; an achievement would be
+    a second payment through a channel with different rules. See
+    [Bosses produce no achievements](#bosses-produce-no-achievements).
+11. **The highscore is a personal best. There is no leaderboard, and no table for one.**
+    See [A personal best, and no leaderboard](#a-personal-best-and-no-leaderboard).
 12. **Only the publishable key is ever committed.** Service-role keys and test credentials
     live in a gitignored `.env.local`. RLS and grants are the only things protecting this
     data, and a leaked service-role key defeats all of them at once.
@@ -748,18 +795,20 @@ expensive, quiet consequences.
 
 ## Open questions for Varsity Tutors
 
-None of these block Track A. **One of them now blocks part of Track B**, which is new:
-question 3 gates any *public* leaderboard, and the boards were not in scope when this list
-was written. Three change the architecture rather than just configuration:
+None of these block Track A or Track B. Question 3 nearly did — a public leaderboard would
+have needed it answered first — but the highscore is
+[a personal best](#a-personal-best-and-no-leaderboard), so it does not. Three of them
+change the architecture rather than just configuration:
 
 1. **Can the platform mint a JWT with a custom `role: "authenticated"` claim?** This gates
    third-party auth entirely. If not, the token-exchange path is the only option.
 2. **Does it expose the student's grade level?** This is precisely what `resolveGrade()`
    was built to consume.
 3. **Are these users minors?** A K–3 game says yes, so COPPA/FERPA likely apply — which
-   decides whether we may store names or emails at all, and means any future leaderboard
-   needs an arcade handle rather than a real name. **Until this is answered, store no
-   personally identifying information.**
+   decides whether we may store names or emails at all. **Until this is answered, store no
+   personally identifying information.** Nothing currently needs any: the schema has no
+   name, email or date-of-birth column, and dropping the leaderboard removed the one
+   feature that would have wanted a display name.
 
 Lower stakes, but needed before Track B reaches real users: the stable user id type,
 access-token lifetime and whether the browser can refresh silently, whether tutor and
