@@ -1,6 +1,7 @@
 import { BASE_SKILL_NODES } from '../skills/baseSkillTree';
 import { createEmptyProfile, type PlayerProfile } from './PlayerProfile';
 import type { TopicDelta } from '../progression/MasteryRecorder';
+import { getSupabaseClient, isSupabaseConfigured } from '../progression/supabaseClient';
 
 declare global {
   interface Window {
@@ -9,7 +10,45 @@ declare global {
       addCurrency: (amount?: number) => void;
       unlockAll: () => void;
       mastery: () => void;
+      signIn: (email: string, password: string) => Promise<void>;
+      signOut: () => Promise<void>;
+      session: () => Promise<void>;
     };
+  }
+}
+
+/**
+ * SIGN-IN IS A CONSOLE COMMAND, NOT A SCREEN, and that is the point.
+ *
+ * The prototype needs a real session so it exercises the actual RLS surface
+ * rather than reaching around it, but a login form rendered by the game is a
+ * login form that can ship to a six-year-old. A dev-console API cannot: this
+ * whole module is only installed behind `import.meta.env.DEV`, so it is
+ * dead-stripped from production builds along with everything it imports.
+ *
+ * A real sign-in UI belongs with real VT auth (ROADMAP.md PR 14), where there
+ * is an identity provider to sign in AGAINST. Building one here would mean
+ * throwing it away then.
+ *
+ * Sign-ups are disabled on the project on purpose - the repo and the project
+ * URL are both public, and `anon` being granted nothing is what protects the
+ * data. Create test users from the dashboard (Authentication -> Users -> Add
+ * user, with "Auto Confirm User" ticked); do not re-enable public signup to
+ * make testing easier.
+ */
+async function withClient(what: string, fn: (client: Awaited<ReturnType<typeof getSupabaseClient>>) => Promise<void>): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    console.error(
+      `[pixelMathBlaster] ${what} needs Supabase credentials. Put VITE_SUPABASE_URL and ` +
+        'VITE_SUPABASE_PUBLISHABLE_KEY in .env.local AT THE REPO ROOT (not in math-blaster/), ' +
+        'then restart the dev server.'
+    );
+    return;
+  }
+  try {
+    await fn(await getSupabaseClient());
+  } catch (error) {
+    console.error(`[pixelMathBlaster] ${what} failed.`, error);
   }
 }
 
@@ -66,8 +105,48 @@ export function installSkillTreeDebugTools(
       console.log('[pixelMathBlaster] last finished run:');
       console.table(lastRunTally());
     },
+    async signIn(email: string, password: string): Promise<void> {
+      await withClient('signIn', async (client) => {
+        const { data, error } = await client.auth.signInWithPassword({ email, password });
+        if (error !== null) {
+          console.error('[pixelMathBlaster] sign-in refused:', error.message);
+          return;
+        }
+        // RELOAD IS REQUIRED, and it is not laziness. The store runs its remote
+        // read once at boot; that already happened, signed out, and returned
+        // early. Rather than adding a re-sync path that real auth will not use
+        // (a session will exist before the game mounts), the dev flow reloads -
+        // the session persists to storage, so the next boot syncs for real.
+        console.log(
+          `[pixelMathBlaster] signed in as ${data.user?.email ?? '(unknown)'}. ` +
+            'RELOAD THE PAGE to sync - the boot read already ran while signed out.'
+        );
+      });
+    },
+    async signOut(): Promise<void> {
+      await withClient('signOut', async (client) => {
+        const { error } = await client.auth.signOut();
+        if (error !== null) {
+          console.error('[pixelMathBlaster] sign-out failed:', error.message);
+          return;
+        }
+        console.log('[pixelMathBlaster] signed out. Reload to go back to local-only.');
+      });
+    },
+    async session(): Promise<void> {
+      await withClient('session', async (client) => {
+        const { data } = await client.auth.getSession();
+        const user = data.session?.user;
+        if (user === undefined) {
+          console.log('[pixelMathBlaster] signed out. Local-only, which is the default state.');
+          return;
+        }
+        console.log(`[pixelMathBlaster] signed in as ${user.email ?? '(no email)'} (auth uid ${user.id}).`);
+      });
+    },
   };
   console.log(
-    '[pixelMathBlaster] debug tools ready - pixelMathBlaster.resetProfile() / .addCurrency(1000) / .unlockAll() / .mastery()'
+    '[pixelMathBlaster] debug tools ready - .resetProfile() / .addCurrency(1000) / .unlockAll() / ' +
+      '.mastery() / .signIn(email, password) / .signOut() / .session()'
   );
 }

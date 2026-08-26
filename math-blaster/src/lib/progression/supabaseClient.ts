@@ -1,41 +1,100 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { RemoteProgression } from './RemoteProgression';
+import { createSupabaseRemote } from './supabaseRemote';
 
 /**
- * The client, or `null` when the game has not been given any credentials.
+ * Reading the credentials, and loading the client only if there are any.
  *
- * `null` is the normal state, not an error: with no `.env.local` the game runs
- * exactly as it always has, on localStorage alone. That is what makes it safe
- * to wire the remote store in before sign-in exists.
+ * `import type` above is erased, so the ONLY runtime reference to
+ * `@supabase/supabase-js` in the codebase is the `await import(...)` inside
+ * `getSupabaseClient`. Three properties depend on exactly where things live in
+ * this file, and all three are easy to break by tidying it:
  *
- * Both values are read from `import.meta.env`, so both are inlined into the
- * bundle at build time and are readable from devtools. That is fine for these
- * two and only these two - the publishable key is designed to be public, and
- * RLS plus the grants in `supabase/migrations` are what actually protect the
- * data. Do not reach for this file to pass a secret.
- *
- * NOTE: `.env.local` lives at the REPO ROOT, not in this workspace, so Vite
- * needs `envDir` pointed there. Without it both reads are `undefined` and this
- * returns `null` - a silent fall back to local-only, which looks exactly like
- * working software. See `vite.config.ts`.
+ *  1. **No credentials, no package.** Vite inlines `import.meta.env.*` as
+ *     literals, so the guard below folds to an unconditional `throw` and the
+ *     `import()` after it is dead code. The chunk is never emitted.
+ *  2. **THE GUARD MUST SIT IN THE SAME FUNCTION BODY AS THE `import()`.**
+ *     Rollup folds constants within a body; it does not propagate them across
+ *     a function boundary. An earlier version put the check in
+ *     `readSupabaseConfig()` and the import in `getSupabaseClient()`, and the
+ *     208 kB chunk was emitted on every build even with no credentials -
+ *     unreachable at runtime, but shipped. That is why the guard is duplicated
+ *     between here and `isSupabaseConfigured()` rather than shared.
+ *  3. **With credentials it is a side chunk, not the main bundle**, so the game
+ *     is playable while it loads. Measured: main bundle 127.84 kB / 45.40 kB
+ *     gzip either way, against 335.19 kB / 98.70 kB when it was a static
+ *     import.
  */
-export function createSupabaseClientFromEnv(): SupabaseClient | null {
+
+/**
+ * Whether this build has credentials, as a synchronous answer.
+ *
+ * `Game.svelte` needs to decide at construction whether the store gets a remote
+ * at all, and it cannot await. Folds to `return false` with no credentials.
+ * Deliberately duplicates the guard in `getSupabaseClient` - see note 2 above.
+ */
+export function isSupabaseConfigured(): boolean {
   const url = import.meta.env.VITE_SUPABASE_URL;
   const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  return typeof url === 'string' && url !== '' && typeof publishableKey === 'string' && publishableKey !== '';
+}
 
-  if (typeof url !== 'string' || url === '') return null;
-  if (typeof publishableKey !== 'string' || publishableKey === '') return null;
+let clientPromise: Promise<SupabaseClient> | null = null;
 
-  return createClient(url, publishableKey, {
-    auth: {
-      // The session belongs in storage so a reload does not sign the player
-      // out, and refresh has to be automatic because a run can easily outlast
-      // an access token.
-      persistSession: true,
-      autoRefreshToken: true,
-      // The game is not an OAuth callback handler; there is no redirect flow
-      // to parse out of the URL, and leaving this on makes every boot inspect
-      // the address bar.
-      detectSessionInUrl: false,
-    },
-  });
+/**
+ * The one client instance, shared by the progression store and the dev console.
+ *
+ * Sharing matters: two clients would hold two independent in-memory auth
+ * states, so signing in through one would leave the other believing it was
+ * still signed out until a reload happened to align them through storage.
+ *
+ * Rejects rather than returning null when unconfigured. The store maps a thrown
+ * error to `onError` plus a retry, whereas a null would read as "signed out"
+ * and stop it retrying - and on this path there is nothing to retry toward
+ * anyway, because the branch is unreachable in such a build.
+ */
+export function getSupabaseClient(): Promise<SupabaseClient> {
+  if (clientPromise === null) {
+    clientPromise = (async () => {
+      const url = import.meta.env.VITE_SUPABASE_URL;
+      const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      if (
+        typeof url !== 'string' ||
+        url === '' ||
+        typeof publishableKey !== 'string' ||
+        publishableKey === ''
+      ) {
+        // Folds to an unconditional throw with no credentials, which is what
+        // makes the import below dead code. Keep them in one body.
+        throw new Error(
+          'Supabase is not configured. Put VITE_SUPABASE_URL and ' +
+            'VITE_SUPABASE_PUBLISHABLE_KEY in .env.local at the REPO ROOT.'
+        );
+      }
+      const { createClient } = await import('@supabase/supabase-js');
+      return createClient(url, publishableKey, {
+        auth: {
+          // The session belongs in storage so a reload does not sign the player
+          // out, and refresh has to be automatic because a run can easily
+          // outlast an access token.
+          persistSession: true,
+          autoRefreshToken: true,
+          // Not an OAuth callback handler: there is no redirect flow to parse,
+          // and leaving this on makes every boot inspect the address bar.
+          detectSessionInUrl: false,
+        },
+      });
+    })().catch((error: unknown) => {
+      // A failed load must not be cached, or one offline boot means no sync for
+      // the rest of the session. Same rule as createLazyRemote.
+      clientPromise = null;
+      throw error;
+    });
+  }
+  return clientPromise;
+}
+
+/** The progression port, backed by the lazily-loaded client. */
+export async function loadSupabaseRemote(): Promise<RemoteProgression> {
+  return createSupabaseRemote(await getSupabaseClient());
 }

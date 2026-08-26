@@ -328,43 +328,124 @@ part of 1.6, not later** — and the guards must keep testing
 `import.meta.env` values directly, because a check the optimiser cannot see puts
 the whole cost back silently. Recorded in `math-blaster/CLAUDE.md`.
 
-### 1.6 Dev-only sign-in, and a real grade
+### 1.6 ~~Dev-only sign-in~~ — DONE (2026-08-26)
 
-- [ ] Dev-only email/password sign-in. `ROADMAP.md:93` argues for real auth in the
-      prototype precisely so the RLS surface gets exercised rather than reached
-      around; that reasoning still holds.
-- [x] ~~`resolveGrade()` gets a platform answer to read; its body is all that
-      changes.~~ **Corrected: `gradeSource.ts` needs no change at all.** Its
-      docstring already anticipated this — "the store puts it on the profile, and
-      this function keeps validating it exactly as it already does". 1.5
-      implemented that via the codec's `applyPlatformGrade`, and `resolveGrade()`
-      still validates against `GRADE_ORDER` and falls back to a real grade, which
-      is what makes an unknown value arriving over the network safe. Nothing left
-      to do here.
-- [ ] **Move `@supabase/supabase-js` behind a dynamic `import()`** as part of
-      this item, so the ~54 kB gzip is paid by players who sign in rather than by
-      everyone. See the bundle finding in 1.5.
-- [ ] **Decide the sign-up policy before enabling sign-in.** The repo is public,
-      so the project URL is public. `anon` is granted nothing anywhere in the
-      schema, so an unauthenticated stranger reaches nothing — but open email
-      sign-up plus a public URL is unbounded account creation, confined by RLS to
-      each attacker's own rows. That is storage abuse rather than a data leak,
-      and it wants a deliberate answer (invite-only, a fixed dev account, or
-      sign-up disabled in the dashboard).
+- [x] ~~`resolveGrade()` gets a platform answer to read.~~ **Corrected in 1.5:
+      `gradeSource.ts` needed no change at all.** Its docstring already said the
+      store would put the grade on the profile and that this function would keep
+      validating it, which is exactly what `applyPlatformGrade` does.
+- [x] **Sign-in is a console command, not a screen** —
+      `window.pixelMathBlaster.signIn(email, password)` / `.signOut()` /
+      `.session()`, alongside the existing dev helpers. The prototype needs a
+      real session so it exercises the actual RLS surface, but a login form
+      rendered by the game is a login form that can ship to a six-year-old. The
+      whole module is installed behind `import.meta.env.DEV`, so it is
+      dead-stripped from production along with everything it imports. A real
+      sign-in UI belongs with real VT auth (`ROADMAP.md` PR 14), where there is
+      an identity provider to sign in *against*.
+- [x] **`ensure_profile()` needs no separate wiring** — `currentProfileId()`
+      already calls it, so the first sync after sign-in creates the profile and
+      its identity row.
+- [x] **Sign-in requires a reload, deliberately.** The store runs its remote read
+      once at boot; that has already happened, signed out. Rather than adding a
+      re-sync path that real auth will never use (a session will exist before the
+      game mounts), the dev flow reloads — the session persists to storage, so
+      the next boot syncs for real. The console message says so.
+- [x] **`@supabase/supabase-js` moved behind a dynamic `import()`** via a generic
+      `createLazyRemote` wrapper, so the store needed no change: every port
+      method was already async. Two properties, both measured:
 
-### 1.7 Prove it
+      | build | chunks | main bundle | `supabase-js` |
+      |---|---|---|---|
+      | no credentials | 1 | 126.42 kB / 44.70 kB gzip | dropped entirely |
+      | credentials | 2 | 127.78 kB / 45.35 kB gzip | side chunk, 53.98 kB gzip |
+      | *1.5, static import* | 1 | 335.19 kB / 98.70 kB gzip | in main bundle |
 
-- [ ] Play a run signed in, reload, confirm currency, skills and furthest wave
-      survive.
-- [ ] Play with DevTools → Network → Offline. The run must be **uninterrupted**,
-      and must sync on reconnect without doubling.
-- [ ] Sign in as a **second** test user and confirm the first user's rows are
-      invisible. This is the RLS check, and it is the whole reason the prototype
-      uses real auth.
-- [ ] Kill the network mid-run and confirm the game stays playable. Local-first
-      means a Supabase outage costs sync, never the run.
+      **53.35 kB gzip came off the critical path.** The trap found while doing
+      it: a first attempt put the env guard in one function and the `import()` in
+      another, and Rollup folds constants within a body but not across a
+      boundary — so the 208 kB chunk was emitted on every build even with no
+      credentials. Unreachable at runtime, but shipped. Recorded in
+      `math-blaster/CLAUDE.md`; do not refactor the duplicated guard away.
+- [x] **Sign-up policy decided: signups stay disabled.** They already were on the
+      project, which is the posture this item was going to recommend anyway — the
+      repo and project URL are both public, and `anon` being granted nothing is
+      what protects the data. Test users are created from the dashboard
+      (Authentication → Users → Add user, **"Auto Confirm User" ticked**); admin
+      creation bypasses the `signup_disabled` flag, which only gates the public
+      `/auth/v1/signup` endpoint. **Do not re-enable public signup to make
+      testing easier.**
+- [x] 5 new tests for `createLazyRemote`, including the two properties that
+      would otherwise fail silently months later: the load promise is memoized
+      (so a boot read and a first push share one fetch) but a *failure* is not
+      (so a player who booted offline can still sync when the connection
+      returns). 422 tests, up from 417.
 
----
+Left for whoever runs it: **two junk `auth.users` rows** (`blaster-test-a@`,
+`blaster-test-b@`) written directly by SQL rather than minted by GoTrue. They
+look confirmed and have password hashes, but their token columns are NULL so
+they cannot sign in — delete them from the dashboard before creating real test
+users, or you will debug the wrong user.
+
+### 1.7 ~~Prove it~~ — mostly DONE (2026-08-26), verified in Chrome
+
+Run against the real project with two dashboard-created users
+(`mathblastertest1@`, `mathblastertest2@`), signed in via
+`pixelMathBlaster.signIn(...)`.
+
+- [x] **`ensure_profile()` ran for real.** `profile_identities` 0 → 2, with
+      `subject` matching `auth.uid()` on both. That function had never executed
+      before.
+- [x] **Progression survives a reload.** Both users hold their own
+      `game_progress` row: `revision` 6, `furthest` 10, currency 8 / 13,
+      3 skills each. The guarded-update path ran five or six times per user
+      under real gameplay, not once.
+- [x] **The `currency == earnedTotal - spentTotal` invariant survived a round
+      trip** on both profiles (115 spent across 3 skills). This is the invariant
+      `CLAUDE.md` warns fails silently and locally, then reappears as free money
+      on the first merge.
+- [x] **RLS proven from the browser**, through the game's own client with a real
+      session — not by inspecting rows as the service role, which bypasses RLS
+      and proves nothing. Signed in as test2:
+
+      | table | rows in table | visible |
+      |---|---|---|
+      | `game_progress` | 3 | **1** |
+      | `profiles` | 3 | **1** |
+      | `profile_identities` | 2 | **`42501` denied** |
+      | `games` | 1 | readable ✅ |
+
+      The `profile_identities` denial is the deny-all posture from
+      `20260826113847_rls_and_grants.sql:43` confirmed even for the owner.
+- [x] **Found and fixed a bug only a live run could surface.** See the
+      `stableStringify` note in `math-blaster/CLAUDE.md`: the store compared
+      state with `JSON.stringify`, the codec emits keys in a different order from
+      `parse`, so every signed-in player pushed a redundant write on every boot.
+      Observed as `revision` 5 → 6 with byte-identical state. Fixed, with two
+      regression tests that genuinely fail without the fix (verified by
+      reverting), and the test codec now disagrees with itself on key order the
+      way the real one does. 423 tests.
+- [ ] **Offline mid-run is still untested.** DevTools → Network → Offline, play
+      through, confirm the run is uninterrupted and syncs on reconnect. This is
+      the `unavailable` → backoff → `online` listener path, which currently has
+      only unit coverage against the fake port. Not drivable from the browser
+      tooling available here — it needs the DevTools throttling UI by hand.
+- [x] ~~Delete the two junk `auth.users` rows.~~ Done. **The stated reason for
+      identifying them was wrong**, which is worth recording: they were supposed
+      to be recognisable by NULL GoTrue token columns, but that was true of all
+      four users including the two working ones. The real signals were
+      `last_sign_in_at IS NULL` and zero `profile_identities` rows, and the
+      delete was guarded on both so a mistyped address could not have taken a
+      real user. Nothing cascaded - `profiles` 3, `profile_identities` 2,
+      `game_progress` 3, `currency_balances` 1, all unchanged - which
+      incidentally proves in practice the invariant that **nothing
+      foreign-keys to `auth.users`**, the property meant to make the identity
+      provider swappable later without a data migration.
+
+      Still present and deliberately kept: one orphan profile (`48eabce6...`)
+      with no `profile_identities` row, so nothing can ever sign in as it. It
+      owns the `currency_balances` row and is the profile that demonstrated the
+      monotone-trigger clamps.
 
 ## Phase 1b — the run lands in one write
 

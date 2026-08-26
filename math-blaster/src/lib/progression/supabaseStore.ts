@@ -67,6 +67,32 @@ export interface SupabaseProgressionStoreOptions {
   onError?(where: string, error: unknown): void;
 }
 
+/**
+ * Deep equality by value, INDEPENDENT OF KEY ORDER.
+ *
+ * `JSON.stringify` was the obvious thing here and it was wrong. The codec's
+ * `parse` and `merge` build their objects with different literal key orders -
+ * Math Blaster's `parse` opens with `currency`, its `merge` opens with
+ * `earnedTotal` - so two semantically identical profiles stringified to
+ * different text, the "nothing to say" check never fired, and every signed-in
+ * player pushed a redundant write on EVERY BOOT. Harmless to the data because
+ * the triggers are monotone, but it burned a revision each time, which makes
+ * real conflict detection noisier, and it defeated the one property this guard
+ * exists to provide.
+ *
+ * Caught by watching a real boot bump `revision` 5 -> 6 with byte-identical
+ * state; the unit tests missed it because the test codec happened to emit its
+ * keys in the same order from both methods.
+ */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
+}
+
 export function createSupabaseProgressionStore(
   options: SupabaseProgressionStoreOptions
 ): ProgressionStore {
@@ -219,8 +245,9 @@ export function createSupabaseProgressionStore(
 
           // Push only if we actually know something the server does not.
           // Re-sending an identical payload would burn a request and a
-          // revision bump for nothing.
-          if (JSON.stringify(merged) !== JSON.stringify(incoming)) {
+          // revision bump for nothing. Compared by VALUE - see stableStringify:
+          // a string compare here silently pushed on every boot.
+          if (stableStringify(merged) !== stableStringify(incoming)) {
             outgoing = merged;
             schedulePush();
           }
