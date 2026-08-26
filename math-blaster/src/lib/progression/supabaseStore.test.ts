@@ -111,6 +111,8 @@ function fakeRemote(initial: RemoteSnapshot | null = null) {
       };
       return { outcome: 'written', revision };
     },
+    // Not exercised here - the store never submits runs, `runQueue` does.
+    submitRun: async () => ({ outcome: 'submitted' as const }),
   };
 
   return {

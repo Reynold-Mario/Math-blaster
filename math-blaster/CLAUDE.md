@@ -60,6 +60,11 @@ lib/progression/     THE PERSISTENCE SEAM, and the mastery one.
                     supabaseRemote.ts is the only file that imports
                     @supabase/*, which is what lets supabaseStore.test.ts run
                     under testEnvironment node with no network.
+                    runQueue.ts is the OTHER writer, and it is separate on
+                    purpose: a profile is merged state, a run is an append-only
+                    event. It persists a finished run BEFORE touching the
+                    network and owns the idempotency key submit_run() dedupes
+                    on.
 
 lib/runtime/         RuntimeState (resets every run) vs PlayerProfile (currency +
                     skill levels, PERSISTS across runs through lib/progression -
@@ -579,6 +584,22 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   duplicated in `isSupabaseConfigured()` (which `Game.svelte` needs
   synchronously) rather than shared: two folds in two bodies, not one helper.
   Do not "clean this up".
+- **A FINISHED RUN IS PERSISTED BEFORE THE NETWORK IS TOUCHED, AND ITS
+  IDEMPOTENCY KEY IS GENERATED ONCE.** Both halves are load-bearing and both
+  fail silently. Persisting first is what makes a closed tab survivable - the
+  run lands on the next boot; submitting first and saving only on failure would
+  lose exactly the runs a flaky connection makes most likely to fail. And the
+  key must travel with the run through every retry, because `submit_run()` is
+  unique on `(profile_id, idempotency_key)`: a fresh key per attempt turns the
+  server's dedupe into a no-op and doubles a child's practice record. That is
+  why `runQueue` owns the key rather than accepting one from the caller.
+  There are THREE submit outcomes, not two: `submitted` and `rejected` both drop
+  the run, `unavailable` keeps it. Without a terminal-failure outcome one
+  malformed run would retry forever and every later run would queue behind it.
+- **`bosses_defeated` counts the MASTERY route only.** Outlasting a boss's
+  survive clock is escaping it, not killing it - the economy already refuses to
+  pay bounty or run time for that, and the session row must not disagree with
+  the economy about what a defeat is.
 - **COMPARE PROGRESSION STATE BY VALUE, NEVER BY `JSON.stringify`.** The
   Supabase store decides whether to push by comparing the merge result against
   what the server sent. `JSON.stringify` looks right and is not: `profileCodec`'s
