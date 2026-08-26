@@ -461,12 +461,23 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   (`BOSS_MIN_SURVIVE_SEC`, currently the stated 30s minimum) or paying the
   survival route something - and the latter is the distinction the whole boss
   economy rests on, so it isn't available.
-- **Grades 4-12 are typed but unauthored.** `GRADE_ORDER` runs to 12;
-  `GRADE_TOPICS` only has K-3. The grade picker offers only grades with topics,
-  and `curriculumLadderForGrade` falls back to every authored curriculum for a
-  grade with none - a run with no problems in it is a far worse failure than a
-  run at the wrong difficulty. Adding a grade is a data addition to
-  `GRADE_TOPICS`; Grades 4-5 would also need fraction/decimal *generation*.
+- **Grades 4-12 are typed but unauthored, and THE FALLBACK AND THE CLAMP ARE
+  FOR DIFFERENT CALLERS.** `GRADE_ORDER` runs to 12; `GRADE_TOPICS` only has
+  K-3. `AUTHORED_GRADES` derives the difference and is the single predicate
+  both consumers read - the picker offers exactly those grades, and
+  `nearestAuthoredGrade()` maps onto them.
+  - A grade the **player picked** goes through `curriculumLadderForGrade`,
+    which falls back to every authored curriculum for a grade with none: a
+    run with no problems in it is a far worse failure than one at the wrong
+    difficulty.
+  - A grade **asserted from outside** goes through `nearestAuthoredGrade()`
+    first, which clamps to the hardest authored grade. The fallback is the
+    wrong answer here: it would open a Grade 7 player on Kindergarten
+    addition, which reads as broken rather than as aimed younger. It returns
+    `null` for anything unrecognised, meaning the local pick stands.
+  Adding a grade is still a pure data addition to `GRADE_TOPICS` - both the
+  ceiling and the picker are derived, so neither needs touching. Grades 4-5
+  would also need fraction/decimal *generation*.
 - **Gamepad isn't implemented.** `InputManager` has a doc-comment constraint
   (dedicated buttons per action category, never overloaded) for whenever it is.
 - **Base skill tree unlocks through five branch gates.** The free root reveals

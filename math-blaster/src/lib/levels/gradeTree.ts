@@ -149,6 +149,65 @@ export function findGradeTopicNode(id: string): SkillNode<GradeSkillEffect> | un
   return GRADE_TOPIC_NODES.find((n) => n.id === id);
 }
 
+/**
+ * The grades this game actually teaches, easiest first.
+ *
+ * Derived from `GRADE_TOPICS` rather than written down, so authoring a new
+ * grade stays the pure data addition the known-gaps note promises. Two
+ * consumers: the grade picker, which must not offer content that doesn't
+ * exist, and `nearestAuthoredGrade` below.
+ */
+export const AUTHORED_GRADES: GradeLevel[] = GRADE_ORDER.filter((g) => topicsForGrade(g).length > 0);
+
+/** Recognised ways of saying "past school", which is past every grade this
+ * game authors. Not a vocabulary this file invents - it is what an external
+ * source of grades tends to emit alongside the numbered ones. */
+const POST_SECONDARY: readonly string[] = ['college', 'adult'];
+
+/**
+ * Map a grade asserted by something OUTSIDE the game onto one it has maths
+ * for. `null` means "no usable opinion" - the player's own pick stands.
+ *
+ * **This exists because the every-curriculum fallback in
+ * `curriculumLadderForGrade` is the wrong answer for an asserted grade.**
+ * That fallback is right for a grade the player picked: a run with no
+ * problems in it is far worse than one at the wrong difficulty. But applied
+ * to an assertion it means a Grade 7 player is handed K-through-3 shuffled
+ * into a single ladder and opens on Kindergarten addition - which reads as
+ * the game being broken rather than as the game being aimed at younger
+ * children.
+ *
+ * So clamp instead. Landing a Grade 7 player on Grade 3 is an honest
+ * statement of a CONTENT gap: it is the hardest thing here, and it is the
+ * same answer every time rather than a mixture.
+ *
+ * Deliberately total and deliberately suspicious of its input - the value
+ * arrives from a service, so an unrecognised string must degrade rather
+ * than travel onward. `resolveGrade()` validates again downstream; that
+ * belt and braces is intentional, because between them sits everything
+ * that decides which maths a child is asked.
+ */
+export function nearestAuthoredGrade(value: string): GradeLevel | null {
+  const hardest = AUTHORED_GRADES[AUTHORED_GRADES.length - 1];
+  if (hardest === undefined) return null;
+  if (POST_SECONDARY.includes(value)) return hardest;
+
+  const rung = (GRADE_ORDER as string[]).indexOf(value);
+  if (rung < 0) return null;
+
+  // The highest authored grade at or below the one asked for - NOT simply
+  // "the value if it is below the ceiling", which would hand back an
+  // unauthored grade if `GRADE_TOPICS` ever had a hole in it and put us
+  // straight back into the fallback this function exists to avoid.
+  let best: GradeLevel | null = null;
+  for (const g of AUTHORED_GRADES) {
+    if (GRADE_ORDER.indexOf(g) <= rung) best = g;
+  }
+  // Below every authored grade (impossible while K is authored, but the
+  // ceiling is derived and K is not load-bearing) - the easiest we have.
+  return best ?? AUTHORED_GRADES[0];
+}
+
 // --- Curriculum ladders. This file already knew which curricula belong to
 // which grade; what it lacked was anyone asking. These two functions are
 // that question, and they're what stops a run drifting into maths the
