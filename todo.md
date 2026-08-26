@@ -551,9 +551,16 @@ changes in the same PR as 2.1.
       the protection rule in the same change, which is a repo-settings edit
       rather than a code one. Bundle it with 2.1, which adds the `Lint` job
       anyway.
-- [ ] **2.4** `.github/dependabot.yml`, using `eng-mcp-server`'s version: npm
-      weekly grouped by `dependency-type`, github-actions monthly,
-      `open-pull-requests-limit: 5`, `labels: [dependencies]`.
+- [x] **2.4** ~~`.github/dependabot.yml`~~ DONE (2026-08-26), modelled on
+      `eng-mcp-server`'s: npm weekly grouped by `dependency-type`,
+      github-actions monthly, `open-pull-requests-limit: 5`,
+      `labels: [dependencies]`.
+      One thing worth knowing: `directory` is **`/math-blaster`**, not `/`. The
+      game is a nested workspace and there is no root manifest, so `/` would
+      find nothing and Dependabot would quietly do nothing at all — a config
+      that looks correct and never fires. Revisit when `ROADMAP.md` PR 7 moves
+      the game under `games/` and adds a root `package.json`; that becomes a
+      root entry plus a `games/math-blaster` one.
 - [ ] **2.5** A migration-drift guard in CI, once 1.1 is settled — the automated
       version of the rule 1.1 writes down. Both student apps run one
       (`supabase-migration-drift.yml`); a PR-time dry-run plus a check that the
