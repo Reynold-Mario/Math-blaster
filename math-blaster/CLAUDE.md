@@ -42,6 +42,17 @@ lib/skills/         SkillTree.ts = generic, content-free engine (nodes, prereqs,
                     costPerLevel, purchase logic). baseSkillTree.ts = the concrete
                     combat/economy nodes. SkillTreeScreen.svelte = the shop UI.
 
+lib/identity/       WHO IS PLAYING, and a leaf like enemyArchetypes is.
+                    LearnerIdentity.ts is the PORT (types only - no fetch, no
+                    DOM, no import.meta.env, so anything above it stays
+                    testable under node); vtIdentity.ts is the ONLY file that
+                    knows Varsity Tutors exists and the only place
+                    `/learner/api/*` appears; vtIdentityClient.ts is the env
+                    gate, the only file reading VITE_VT_IDENTITY_BASE.
+                    An anonymous answer is the ORDINARY case - a standalone
+                    build, a signed-out player, an unreachable platform - and
+                    every one of them must land on exactly the local game.
+
 lib/progression/     THE PERSISTENCE SEAM, and the mastery one.
                     MasteryRecorder subscribes to gameEvents and tallies
                     per-topic attempts/correct for a run - a subscriber like
@@ -60,6 +71,14 @@ lib/progression/     THE PERSISTENCE SEAM, and the mastery one.
                     supabaseRemote.ts is the only file that imports
                     @supabase/*, which is what lets supabaseStore.test.ts run
                     under testEnvironment node with no network.
+                    platformGradeStore.ts composes OUTERMOST (localStorage ->
+                    supabase -> platformGrade) so a grade asserted by the
+                    platform outranks both the local picker and a merge
+                    arriving later. It emits through onRemote and NEVER calls
+                    put() - a background write is the race this seam exists to
+                    prevent. It cannot be an option on supabaseStore, which
+                    returns `inner` untouched when remote is null - precisely
+                    the configuration this ships in first.
                     runQueue.ts is the OTHER writer, and it is separate on
                     purpose: a profile is merged state, a run is an append-only
                     event. It persists a finished run BEFORE touching the
@@ -233,11 +252,17 @@ instead of events - stop, that's the exact coupling this structure exists to avo
   the hard end of G1 - and still never asks times tables. That is the
   grade-not-wave rule above doing its job, not this one failing.
 - **`resolveGrade()` in `gradeSource.ts` is the only place the grade is
-  decided**, and it exists to be swapped: the grade is meant to come from a
-  service that already knows it, and that function's body is all that should
-  change. Treat that future answer as untrusted the way the current one is -
-  validate against `GRADE_ORDER` and fall back to a real grade, never let an
-  unknown value reach the ladder.
+  decided**, and its body still has not needed to change - which was the
+  point. The platform's answer arrives the way its docstring predicted: the
+  store puts it on the profile (`platformGradeStore` ->
+  `profileCodec.applyPlatformGrade`) and `resolveGrade()` keeps validating it
+  against `GRADE_ORDER` exactly as before. Treat that answer as untrusted, and
+  note it passes THREE gates on the way in - `vtIdentity` drops a grade
+  outside the platform's vocabulary, `nearestAuthoredGrade()` drops one this
+  game has no maths for, and `resolveGrade()` validates again. That is
+  deliberate: between them sits every decision about which maths a child is
+  asked, and a run in an unauthored curriculum is a far worse failure than a
+  run at the wrong difficulty.
 - **`waveProgression.ts` is the only place a wave number becomes anything.**
   Formation, fall speed, concurrency, curriculum, boss, backdrop - all of it
   from `waveNumber`, all pure and deterministic. Wave 12 must be wave 12 every

@@ -798,8 +798,12 @@ file reading `VITE_VT_IDENTITY_BASE`, so no `.test.ts` can reach an `import.meta
 `isVtIdentityConfigured()` at construction the way it already gets
 `isSupabaseConfigured()`.
 
-*Verify:* with the var unset — **zero requests, unchanged bundle, byte-identical
-behaviour**. That is the ship default and the path that has to be boringly safe. Then
+*Verify:* with the var unset — **zero requests and byte-identical behaviour**, and the
+whole `vtIdentity` fetch path folds out of the bundle (`isVtIdentityConfigured` collapses
+to `return false`, so the `createVtIdentity` call is dead code). The wrapper itself is
+always constructed and does ship: measured **+2.37 kB / +0.84 kB gzip** on the main bundle,
+plus 0.25 kB of picker CSS. That is the ship default and the path that has to be boringly
+safe. Then
 grade `'2'` emits `selectedGrade: '2'`, `'7'` emits `'3'`, `null` emits *nothing at all*,
 and `current` stays readable synchronously before any promise settles.
 

@@ -23,8 +23,12 @@
     onPlay: () => void;
     onPurchase: (node: SkillNode<BaseSkillEffect>) => void;
     onSelectGrade: (grade: GradeLevel) => void;
+    /** The grade came from the platform, not from the player. The picker
+     * shows what it is and refuses to change it - see `gradeLocked` in
+     * `Game.svelte` for why offering the choice would be a lie. */
+    gradeLocked?: boolean;
   }
-  let { profile, onPlay, onPurchase, onSelectGrade }: Props = $props();
+  let { profile, onPlay, onPurchase, onSelectGrade, gradeLocked = false }: Props = $props();
 
   /** Only the grades that actually have maths authored for them. Grades 4-12
    * are typed but unauthored, so offering them would promise content that
@@ -424,23 +428,47 @@
   <div class="tree-footer">
     <div class="grade-picker">
       <span class="grade-label">Grade</span>
-      <div class="grade-options" role="radiogroup" aria-label="Which grade's maths to practise">
+      <div
+        class="grade-options"
+        class:locked={gradeLocked}
+        role="radiogroup"
+        aria-label="Which grade's maths to practise"
+      >
         {#each PLAYABLE_GRADES as grade}
           <button
             class="grade-btn"
             class:selected={profile.selectedGrade === grade}
             role="radio"
             aria-checked={profile.selectedGrade === grade}
+            disabled={gradeLocked}
             onclick={() => onSelectGrade(grade)}
           >{gradeLabel(grade)}</button>
         {/each}
       </div>
+      {#if gradeLocked}
+        <span class="grade-note">from your account</span>
+      {/if}
     </div>
     <button class="play-btn" onclick={onPlay}>Play ▶</button>
   </div>
 </div>
 
 <style>
+  .grade-options.locked .grade-btn {
+    cursor: default;
+    opacity: 0.55;
+  }
+  /* The chosen grade stays fully legible when locked - the point is to show
+     what it is, not to grey out the answer along with the controls. */
+  .grade-options.locked .grade-btn.selected {
+    opacity: 1;
+  }
+  .grade-note {
+    font-size: 0.5rem;
+    opacity: 0.6;
+    white-space: nowrap;
+  }
+
   .skill-tree-screen {
     display: flex;
     flex-direction: column;

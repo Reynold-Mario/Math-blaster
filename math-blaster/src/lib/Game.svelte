@@ -11,6 +11,8 @@
   import { isSupabaseConfigured, loadSupabaseRemote } from './progression/supabaseClient';
   import { createLazyRemote } from './progression/lazyRemote';
   import { createRunQueue } from './progression/runQueue';
+  import { createPlatformGradeStore } from './progression/platformGradeStore';
+  import { createConfiguredVtIdentity } from './identity/vtIdentityClient';
   import { resolveGrade } from './runtime/gradeSource';
   import { profileCodec, PROFILE_STORAGE_KEY } from './progression/profileCodec';
   import { createMasteryRecorder, type TopicDelta } from './progression/MasteryRecorder';
@@ -23,7 +25,7 @@
     skipCost,
     startsOnBoss,
   } from './runtime/runSetup';
-  import type { GradeLevel } from './levels/gradeTree';
+  import { nearestAuthoredGrade, type GradeLevel } from './levels/gradeTree';
   import { installSkillTreeDebugTools } from './runtime/devTools';
   import { purchaseNextInstallment, type SkillNode } from './skills/SkillTree';
   import type { BaseSkillEffect } from './skills/baseSkillTree';
@@ -60,9 +62,27 @@
   /** One remote, shared by the profile store and the run queue, so the client
    * chunk is fetched once rather than per consumer. */
   const remote = isSupabaseConfigured() ? createLazyRemote(loadSupabaseRemote) : null;
-  const store = createSupabaseProgressionStore({
-    cache: createLocalStorageStore({ keyFor: () => PROFILE_STORAGE_KEY }),
-    remote,
+  /**
+   * Who is playing, when the game was launched from a platform that knows.
+   * `null` in a standalone build, and an anonymous answer is the ordinary case
+   * even when it is not - so nothing below may depend on it.
+   */
+  const identity = createConfiguredVtIdentity(reportSyncError);
+  /**
+   * Outermost, so the platform's grade has the last word over both the local
+   * picker and a merge arriving from the network. Everything it does travels
+   * on `onRemote`, which is already gated on a safe phase below - a grade must
+   * not change underneath a run in progress.
+   */
+  const store = createPlatformGradeStore({
+    inner: createSupabaseProgressionStore({
+      cache: createLocalStorageStore({ keyFor: () => PROFILE_STORAGE_KEY }),
+      remote,
+      onError: reportSyncError,
+    }),
+    identity,
+    mapGrade: nearestAuthoredGrade,
+    onGranted: () => void (gradeLocked = true),
     onError: reportSyncError,
   });
   const progress = store.open(profileCodec);
@@ -88,6 +108,15 @@
    * leave the dev tools silently holding a detached copy.
    */
   let profile = $state<PlayerProfile>(progress.current);
+  /**
+   * Whether the grade came from the platform rather than from the player.
+   *
+   * The picker goes read-only when it did. Leaving it editable would let a
+   * child pick a grade, play, reload, and watch it snap back with no
+   * explanation - the platform re-asserts on every boot, so the control would
+   * be offering a choice it cannot keep.
+   */
+  let gradeLocked = $state(false);
   let countdownValue = $state(3);
   let muted = $state(isMuted());
   let finalScore = $state(0);
@@ -400,6 +429,7 @@
       onPlay={goToRunSetup}
       onPurchase={purchaseSkill}
       onSelectGrade={selectGrade}
+      {gradeLocked}
     />
   {:else if phase === 'runSetup'}
     <div class="boot">
