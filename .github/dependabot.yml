@@ -13,13 +13,17 @@ updates:
     # that field to `games/math-blaster/package.json` and updates the root
     # lockfile alongside it. One entry covers every workspace.
     #
-    # Do NOT point this at `/games/math-blaster`, and do not add a second entry
-    # for it. THERE IS NO LOCKFILE IN THAT DIRECTORY ANY MORE - only the root
-    # has one - so a job aimed there would bump the range in the workspace
-    # manifest and leave the lockfile untouched, and every Dependabot PR would
-    # fail `npm ci` with EUSAGE. A second entry alongside this one is worse
-    # still: both jobs bump the same dependency and burn the PR limit on
-    # duplicates. `todo.md` 2.4 predicted the two-entry shape; it was wrong.
+    # Do NOT add a per-workspace entry alongside this one. THERE IS NO LOCKFILE
+    # IN ANY WORKSPACE DIRECTORY - only the root has one - so a job aimed at
+    # `games/math-blaster` or `apps/web` would bump the range in that manifest
+    # and leave the lockfile untouched, and every Dependabot PR it opened would
+    # fail `npm ci` with EUSAGE. It is also how the two workspaces' shared
+    # devDependency ranges would drift apart, and they must not: `svelte`,
+    # `vite` and `typescript` are declared in both, and npm hoists ONE copy
+    # only while a single version satisfies both ranges. Bump one and not the
+    # other and you get two Svelte compilers and a class of bug nobody
+    # diagnoses from the symptom. `todo.md` 2.4 predicted a per-workspace
+    # entry; it was wrong.
     directory: /
     schedule:
       interval: weekly

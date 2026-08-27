@@ -1,7 +1,8 @@
 # Contributing to Pixel Blaster
 
 Thanks for your interest in contributing! This repository is an npm-workspace monorepo.
-The game lives in `games/math-blaster/`; every command below runs from the repo root.
+The game lives in `games/math-blaster/` and the catalog page in `apps/web/`; every command
+below runs from the repo root.
 
 ## Getting started
 
@@ -14,6 +15,7 @@ npm ci
 ## Development
 
 - `npm run dev` — start the game's Vite dev server
+- `npm run dev -w apps/web` — start the catalog page
 - `npm run build` — production build of every workspace
 - `npm run preview -w games/math-blaster` — preview a production build locally
 

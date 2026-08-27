@@ -1,6 +1,7 @@
 # Pixel Blaster
 
-A multi-game arcade, served from one site. Today it holds one game.
+A multi-game arcade, served from one site. Today it holds one game and a page that
+lists it.
 
 The game lives in [`games/math-blaster/`](./games/math-blaster) — see
 [its README](./games/math-blaster/README.md) for gameplay/feature details and
@@ -9,15 +10,20 @@ The game lives in [`games/math-blaster/`](./games/math-blaster) — see
 ## Layout
 
 ```
+apps/web/             the catalog page — what there is to play
 games/math-blaster/   the game
 supabase/             migrations and seed — platform-level, not a workspace
 ```
+
+Adding a game to the catalog is one entry in
+[`apps/web/src/games.ts`](./apps/web/src/games.ts); its href is derived from its id.
 
 npm workspaces, so every command runs from this directory:
 
 ```
 npm ci
 npm run dev      # the game's dev server
+npm run dev -w apps/web    # the catalog page
 npm run check    # svelte-check + tsc across every workspace
 npm test         # jest across every workspace
 npm run build    # production build of every workspace
