@@ -37,7 +37,7 @@ the Netlify deploy is approved. See
 | Eventual home | A path on the Varsity Tutors domain (`varsitytutors.com/games/<game>`) |
 | VT relationship | The student experience is a **read-only reference**; only this repo changes |
 | Player surface | Standalone site (not iframe-embedded), launched by full navigation |
-| Launch context | From the VT games catalog, by a learner who is **already signed in** |
+| Launch context | The VT games catalog at `/learner/games`, by an already-signed-in learner |
 | Who reads progress | The student only, for now |
 | Backend scope now | Local-first SDK, SQL migrations, **and a working Supabase prototype** |
 | Deploy scope now | **Held.** Netlify waits for approval; nothing else waits on Netlify |
@@ -65,6 +65,18 @@ On the standalone domain, `/` redirects to `/games/`. When `/games/*` is later p
 to this Netlify site, **every already-published URL still resolves** — no rebuild, no
 base-path change, no broken asset fetches. Building each game at
 `base: '/games/<slug>/'` from the start is what buys that, and it costs nothing today.
+
+**One thing to settle before PR 9, found late.** The platform's own convention is
+subject-scoped: `/math-games/<slug>` for nine of the catalog's 28 entries, and ten such
+prefixes in all (`/science-games/`, `/word-games/`, `/coding-games/`, and seven more) —
+only two entries sit outside the pattern. Nothing there occupies `/games/*`, which is the
+catalog *page*'s neighbourhood (`/learner/games`) rather than a game's.
+So the path this section promises never to change may not be the path the allocation
+grants. The cost is small but is exactly the cost this section exists to avoid: `base` is
+a build-time literal, so a different prefix means a rebuild and every published URL moving
+once. It arrives *before* PR 9 rather than after, which is the good case — settle the
+prefix as part of [upstream ask 2](#upstream-asks-the-student-experience), then write it
+here once.
 
 ### Why progression boot stays synchronous
 
@@ -139,6 +151,15 @@ Recorded so they are not re-proposed:
 - **Third-party auth against VT's own JWKS** — provably dead, not blocked: the student
   experience runs Better Auth with no `jwt` plugin, so there is no VT-issued token of any
   kind to validate.
+- **Copying `BETTER_AUTH_SECRET` into this game's deploy** — it is the HS256 key that
+  signs every session on `.varsitytutors.com`, so a copy here means anything that leaks
+  here can forge a session for any user of the platform. The reference's own
+  `.env.example` makes the argument, requiring a different secret per *environment* for
+  exactly this blast-radius reason; a different *application* is a wider version of the
+  same problem. And it would not even work: a valid signature proves a cookie was
+  *issued*, not that its session still exists, so the game would need the auth Postgres
+  URL as well. Forwarding the cookie to `get-session` needs neither.
+  See [invariant 18](#invariants).
 - **`auth.admin.generateLink` + `verifyOtp` to mint a real Supabase user** — works, and
   yields refresh tokens, but needs an `auth.users` row per child and therefore an email
   address, therefore a synthetic one that is a lie in a table someone will read. Worse
@@ -696,9 +717,55 @@ exists this code ships **inert**: an anonymous answer is the ordinary case and p
 exactly the game that shipped before identity existed. That is a deployment dependency,
 not a code one, which is why the code lands first.
 
+**The catalog cannot express any other shape**, which makes this a type error rather than
+a preference. `GameCatalogEntry.launchUrl` is typed to a root-relative path, and every
+entry is composed as `new URL(launchUrl, VT_HOST)` — so an off-origin `.netlify.app` URL
+neither type-checks nor survives composition. All 28 entries launch to a path on the VT
+origin; none points anywhere else.
+
 Note also what is *not* here: the student experience uses **Better Auth**, not Supabase
 auth, and deleted its own Supabase auth bridge — every server read there is service-role
 with explicit filters. **There is no browser `auth.uid()` to borrow.**
+
+### What the reference says, verified
+
+Measured against the checkout on 2026-08-27, so nobody re-derives it — and because two
+claims this track already made (no `jwt` plugin, and `/games` being a protected prefix)
+had been asserted rather than checked. The student experience is a read-only reference;
+none of this is ours to change.
+
+| Thing | Where | What it says |
+|---|---|---|
+| Better Auth | `lib/server/auth/index.ts` | Declared `^1.6.26`, installed **1.7.1** |
+| Plugins | same | `vtProvider()`, `admin()`, `sveltekitCookies()` — **no `jwt` plugin** |
+| Optional? | `lib/server/auth/impl.ts` | **No** — `getAuth()` is unconditional |
+| Session read | `/learner/api/auth/get-session` | Better Auth's own endpoint, via `[...auth]` |
+| Household read | `/learner/api/learners` | `{ learners: [...] }`; 401 signed out |
+| Learner DTO | `lib/server/learners/list.ts` | `id`, `name`, `grade?`, `avatarId`, `isPrimary`, `createdAt?` |
+| The gate | `auth/app-route-access.ts:51` | `/games` is in `PROTECTED_PAGE_PATH_PREFIXES` |
+| The catalog | `lib/games/catalog.ts` | 28 entries, `launchUrl` root-relative |
+| Active learner | `routes/learner/games/+page.server.ts` | `activeLearnerId` already in scope |
+| Local sign-in | `/learner/api/auth/dev-login` | Non-prod; sets `vt_authentication_token` |
+
+Five of those carry detail a table cannot hold:
+
+- **The bridge is gone.** `@varsitytutors/auth-supabase-bridge` is absent from both
+  `package.json` and `node_modules`, and `AUTH_IMPL` survives only in stale comments. So
+  Better Auth is *the* session layer rather than one of two, and the note above about
+  there being no browser `auth.uid()` to borrow is settled rather than provisional.
+- **`PROTECTED_PAGE_PATH_PREFIXES` is matched after SvelteKit strips the `/learner`
+  base**, which is why the entry reads `/games` — the gate claim at the top of this
+  track holds as written.
+- **PR 17 keeps three fields of the learner DTO and drops the rest.** `name` and
+  `avatarId` never reach this repo's types ([invariant 15](#invariants)).
+- **Upstream ask 1 is one line, not a feature** — the catalog page already holds the
+  active learner id and already passes it to `recordRecentGameLaunch`.
+- **Real local auth does not boot from the reference as checked out.**
+  `BETTER_AUTH_SECRET` is populated in its gitignored `.env`, but both
+  `AUTH_SUPABASE_DB_*` URLs are empty and `makeAuth()` throws on the second. Worth
+  knowing before planning to test Phase 2 against a local student experience: the var
+  to obtain is the pooled Postgres URL, **not** the signing key
+  ([invariant 18](#invariants)).
 
 ### Phase 1 — identity and grade
 
@@ -932,12 +999,21 @@ This repo cannot implement any of these. Listed so nobody re-derives them.
    nothing returns it, so the game can read the whole household but not the device's pick.
    Phase 1 ships without it at a cost of one boot at the wrong difficulty; **Phase 2 must
    not**, because there the cost is a permanent record on the wrong child.
-2. **Router path allocation for `/games/*`** to this game's deploy, plus the asset-origin
-   story — that app's own `paths.assets` plus a permissive `Access-Control-Allow-Origin`
-   on immutable assets is the precedent. **Both phases depend on this.**
+   **Verified to be one line**: `routes/learner/games/+page.server.ts` already returns
+   `activeLearnerId`, and `+page.svelte` already hands it to `recordRecentGameLaunch`
+   beside the href it composes.
+2. **A router path allocation for this game's deploy**, plus the asset-origin story —
+   that app's own `paths.assets` plus a permissive `Access-Control-Allow-Origin` on
+   immutable assets is the precedent. **Both phases depend on this**, and it is the one
+   ask with no workaround available from inside this repo.
+   **Which prefix is part of the ask.** This repo has been building toward
+   `/games/math-blaster/`; the platform's convention is subject-scoped
+   (`/math-games/<slug>`). Settle it here before PR 9 bakes it into a build-time literal —
+   see the route-shape rationale near the top of this file.
 3. *Optional:* enable Better Auth's `jwt` plugin there, so the exchange could verify a
    JWKS-signed token instead of calling `get-session`, and we could retire our own signing
-   key.
+   key. **Verified absent**, rather than assumed: the plugin list is `vtProvider()`,
+   `admin()`, `sveltekitCookies()`.
 
 ---
 
@@ -1179,6 +1255,14 @@ expensive, quiet consequences.
     new learner's row is how one sibling's currency lands on another's account; and that
     column exists to mean "something trusted asserted this", so a client that can write it
     can lie about it.
+18. **Never hold the platform's session-signing key, or its auth database URL.**
+    Verifying a session means *asking* the student experience — forwarding the request's
+    own `Cookie` header to `get-session` — never checking its cookie ourselves.
+    `BETTER_AUTH_SECRET` signs every session on `.varsitytutors.com`, and a local
+    signature check would not be sufficient anyway: validity lives in Postgres or in a
+    five-minute cookie cache, so checking it here either needs the auth database too or
+    trusts a stale snapshot. The only signing key this repo ever holds is the one it
+    generates for its own JWKS.
 
 ## Open questions for Varsity Tutors
 
@@ -1189,11 +1273,11 @@ change the architecture rather than just configuration:
 
 1. ~~**Can the platform mint a JWT with a custom `role: "authenticated"` claim?**~~
    **Answered: no, not today — and it stopped mattering.** The student experience runs
-   Better Auth 1.6.26 with no `jwt` plugin, so it issues session cookies and no JWT at
-   all. This used to "gate third-party auth entirely"; it does not, because we verify the
-   cookie server-side and sign our own token. Downgraded to an
-   [upstream ask](#upstream-asks-the-student-experience) that would let us retire our
-   signing key. See [Auth, when it comes](#auth-when-it-comes).
+   Better Auth (declared `^1.6.26`, installed 1.7.1) with no `jwt` plugin, so it issues
+   session cookies and no JWT at all. This used to "gate third-party auth entirely"; it
+   does not, because we verify the cookie server-side and sign our own token. Downgraded
+   to an [upstream ask](#upstream-asks-the-student-experience) that would let us retire
+   our signing key. See [Auth, when it comes](#auth-when-it-comes).
 2. ~~**Does it expose the student's grade level?**~~ **Answered: yes.**
    `GET /learner/api/learners` returns `grade` per learner, vocabulary
    `['K','1'..'12','college','adult']`. Note what this did *not* settle: the mismatch with
