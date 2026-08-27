@@ -228,7 +228,7 @@ pixel-blaster/                  repo root == Netlify base directory
 │   └── seed.sql                (PR 4) games + achievements rows; copy, not schema
 ├── dist/                       gitignored — the Netlify publish directory
 ├── games/
-│   └── math-blaster/           today's math-blaster/, unchanged
+│   └── math-blaster/           the game
 ├── apps/
 │   └── web/                    (PR 11) landing shell
 └── packages/
@@ -238,24 +238,34 @@ pixel-blaster/                  repo root == Netlify base directory
 workspace — which is why Track A can land it before the workspace move happens.
 ```
 
-Root `package.json`:
+Root `package.json`, **as shipped**:
 
 ```json
 {
   "name": "pixel-blaster", "private": true, "version": "0.0.0", "type": "module",
   "workspaces": ["apps/*", "games/*", "packages/*"],
   "scripts": {
-    "dev": "npm run dev --workspace apps/web",
+    "dev": "npm run dev --workspace games/math-blaster",
     "check": "npm run check --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "build": "node scripts/build-site.mjs"
+    "build": "npm run build --workspaces --if-present"
   },
   "engines": { "node": ">=22" }
 }
 ```
 
+**`dev` and `build` are placeholders, and the earlier draft of this block could not
+run.** It pointed `dev` at `apps/web` and `build` at `scripts/build-site.mjs`, neither of
+which exists until PRs 11 and 12 — and since CI runs `npm run build`, shipping that
+`build` line would have turned CI red the moment PR 7 landed. Each is repointed by the PR
+that creates the thing it names: PR 11 for `dev`, PR 12 for `build`. Until then the
+fan-out form is correct for one workspace and for several.
+
 `--workspaces` excludes the root, so a root script calling the same script name in each
-workspace does not recurse. `.nvmrc` at the root serves both `actions/setup-node` and
+workspace does not recurse. `--if-present` is what lets `packages/theme` (PR 10), which
+will have neither `check` nor `test`, sit alongside a workspace that has both — at the
+cost of a new silent-green mode, which is why the verification below asserts on the
+*counts* CI prints rather than on its exit code. `.nvmrc` at the root serves both `actions/setup-node` and
 Netlify's own version detection. The lockfile consolidates at the root; npm hoists, so
 `jest` / `vite` / `svelte-check` / `tsc` still resolve from inside `games/math-blaster`.
 
@@ -566,7 +576,7 @@ touches progression.
 
 ### Where the site stands
 
-A **manual drag-and-drop deploy of `math-blaster/dist` is live**, published 2026-08-27 outside
+A **manual drag-and-drop deploy of `games/math-blaster/dist` is live**, published 2026-08-27 outside
 this ladder. It is a preview, and four things about it are worth writing down, because every one
 of them looks like working software:
 
@@ -590,7 +600,7 @@ of them looks like working software:
   repo connection, so it cannot rebuild itself and the next deploy is another manual drag. PR 12
   is what replaces that.
 
-### - [ ] PR 7 — Move the game into an npm workspace
+### - [x] PR 7 — Move the game into an npm workspace
 
 The first restructure PR. **Zero source changes, zero behaviour changes** — `npm run check`
 and `npm test` produce identical output.
@@ -611,6 +621,23 @@ and `npm test` produce identical output.
 
 No tsconfig or jest edits are needed: every tsconfig path is relative to its own file,
 and `jest.config.cjs` uses `<rootDir>`, which defaults to the config file's directory.
+Verified against all four tsconfigs rather than assumed.
+
+**Two edits this list originally missed, both silent.** Recorded because the next move —
+into `packages/`, or a second game — hits the first one again:
+
+- **`vite.config.ts`'s `envDir` counts levels from the package.** It was `'..'`, which
+  resolved to the repo root while the game sat there and to `games/` after the move. No
+  env file lives in `games/`, so every `import.meta.env.VITE_*` would read `undefined`
+  and the game would fall back to local-only — the failure mode `vite.config.ts`'s own
+  comment already calls "exactly like working software". It is `'../..'` now, and
+  `CLAUDE.md`'s convention entry says so too.
+- **The root `build` script cannot be `node scripts/build-site.mjs` yet.** That script is
+  PR 12's deliverable and CI runs `npm run build`, so the block below would have turned
+  CI red on arrival. It ships as `npm run build --workspaces --if-present`, which is
+  correct for one workspace and for several; PR 12 replaces it.
+
+`dev` likewise points at the game rather than `apps/web` until PR 11 creates that.
 
 > **Do not rename the `math-blaster` package.** `--workspace games/math-blaster` addresses
 > it by path regardless, so renaming is pure churn.
@@ -619,7 +646,14 @@ and `jest.config.cjs` uses `<rootDir>`, which defaults to the config file's dire
 > [Invariants](#invariants).
 
 *Verify:* `npm ci` at the root, then `npm run check --workspaces` and
-`npm run test --workspaces`. 18 test files, 0 errors, 0 warnings.
+`npm run test --workspaces`. Measured on `main` immediately before the move, and
+unchanged after it: **175 files, 0 errors, 0 warnings**, and **27 of 28 suites,
+491 passed / 492 (1 skipped)**. The "18 test files" this line used to claim was stale.
+
+The `envDir` fix needs its own check, because a broken one is invisible in a passing
+build. `npm run build -w games/math-blaster` with the root `.env.local` present emits
+**four** chunks including a ~208 kB Supabase side chunk; move the env file aside and it
+emits **three**, with `@supabase` dropped entirely. That difference is the whole signal.
 
 ### - [x] PR 8 — Run the production build in CI
 
@@ -826,7 +860,7 @@ Five of those carry detail a table cannot hold:
 Reads who is playing and what grade they are in. Depends on nothing being built anywhere
 else, and touches no Supabase.
 
-### - [ ] PR 17 — The identity port, and the one file that knows VT exists
+### - [x] PR 17 — The identity port, and the one file that knows VT exists
 
 `lib/identity/`: `LearnerIdentity.ts` is the PORT (types only — no `fetch`, no DOM, no
 `import.meta.env`), `vtIdentity.ts` the sole implementation. Exactly the split
@@ -857,7 +891,7 @@ id, an unreadable household, 401, a signed-out 200, HTML-instead-of-JSON, an off
 reject, an empty household, an unknown grade, memoization, and the no-fetch backstop.
 `npm run build` — main bundle unchanged.
 
-### - [ ] PR 18 — `nearestAuthoredGrade()` in `gradeTree.ts`
+### - [x] PR 18 — `nearestAuthoredGrade()` in `gradeTree.ts`
 
 The platform's vocabulary is wider than the game's: it emits `'K'|'1'..'12'|'college'|
 'adult'`, and `GRADE_TOPICS` only reaches grade 3.
@@ -873,7 +907,7 @@ Lives in `gradeTree.ts` rather than in `identity/` because it is a question abou
 curriculum, and `SkillTreeScreen.svelte` already computes the same
 `topicsForGrade(g).length > 0` predicate for `PLAYABLE_GRADES`. **The ceiling is derived
 from `GRADE_TOPICS`, never hardcoded**, so authoring grade 4 stays the pure data addition
-`math-blaster/CLAUDE.md`'s known-gaps section promises it is.
+`games/math-blaster/CLAUDE.md`'s known-gaps section promises it is.
 
 Returns `null` for anything unrecognised — the platform has no usable opinion, and the
 local pick stands.
@@ -882,7 +916,7 @@ local pick stands.
 test that any non-null result is a grade with non-empty `topicsForGrade`, so authoring
 grade 4 later cannot break it silently.
 
-### - [ ] PR 19 — The platform grade reaches a run
+### - [x] PR 19 — The platform grade reaches a run
 
 `platformGradeStore.ts`, composed **outermost**:
 
@@ -928,7 +962,7 @@ safe. Then
 grade `'2'` emits `selectedGrade: '2'`, `'7'` emits `'3'`, `null` emits *nothing at all*,
 and `current` stays readable synchronously before any promise settles.
 
-### - [ ] PR 20 — Storage is scoped to the learner
+### - [x] PR 20 — Storage is scoped to the learner
 
 `pixelMathBlaster.profile.v1` and `pixelMathBlaster.pendingRuns.v1` are one slot per
 **browser**. Two children on one tablet share currency, skills, and each other's queued

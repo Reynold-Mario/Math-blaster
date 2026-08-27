@@ -5,9 +5,22 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    # The game is a nested workspace, not the repo root. `/` here would find no
-    # manifest and Dependabot would silently do nothing.
-    directory: /math-blaster
+    # `/`, and the reason INVERTED when the workspace move landed.
+    #
+    # This used to read `/math-blaster` because there was no root manifest, so
+    # `/` would have found nothing and Dependabot would have quietly done
+    # nothing at all. The root now declares `workspaces`, so Dependabot follows
+    # that field to `games/math-blaster/package.json` and updates the root
+    # lockfile alongside it. One entry covers every workspace.
+    #
+    # Do NOT point this at `/games/math-blaster`, and do not add a second entry
+    # for it. THERE IS NO LOCKFILE IN THAT DIRECTORY ANY MORE - only the root
+    # has one - so a job aimed there would bump the range in the workspace
+    # manifest and leave the lockfile untouched, and every Dependabot PR would
+    # fail `npm ci` with EUSAGE. A second entry alongside this one is worse
+    # still: both jobs bump the same dependency and burn the PR limit on
+    # duplicates. `todo.md` 2.4 predicted the two-entry shape; it was wrong.
+    directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5

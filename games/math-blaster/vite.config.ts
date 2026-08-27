@@ -5,7 +5,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte'
 export default defineConfig({
   plugins: [svelte()],
   /**
-   * Env files live at the REPO ROOT, one level up, not in this workspace.
+   * Env files live at the REPO ROOT, two levels up, not in this workspace.
    *
    * ROADMAP.md puts `.env.local` there because `supabase/` is platform-level
    * and the credentials are shared by anything that talks to it, not owned by
@@ -13,6 +13,10 @@ export default defineConfig({
    * `import.meta.env.VITE_*` reads as `undefined` - which the Supabase client
    * treats as "not configured" and falls back to local-only. That failure
    * looks exactly like working software, so it is worth a comment.
+   *
+   * THE DEPTH IS LOAD-BEARING AND HAS MOVED ONCE. It was `'..'` while the game
+   * sat at the repo root; the workspace move made that resolve to `games/`,
+   * which holds no env file. A future move has to count again.
    */
-  envDir: '..',
+  envDir: '../..',
 })

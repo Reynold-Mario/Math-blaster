@@ -1,0 +1,20 @@
+{
+  "name": "pixel-blaster",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "games/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace games/math-blaster",
+    "build": "npm run build --workspaces --if-present",
+    "check": "npm run check --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

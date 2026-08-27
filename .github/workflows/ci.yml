@@ -32,10 +32,6 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-defaults:
-  run:
-    working-directory: math-blaster
-
 jobs:
   test:
     # THE NAME IS LOAD-BEARING. "Build, Check & Test" is the required status
@@ -53,9 +49,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version-file: math-blaster/.nvmrc
+          node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: math-blaster/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -68,11 +64,16 @@ jobs:
       # Svelte compile error that tsc is happy with. It runs first because it is
       # the cheapest way to fail - no point type-checking code that cannot be
       # bundled.
+      #
+      # `--workspaces` excludes the root, so a root script calling the same
+      # script name in each workspace does not recurse. `--if-present` is what
+      # lets a workspace with no `test` (the landing page, when it arrives)
+      # sit alongside one that has them, instead of failing the run.
       - name: Build
-        run: npm run build
+        run: npm run build --workspaces --if-present
 
       - name: Type-check (svelte-check + tsc)
-        run: npm run check
+        run: npm run check --workspaces --if-present
 
       - name: Run tests
-        run: npm test -- --ci
+        run: npm run test --workspaces --if-present -- --ci

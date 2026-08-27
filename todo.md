@@ -30,7 +30,7 @@ RLS policies, and the monotone triggers.
 **Already good, do not redo:** ~401 unit tests, strict TS with zero
 `@ts-ignore`, zero TODO markers, no committed secrets, `.nvmrc`-driven CI,
 `package-lock.json` v3, colocated tests, imperative commit messages, and two
-documents (`math-blaster/CLAUDE.md`, `ROADMAP.md`) that record rejected
+documents (`games/math-blaster/CLAUDE.md`, `ROADMAP.md`) that record rejected
 alternatives.
 
 **The Supabase project exists:** `svelte-games-met-st`, ref
@@ -326,7 +326,7 @@ nothing. But the moment credentials ship, ~54 kB gzip lands on the critical path
 of a children's game. **A dynamic `import()` behind sign-in should happen as
 part of 1.6, not later** — and the guards must keep testing
 `import.meta.env` values directly, because a check the optimiser cannot see puts
-the whole cost back silently. Recorded in `math-blaster/CLAUDE.md`.
+the whole cost back silently. Recorded in `games/math-blaster/CLAUDE.md`.
 
 ### 1.6 ~~Dev-only sign-in~~ — DONE (2026-08-26)
 
@@ -366,7 +366,7 @@ the whole cost back silently. Recorded in `math-blaster/CLAUDE.md`.
       another, and Rollup folds constants within a body but not across a
       boundary — so the 208 kB chunk was emitted on every build even with no
       credentials. Unreachable at runtime, but shipped. Recorded in
-      `math-blaster/CLAUDE.md`; do not refactor the duplicated guard away.
+      `games/math-blaster/CLAUDE.md`; do not refactor the duplicated guard away.
 - [x] **Sign-up policy decided: signups stay disabled.** They already were on the
       project, which is the posture this item was going to recommend anyway — the
       repo and project URL are both public, and `anon` being granted nothing is
@@ -418,7 +418,7 @@ Run against the real project with two dashboard-created users
       The `profile_identities` denial is the deny-all posture from
       `20260826113847_rls_and_grants.sql:43` confirmed even for the owner.
 - [x] **Found and fixed a bug only a live run could surface.** See the
-      `stableStringify` note in `math-blaster/CLAUDE.md`: the store compared
+      `stableStringify` note in `games/math-blaster/CLAUDE.md`: the store compared
       state with `JSON.stringify`, the codec emits keys in a different order from
       `parse`, so every signed-in player pushed a redundant write on every boot.
       Observed as `revision` 5 → 6 with byte-identical state. Fixed, with two
@@ -507,11 +507,11 @@ The largest gap after the database. There is **no linter and no formatter**, and
 changes in the same PR as 2.1.
 
 - [ ] **2.1** ESLint + Prettier, mirroring `the-student-experience`.
-      `math-blaster/eslint.config.js`: flat config with `js`/`ts`/`svelte`
+      `games/math-blaster/eslint.config.js`: flat config with `js`/`ts`/`svelte`
       recommended, `eslint-config-prettier`, `svelte.configs.prettier`, TSE's
       `includeIgnoreFile('.gitignore')` trick, `no-console: error` with commented
       path exemptions, and `parserOptions.projectService: true` on `**/*.svelte`.
-      `math-blaster/prettier.config.js`: TSE's exact settings — `useTabs: true`,
+      `games/math-blaster/prettier.config.js`: TSE's exact settings — `useTabs: true`,
       `singleQuote: true`, `trailingComma: 'none'`, `printWidth: 100`, plus
       `prettier-plugin-svelte`.
       Skip TSE's `no-restricted-globals: fetch` (no server here) and its
@@ -555,12 +555,15 @@ changes in the same PR as 2.1.
       `eng-mcp-server`'s: npm weekly grouped by `dependency-type`,
       github-actions monthly, `open-pull-requests-limit: 5`,
       `labels: [dependencies]`.
-      One thing worth knowing: `directory` is **`/math-blaster`**, not `/`. The
-      game is a nested workspace and there is no root manifest, so `/` would
-      find nothing and Dependabot would quietly do nothing at all — a config
-      that looks correct and never fires. Revisit when `ROADMAP.md` PR 7 moves
-      the game under `games/` and adds a root `package.json`; that becomes a
-      root entry plus a `games/math-blaster` one.
+      `directory` was **`/math-blaster`**, because there was no root manifest and
+      `/` would have found nothing — a config that looks correct and never fires.
+      `ROADMAP.md` PR 7 has since landed and **inverted that**: `directory` is now
+      `/`, where both the `workspaces` field and the only lockfile live.
+      This item predicted "a root entry plus a `games/math-blaster` one" and that
+      was wrong on both halves. There is no lockfile beside the workspace manifest,
+      so a job aimed there bumps a range and leaves the lockfile behind, failing
+      `npm ci` on every PR it opens; and two entries would duplicate each bump
+      against a 5-PR limit. One entry at `/` covers every workspace.
 - [ ] **2.5** A migration-drift guard in CI, once 1.1 is settled — the automated
       version of the rule 1.1 writes down. Both student apps run one
       (`supabase-migration-drift.yml`); a PR-time dry-run plus a check that the
@@ -577,7 +580,7 @@ changes in the same PR as 2.1.
 
 - [ ] **3.1** Migrate Jest → Vitest. Enables 3.2, matches both student apps, and
       deletes the `tsconfig.jest.json` workaround plus the constraint recorded in
-      `math-blaster/CLAUDE.md` that *"an asset import in any `.ts` under `src/`
+      `games/math-blaster/CLAUDE.md` that *"an asset import in any `.ts` under `src/`
       breaks `npm test`"* — Vitest runs through the Vite pipeline, so that stops
       being true. It will also **delete `tsconfig.jest.json`
       outright**, which is the config PR #28 just fixed. (An earlier draft of
@@ -604,7 +607,7 @@ changes in the same PR as 2.1.
       `tick(runtime, profile, dt)` at `src/lib/Game.svelte:281` and no
       `window.onerror`. One throw inside the rAF loop freezes the game with no
       message and no signal — the worst possible failure for a seven-year-old, and
-      the one `math-blaster/CLAUDE.md` already warns is easy to misdiagnose (a
+      the one `games/math-blaster/CLAUDE.md` already warns is easy to misdiagnose (a
       throttled background tab looks identical). Add an `error` member to the
       `GamePhase` union in `src/lib/types.ts`, catch around the tick, cancel the
       loop, render a plain "something went wrong — play again" panel, and wire the
@@ -633,7 +636,7 @@ changes in the same PR as 2.1.
 
 ## Phase 4 — Docs and conventions
 
-- [ ] **4.1** Add a root `CLAUDE.md`. There is only `math-blaster/CLAUDE.md` today.
+- [ ] **4.1** Add a root `CLAUDE.md`. There is only `games/math-blaster/CLAUDE.md` today.
       Follow TSE's progressive disclosure: root holds repo-wide rules only (lint
       policy, zero suppressions, the migration rule from 1.1, commit conventions,
       a pointer to this file), and the nested file keeps owning game architecture.
@@ -649,7 +652,7 @@ changes in the same PR as 2.1.
       first-class, and adopt TSE's **`PONYTAIL-DEBT.md`** ledger for tracked
       shortcuts, since it is grep-regenerable from `ponytail:` source comments and
       so cannot rot the way a hand-maintained list does. The "Known gaps" section
-      of `math-blaster/CLAUDE.md` is already that file in everything but name.
+      of `games/math-blaster/CLAUDE.md` is already that file in everything but name.
 
 ---
 
@@ -710,7 +713,7 @@ Not "later"; **blocked**. Do not start these.
 - **Coverage thresholds.** **None of the four reference repos sets one.** SOO uses
   mutation testing and suppression ratchets; TSE uses `requireAssertions` plus SQL
   contract tests. Adding one here would be a divergence, not an improvement.
-- **Retuning any balance number.** `math-blaster/CLAUDE.md` documents these as
+- **Retuning any balance number.** `games/math-blaster/CLAUDE.md` documents these as
   measured against `balanceSim.ts` and interacting with each other; the grade-K
   boss-economy regression is a known, deliberately-unpatched decision with a
   stated fix route (a curriculum exception, not a boss-knob retune). Not a
@@ -729,11 +732,12 @@ Not "later"; **blocked**. Do not start these.
 1. **Does the game ship inside an authenticated shell, or standalone?** Decides
    whether the telemetry relay is load-bearing on day one, and whether
    `resolveGrade()` gets a real grade service in this scope (1.6) or later.
-2. **`ROADMAP.md` PR 7 moves the game into an npm workspace under `apps/`.**
-   Should Phase 2's tooling be authored at the repo root (anticipating that) or
-   inside `math-blaster/` and moved later? This file assumes
-   `math-blaster/`-scoped configs with root-level CI, matching today's layout.
-   Root-first is less churn if PR 7 is near-term.
+2. ~~**`ROADMAP.md` PR 7 moves the game into an npm workspace under `apps/`.**
+   Should Phase 2's tooling be authored at the repo root or inside
+   `math-blaster/`?~~ **Answered: root.** PR 7 has landed. It moved the game to
+   `games/math-blaster/` — not `apps/`, which this question had wrong — and CI,
+   the lockfile and the fan-out scripts all now live at the repo root. Author
+   Phase 2's tooling there.
 3. **Is the first ship one game or the catalog?** If it is genuinely just Math
    Blaster, `ROADMAP.md` PRs 7, 10, 11 and 16 can all be deferred past launch.
 4. **Who owns this in production?** Needed for CODEOWNERS, the Netlify site owner,
