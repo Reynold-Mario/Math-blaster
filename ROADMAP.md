@@ -34,7 +34,7 @@ the Netlify deploy is approved. See
 |---|---|
 | Repo layout | Monorepo, npm workspaces |
 | Serving | One Netlify site, path routing |
-| Eventual home | A path on the Varsity Tutors domain (`varsitytutors.com/games/<game>`) |
+| Eventual home | A path inside the student experience (`varsitytutors.com/learner/games/<game>`) |
 | VT relationship | The student experience is a **read-only reference**; only this repo changes |
 | Player surface | Standalone site (not iframe-embedded), launched by full navigation |
 | Launch context | The VT games catalog at `/learner/games`, by an already-signed-in learner |
@@ -47,36 +47,48 @@ the Netlify deploy is approved. See
 | Achievement copy | Lives in code, like the game catalog. The DB stores unlocks only |
 | Highscore shape | **A personal best, and nothing else.** No leaderboard, global or scoped |
 
-### Why the route shape is `/games/<slug>/` from day one
+### Why the route shape is `/learner/games/<slug>/` from day one
 
 The intended long-term home is a **path** on the VT domain, and
 [Track D](#track-d--vt-identity) turns out to *require* it — the platform's cookies are
 `SameSite=Lax`, so identity only works same-origin. The site still has to ship standalone
-first. So the URL shape is chosen once,
-now, and never changes:
+first. So the URL shape is chosen once, now, and never changes:
 
 ```
-/games/                  the catalog
-/games/math-blaster/     a game
-/games/<next>/           the next game
+/learner/games/math-blaster/     a game — this deploy, standalone and proxied alike
+/learner/games/<next>/           the next game
+/learner/games/                  the platform's catalog — theirs, not ours
+/                                the standalone catalog — preview only
 ```
 
-On the standalone domain, `/` redirects to `/games/`. When `/games/*` is later proxied
-to this Netlify site, **every already-published URL still resolves** — no rebuild, no
-base-path change, no broken asset fetches. Building each game at
-`base: '/games/<slug>/'` from the start is what buys that, and it costs nothing today.
+**Settled: the prefix is `/learner/games/`, inside the student experience's own subtree.**
+It was briefly open. This repo had been assuming `/games/*`, and the platform turns out
+not to use that at all — its existing games are subject-scoped (`/math-games/<slug>` for
+nine of its 28 catalog entries, ten such prefixes in all), so the prefix being assumed was
+never going to be granted. The student experience will be updated to serve this shape;
+that work is theirs and comes later. What matters here is that `base` is settled *before*
+PR 9 turns it into a build-time literal.
 
-**One thing to settle before PR 9, found late.** The platform's own convention is
-subject-scoped: `/math-games/<slug>` for nine of the catalog's 28 entries, and ten such
-prefixes in all (`/science-games/`, `/word-games/`, `/coding-games/`, and seven more) —
-only two entries sit outside the pattern. Nothing there occupies `/games/*`, which is the
-catalog *page*'s neighbourhood (`/learner/games`) rather than a game's.
-So the path this section promises never to change may not be the path the allocation
-grants. The cost is small but is exactly the cost this section exists to avoid: `base` is
-a build-time literal, so a different prefix means a rebuild and every published URL moving
-once. It arrives *before* PR 9 rather than after, which is the good case — settle the
-prefix as part of [upstream ask 2](#upstream-asks-the-student-experience), then write it
-here once.
+Two consequences, one of them a real loss:
+
+- **Identity gets easier, not harder.** The game now sits beside the endpoints it reads:
+  from this game's path, `/learner/api/auth/get-session` is a sibling on the same origin.
+  `VITE_VT_IDENTITY_BASE` is already documented as `/learner`, and `vtIdentity.ts` already
+  composes `${base}/api/...` and already sends `credentials: 'include'` — so Phase 1 needs
+  **no change** to work under this decision.
+- **Our own catalog page is shadowed.** `/learner/games` is the *platform's* catalog, and
+  it is the one a child actually reaches. The standalone catalog in PR 11 is therefore a
+  preview surface rather than a destination — live on the standalone domain, unreachable
+  once proxied. Worth knowing before building much of it.
+
+Only the *games* claim a fixed path. The standalone catalog stays at `/`: it is the one
+surface with no proxied counterpart, so there is nothing for it to match. Building each
+game at `base: '/learner/games/<slug>/'` from the start is what makes the proxy a no-op —
+**every already-published game URL still resolves**, with no rebuild, no base-path change
+and no broken asset fetches. A `/learner` prefix on a standalone site with no learner
+concept is cosmetically odd and costs nothing. A *different* prefix per deploy target
+would cost two artifacts, because `base` is a build-time literal and the built HTML
+carries absolute asset paths.
 
 ### Why progression boot stays synchronous
 
@@ -167,9 +179,12 @@ Recorded so they are not re-proposed:
   stops being the learner id and the one-line provider swap becomes a rewrite.
 - **A shared-secret custom JWT handed to `setSession`** — no refresh path, so a 45-minute
   run outlives its token, and Supabase is moving off shared-secret verification.
-- **An auth gate inside the game** — `/games` is already in the student experience's
-  `PROTECTED_PAGE_PATH_PREFIXES`, so an unauthenticated visitor is bounced to login before
-  a game is ever launched. A second gate would be a second thing to get wrong.
+- **An auth gate inside the game** — an anonymous player is the *ordinary* case, not an
+  error: a standalone build, a signed-out player and an unreachable platform must all land
+  on exactly the local game. A gate would turn the design's default state into a failure.
+  (This bullet used to rest on the platform's own gate covering the game, which
+  [it does not](#track-d--vt-identity) once this deploy serves the path — the conclusion
+  survives the correction, the reason did not.)
 - **Anonymous Supabase sessions for the prototype** — every browser mints a billable MAU,
   and it creates a profile-merge problem the prototype would otherwise never have.
   Superseded rather than reversed: see
@@ -587,29 +602,30 @@ first contact. Isolated, that is a three-line fix; bundled, it blocks the restru
 
 *Verify:* CI green, with the build step visibly executing.
 
-### - [ ] PR 9 — Serve the game under `/games/math-blaster/`
+### - [ ] PR 9 — Serve the game under `/learner/games/math-blaster/`
 
 ```ts
 // games/math-blaster/vite.config.ts
-base: '/games/math-blaster/',
+base: '/learner/games/math-blaster/',
 ```
 
 `import.meta.env.BASE_URL` is a build-time literal substitution, so `spriteAtlas.ts`'s
-`ASSET_BASE` becomes `/games/math-blaster/sprites/` on its own, and Vite copies `public/`
-to the root of `outDir`. **No application code changes.**
+`ASSET_BASE` becomes `/learner/games/math-blaster/sprites/` on its own, and Vite
+copies `public/` to the root of `outDir`. **No application code changes.**
 
 Standalone because this is the highest-risk change to the game and its failure mode is
 *silent*: when a sprite fails to decode, `spriteAtlas` falls back to drawing a plain
 silhouette rather than raising anything. A broken base path looks like a subtle art bug.
 
 *Verify:* `npm run build -w games/math-blaster && npm run preview -w games/math-blaster`,
-then open `/games/math-blaster/`.
+then open `/learner/games/math-blaster/`.
 - Network: nine `*.apng`, the favicon, and the hashed JS all return 200. Zero 404s.
 - Console: **no `[sprites]` output at all**. This is the check that matters.
 - Visually: enemies are pixel art, not grey rectangles.
 
 `/` returning 404 under preview is expected until PR 12. Note in the game's README that
-the dev URL is now `localhost:5173/games/math-blaster/` — this will confuse someone.
+the dev URL is now `localhost:5173/learner/games/math-blaster/` — this will confuse
+someone.
 
 ### - [ ] PR 10 — Extract the colour palette into `packages/theme`
 
@@ -639,15 +655,15 @@ deliberately discovers games by globbing `games/*` instead.
 ### - [ ] PR 12 — Assemble and deploy the site to Netlify
 
 `scripts/build-site.mjs` builds `apps/web` into a **fresh root `dist/`**, then builds each
-`games/*` into `dist/games/<id>/`.
+`games/*` into `dist/learner/games/<id>/`.
 
 > Assemble into a root `dist/`, **not** into `apps/web/dist/`. Vite's `emptyOutDir` wipes
 > that directory on every build, so nesting the games inside it would make correctness
 > depend on build order.
 
 After each game builds, the script asserts that every absolute `src`/`href` in its
-`index.html` starts with `/games/<id>/`, and throws with the fix in the message. This
-turns the most likely deploy failure into a build-time error.
+`index.html` starts with `/learner/games/<id>/`, and throws with the fix in the
+message. This turns the most likely deploy failure into a build-time error.
 
 ```toml
 [build]
@@ -655,19 +671,20 @@ turns the most likely deploy failure into a build-time error.
   publish = "dist"
 ```
 
-Cache headers: `/assets/*` is Vite-hashed and can be `immutable`. **`/games/*/sprites/*`
-must not be** — those keep their authored filenames and `npm run sprites` rewrites them
-in place, so immutable caching would ship stale art forever.
+Cache headers: `/assets/*` is Vite-hashed and can be `immutable`.
+**`/learner/games/*/sprites/*` must not be** — those keep their authored filenames
+and `npm run sprites` rewrites them in place, so immutable caching would ship stale art
+forever.
 
 No `_redirects` and no SPA fallback: neither app has a client router, and Netlify
 normalizes a missing trailing slash on its own.
 
 Also lands a thin root `CLAUDE.md` covering platform-level rules only.
 
-*Verify:* `npm run build` at the root, serve `dist/`, and walk `/` → `/games/` →
-`/games/math-blaster/`, playing a wave. Confirm `/games/math-blaster` without the trailing
-slash redirects rather than 404s. Break the `base` in a scratch commit and confirm the
-assembly script throws.
+*Verify:* `npm run build` at the root, serve `dist/`, and walk `/` →
+`/learner/games/math-blaster/`, playing a wave. Confirm `/learner/games/math-blaster`
+without the trailing slash redirects rather than 404s. Break the `base` in a scratch
+commit and confirm the assembly script throws.
 
 ### Deferred
 
@@ -692,9 +709,17 @@ Not deferred, **declined**: a leaderboard. It is not waiting on a dependency —
 
 The game is launched from the Varsity Tutors games catalog by a learner who is **already
 signed in**: `/games` sits in that app's `PROTECTED_PAGE_PATH_PREFIXES`, so an
-unauthenticated visitor is bounced to login before any game is reached. **This game
+unauthenticated visitor is bounced to login before the catalog renders. **This game
 therefore gates nothing.** What it needs is not a login screen but an answer to *who is
 this, and what grade are they in*.
+
+**That gate covers the catalog, not this game's URL** — worth being exact about, because
+the route decision makes it easy to assume otherwise. Once this game's path is served by
+this deploy, that app's `hooks.server.ts` never runs for it, so a signed-out visitor
+typing the URL directly reaches the game rather than a login page. That is not a hole:
+identity resolves to anonymous and they get exactly the local game, which is the ordinary
+case. It is only a reason never to describe the platform's gate as the thing protecting
+this game.
 
 Everything in this track happens in **this** repo. The student experience is a read-only
 reference; what it would need is written down under
@@ -939,17 +964,23 @@ row.
 
 ### - [ ] PR 22 — The session and JWKS functions
 
-A **Netlify Function in the game's own deploy** at `/games/api/session`, because the
-cookies are first-party to `varsitytutors.com` and only a same-origin endpoint ever
-receives them. **This is why it cannot be a Supabase Edge Function** — nothing on
-`*.supabase.co` is ever sent them.
+A **Netlify Function in the game's own deploy** at
+`/learner/games/math-blaster/api/session`, because the cookies are first-party to
+`varsitytutors.com` and only a same-origin endpoint ever receives them. **This is why
+it cannot be a Supabase Edge Function** — nothing on `*.supabase.co` is ever sent them.
 
 It forwards the request's own `Cookie` header server-side to
 `GET {VT_ORIGIN}/learner/api/auth/get-session`, requires a real session, re-validates the
 requested learner against `/learner/api/learners`, and then signs a short-lived ES256 JWT
 with `sub` = the learner id and `role: "authenticated"`, publishing its public key at
-`/games/api/jwks.json`. **The learner id is re-validated server-side even though the
-client already did it** — the client is the thing being defended against.
+`/learner/games/math-blaster/api/jwks.json`. **The learner id is re-validated
+server-side even though the client already did it** — the client is the thing being
+defended against.
+
+Per-game rather than shared, because `/learner/games/*` above this game's slug is the
+student experience's own subtree and not ours to claim. A second game either gets its own
+function or the exchange moves to a shared allocation — a decision for whenever there is
+a second game.
 
 The signing key is server-only env and **never `VITE_`-prefixed**, which would inline it
 into the bundle.
@@ -1006,10 +1037,11 @@ This repo cannot implement any of these. Listed so nobody re-derives them.
    that app's own `paths.assets` plus a permissive `Access-Control-Allow-Origin` on
    immutable assets is the precedent. **Both phases depend on this**, and it is the one
    ask with no workaround available from inside this repo.
-   **Which prefix is part of the ask.** This repo has been building toward
-   `/games/math-blaster/`; the platform's convention is subject-scoped
-   (`/math-games/<slug>`). Settle it here before PR 9 bakes it into a build-time literal —
-   see the route-shape rationale near the top of this file.
+   **The prefix is settled**: `/learner/games/<slug>/`, inside that app's own subtree.
+   So the ask is a rule that resolves *before* the `/learner/*` catch-all and forwards the
+   full path unrewritten — the built HTML carries absolute asset paths, so a rule that
+   strips the prefix breaks every asset. See the route-shape rationale near the top of
+   this file.
 3. *Optional:* enable Better Auth's `jwt` plugin there, so the exchange could verify a
    JWKS-signed token instead of calling `get-session`, and we could retire our own signing
    key. **Verified absent**, rather than assumed: the plugin list is `vtProvider()`,
