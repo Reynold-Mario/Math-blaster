@@ -230,7 +230,7 @@ pixel-blaster/                  repo root == Netlify base directory
 ├── games/
 │   └── math-blaster/           the game
 ├── apps/
-│   └── web/                    (PR 11) landing shell
+│   └── web/                    the catalog page
 └── packages/
     └── theme/                  (PR 10) tokens.css only
 
@@ -254,12 +254,17 @@ Root `package.json`, **as shipped**:
 }
 ```
 
-**`dev` and `build` are placeholders, and the earlier draft of this block could not
-run.** It pointed `dev` at `apps/web` and `build` at `scripts/build-site.mjs`, neither of
-which exists until PRs 11 and 12 — and since CI runs `npm run build`, shipping that
-`build` line would have turned CI red the moment PR 7 landed. Each is repointed by the PR
-that creates the thing it names: PR 11 for `dev`, PR 12 for `build`. Until then the
-fan-out form is correct for one workspace and for several.
+**The earlier draft of this block could not run.** It pointed `build` at
+`scripts/build-site.mjs`, which does not exist until PR 12 — and since PR 8 made CI run
+`npm run build`, shipping that line would have turned CI red the moment PR 7 landed. The
+fan-out form is correct for one workspace and for several; PR 12 repoints it when it
+creates the script.
+
+**`dev` stays pointed at the game, and PR 11 deliberately did not flip it.** The original
+draft of this block aimed it at `apps/web`. But `npm run dev -w apps/web` serves only that
+workspace, so the catalog's one link 404s — making the catalog the default `npm run dev`
+would hand every contributor a page whose only action is broken, in exchange for nothing.
+PR 12 is when an assembled site exists and the question has a real answer.
 
 `--workspaces` excludes the root, so a root script calling the same script name in each
 workspace does not recurse. `--if-present` is what lets `packages/theme` (PR 10), which
@@ -704,16 +709,44 @@ Move only the tokens. Leave `body`, `#app`, and the element rules in the game's
 
 *Verify:* `npm run check --workspaces`; the game looks unchanged.
 
-### - [ ] PR 11 — Add the landing page
+### - [x] PR 11 — Add the landing page
 
 `apps/web`, plain Vite + Svelte 5, matching the game's scaffolding. The catalog lives in
-`apps/web/src/games.ts` as the single source of truth for each game's id, title, blurb,
-href, thumbnail, and status. Static content only — no progress data, no auth.
+`apps/web/src/games.ts` as the single source of truth for each game. Static content only —
+no progress data, no auth, no runtime dependencies.
+
+**The field list this section used to give was `id, title, blurb, href, thumbnail, status`.
+Three of those six changed as it was built**, each because the alternative was worse:
+
+- `title`/`blurb` are **`name`/`description`**, matching the platform's own
+  `GameCatalogEntry`. Those two fields mean exactly the same thing on both sides, so PR 16
+  eventually copies them across; a rename map is where a field gets quietly dropped.
+- `thumbnail` is **`sprite`**, a key into `apps/web/src/sprites.ts`, not a path. There is
+  no per-game artwork in this repo and inventing 1536×838 webp for a shadowed preview was
+  not worth it, so a card is the game's own APNG on an accent glow. `sprites.ts` **imports
+  those files from `games/math-blaster/public/`** rather than copying them — `npm run
+  sprites` rewrites the originals in place, so a copy goes stale silently. Every sprite is
+  under Vite's 4 kB inline limit, so they land as data URIs and `apps/web/dist` has no
+  `sprites/` directory at all.
+- **`href` is gone entirely** — `gameHref()` derives it from `id`. See invariant 1, which
+  this shortens. Its template-literal return type pins the prefix *and the trailing slash*
+  at compile time, and it takes a `PlayableGame`, so linking a `coming-soon` card is a
+  type error rather than a 404 waiting to happen.
+
+The catalog ships four entries: Math Blaster plus three `coming-soon` placeholders. **The
+three are illustrative and `ROADMAP.md` names no second game** — they exist to exercise the
+`status` branch and to stop a one-card grid reading as a bug. No search and no category
+filter: with four entries both are dead controls, and the page is a preview surface.
 
 No `packages/game-registry` yet: it would have exactly one consumer, and the build script
-deliberately discovers games by globbing `games/*` instead.
+deliberately discovers games by globbing `games/*` instead. The `:root` token block is
+duplicated from the game's `app.css` for the same reason inverted — **this page is the
+second consumer that finally justifies PR 10**, which should be taken next.
 
-*Verify:* `npm run dev -w apps/web`; cards render and link correctly.
+*Verify:* `npm run dev -w apps/web`; cards render and link correctly. **The Play link 404s
+under that dev server and is meant to** — it serves only this workspace. End-to-end
+navigation is PR 12's check, and PR 12's assembly assertion is what refuses to ship the
+link if PR 9 has not landed.
 
 ### - [ ] PR 12 — Assemble and deploy the site to Netlify
 
@@ -1315,9 +1348,12 @@ consequences worth stating here, because each one is a decision the old text got
 Platform-level rules that did not exist before this work. Most are one-line mistakes with
 expensive, quiet consequences.
 
-1. **A game's id is one string in four places** — the directory under `games/`, the vite
-   `base`, the catalog `href`, and the `game_slug` in the database. `scripts/build-site.mjs`
-   asserts two of them agree; keep the other two in step by hand.
+1. **A game's id is one string in three places** — the directory under `games/`, the vite
+   `base`, and the `game_slug` in the database. `scripts/build-site.mjs` asserts two of
+   them agree; keep the third in step by hand.
+   **It was four.** The catalog href was the fourth until PR 11 made `gameHref()` derive it
+   from the id, which is why this now reads three: the way to satisfy an invariant about
+   keeping copies in step is to delete a copy.
 2. **Namespace every game's localStorage keys with its id, and scope them to the learner
    when one is known.** All games share one origin, so an unprefixed key is a collision
    waiting to happen; and one slot per *browser* means two children on a tablet share

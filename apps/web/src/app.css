@@ -1,0 +1,93 @@
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Press+Start+2P&display=swap');
+
+/**
+ * DUPLICATED FROM `games/math-blaster/src/app.css`, ON PURPOSE AND TEMPORARILY.
+ *
+ * ROADMAP PR 10 extracts this `:root` block plus the font `@import` into
+ * `packages/theme/tokens.css`, and this preamble collapses to one line:
+ *
+ *     @import '@pixel-blaster/theme/tokens.css';
+ *
+ * It is not done in this PR for two reasons. One PR does one thing, and
+ * extracting a package is a different thing from adding a page. And it could
+ * not have been done any earlier: invariant 3 says a module moves to
+ * `packages/` when it has a SECOND REAL CONSUMER, and until this file existed
+ * the palette had exactly one. This page is what earns PR 10. Take it next,
+ * delete the block below, and import.
+ */
+:root {
+  --bg: #060a16; /* deepest: the page behind everything */
+  --surface: #121a2e; /* panel fill */
+  --surface-alt: #1b2540; /* raised controls - keys, buttons, chips */
+  --tooltip: #0b1226; /* popovers, which sit above panels */
+  --edge: #33415c; /* borders */
+  --edge-strong: #4b5f85;
+  --text: #e6edf9;
+  --text-dim: #98a7c4;
+
+  /* Accents. `--accent-hot` and `--accent-warm` were `--marquee-red` and
+     `--marquee-yellow`; there is no marquee any more. */
+  --accent-hot: #f4526a; /* primary action, FIRE, low clock */
+  --accent-warm: #f7b955; /* selection, countdown, economy */
+  --accent-cyan: #5cc8ff;
+  --accent-green: #3ddc97;
+  --accent-violet: #b98cff;
+
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  /* Deep space, brightening a little toward the top so the page reads as
+     looking outward rather than as a flat dark rectangle. Same treatment as
+     the game, so the two do not look like separate products. */
+  background: radial-gradient(ellipse at 50% -10%, #16224a, #0a1024 45%, var(--bg));
+  background-attachment: fixed;
+  font-family: 'Baloo 2', sans-serif;
+  color: var(--text);
+  /**
+   * NO `display: flex` HERE, AND IT IS THE ONE RULE THAT DIFFERS FROM THE GAME.
+   *
+   * ROADMAP PR 10 flags exactly this: `body { display: flex }` is game layout -
+   * it centres a single 720px stage - and it fights a grid. A flex `body` with
+   * one `#app` child makes `#app` a flex item sized from its content, so
+   * `repeat(auto-fill, ...)` resolves its column count against the wrong width
+   * and collapses to one column at every viewport. That is why PR 10 leaves the
+   * rule behind in the game's own stylesheet instead of moving it to the theme.
+   *
+   * Page padding lives on `.page` in App.svelte, so the gradient still reaches
+   * the viewport edge.
+   */
+}
+
+/* `#app` deliberately gets no rule. The default `display: block` at full width
+   is exactly what the grid wants. */
+
+h1,
+h2,
+h3 {
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+::selection {
+  background: var(--accent-warm);
+  color: var(--bg);
+}
