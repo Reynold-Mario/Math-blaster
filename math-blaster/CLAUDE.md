@@ -71,6 +71,22 @@ lib/progression/     THE PERSISTENCE SEAM, and the mastery one.
                     supabaseRemote.ts is the only file that imports
                     @supabase/*, which is what lets supabaseStore.test.ts run
                     under testEnvironment node with no network.
+                    AN IDENTITY CHANGE ADOPTS, IT NEVER MERGES. supabaseStore
+                    takes an optional onIdentityChange and re-reads when the
+                    signed-in identity moves - but it decides WHETHER it moved
+                    by comparing the profile id it observes, never by trusting
+                    the event. Supabase fires that listener for TOKEN_REFRESHED
+                    and INITIAL_SESSION too, so adopting on notification alone
+                    would reset a playing child to an empty profile mid-run.
+                    When it really did move, the sync starts from codec.empty()
+                    rather than inner.current (which still holds the PREVIOUS
+                    identity's state, because the cache is keyed by learner and
+                    not by session), forces the merge hint to b-is-newer so the
+                    row keeps its own grade, and push() refuses to send a
+                    payload queued under a different identity. Signing out
+                    changes nothing on screen and does not forget who we were -
+                    that is what makes signing back in as the same person a
+                    merge and as somebody else an adopt.
                     platformGradeStore.ts composes OUTERMOST (localStorage ->
                     supabase -> platformGrade) so a grade asserted by the
                     platform outranks both the local picker and a merge

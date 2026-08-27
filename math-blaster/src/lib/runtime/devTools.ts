@@ -112,14 +112,12 @@ export function installSkillTreeDebugTools(
           console.error('[pixelMathBlaster] sign-in refused:', error.message);
           return;
         }
-        // RELOAD IS REQUIRED, and it is not laziness. The store runs its remote
-        // read once at boot; that already happened, signed out, and returned
-        // early. Rather than adding a re-sync path that real auth will not use
-        // (a session will exist before the game mounts), the dev flow reloads -
-        // the session persists to storage, so the next boot syncs for real.
+        // No reload any more: the store subscribes to the auth state and
+        // re-reads on a change, adopting the new identity's row rather than
+        // merging this browser's state into it.
         console.log(
           `[pixelMathBlaster] signed in as ${data.user?.email ?? '(unknown)'}. ` +
-            'RELOAD THE PAGE to sync - the boot read already ran while signed out.'
+            'Syncing now - no reload needed.'
         );
       });
     },
@@ -130,7 +128,10 @@ export function installSkillTreeDebugTools(
           console.error('[pixelMathBlaster] sign-out failed:', error.message);
           return;
         }
-        console.log('[pixelMathBlaster] signed out. Reload to go back to local-only.');
+        // Signing out deliberately changes nothing on screen. The store leaves
+        // the state in hand alone, because a signed-out player is meant to get
+        // exactly the local game rather than an emptied one.
+        console.log('[pixelMathBlaster] signed out. The local game carries on unchanged.');
       });
     },
     async session(): Promise<void> {

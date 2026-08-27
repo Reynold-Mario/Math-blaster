@@ -8,7 +8,11 @@
   import type { PlayerProfile } from './runtime/PlayerProfile';
   import { createLocalStorageStore } from './progression/localStorageStore';
   import { createSupabaseProgressionStore } from './progression/supabaseStore';
-  import { isSupabaseConfigured, loadSupabaseRemote } from './progression/supabaseClient';
+  import {
+    isSupabaseConfigured,
+    loadSupabaseRemote,
+    onSupabaseIdentityChange,
+  } from './progression/supabaseClient';
   import { createLazyRemote } from './progression/lazyRemote';
   import { createRunQueue, PENDING_RUNS_KEY } from './progression/runQueue';
   import { createPlatformGradeStore } from './progression/platformGradeStore';
@@ -85,6 +89,10 @@
         createSupabaseProgressionStore({
           cache: createLocalStorageStore({ keyFor: () => key }),
           remote,
+          // So a sign-in that lands after boot is not invisible until the next
+          // one. Passed unconditionally: with no remote the store returns the
+          // cache untouched and never subscribes.
+          onIdentityChange: onSupabaseIdentityChange,
           onError: reportSyncError,
         }),
       anonymousKey: PROFILE_STORAGE_KEY,

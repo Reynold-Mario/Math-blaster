@@ -84,11 +84,21 @@ function fakeRemote(initial: RemoteSnapshot | null = null) {
   const writes: RemoteWrite[] = [];
   const forced: { result: RemoteWriteResult; after?: RemoteSnapshot | null }[] = [];
   let reads = 0;
+  // A one-shot gate on `read`, so a test can hold a sync open and change the
+  // identity underneath it. That race is the whole reason the store carries an
+  // epoch, and it is unreachable without being able to stall a read.
+  let readGate: Promise<void> | null = null;
+  let releaseGate: (() => void) | null = null;
 
   const remote: RemoteProgression = {
     currentProfileId: async () => profileId,
     read: async () => {
       reads += 1;
+      if (readGate !== null) {
+        const gate = readGate;
+        readGate = null;
+        await gate;
+      }
       return snapshot;
     },
     write: async (input) => {
@@ -125,6 +135,18 @@ function fakeRemote(initial: RemoteSnapshot | null = null) {
       return snapshot;
     },
     signOut: () => void (profileId = null),
+    /** A DIFFERENT person signs in. The store must adopt, never merge. */
+    signInAs: (id: string) => void (profileId = id),
+    setSnapshot: (next: RemoteSnapshot | null) => void (snapshot = next),
+    gateNextRead: () => {
+      readGate = new Promise<void>((resolve) => {
+        releaseGate = resolve;
+      });
+    },
+    releaseRead: () => {
+      releaseGate?.();
+      releaseGate = null;
+    },
     forceNext: (result: RemoteWriteResult, after?: RemoteSnapshot | null) =>
       void forced.push({ result, after }),
   };
@@ -147,12 +169,31 @@ function open(
   onError?: (where: string, error: unknown) => void
 ) {
   const fs = fakeStorage(seed);
+  // Always supplied, so every test can fire one and the dispose test can watch
+  // the unsubscribe. Subscribing on its own does nothing observable.
+  const identity = { listeners: new Set<() => void>(), unsubscribes: 0 };
   const store = createSupabaseProgressionStore({
     cache: createLocalStorageStore({ storage: fs.storage, keyFor: () => 'k' }),
     remote,
+    onIdentityChange: (listener) => {
+      identity.listeners.add(listener);
+      return () => {
+        identity.unsubscribes += 1;
+        identity.listeners.delete(listener);
+      };
+    },
     onError,
   });
-  return { handle: store.open(codec), storage: fs };
+  return {
+    handle: store.open(codec),
+    storage: fs,
+    identity,
+    /** What Supabase's auth listener does. Says only "look again" - the store
+     * works out whether anything actually changed. */
+    fireIdentityChange: () => {
+      for (const listener of [...identity.listeners]) listener();
+    },
+  };
 }
 
 beforeEach(() => jest.useFakeTimers());
@@ -431,5 +472,219 @@ describe('createSupabaseProgressionStore', () => {
 
     expect(errors).toContain('onRemote listener');
     expect(seen).toHaveLength(1);
+  });
+});
+
+/**
+ * What happens when the signed-in identity changes after boot.
+ *
+ * The store used to read the remote exactly once, at `open()`, which is why the
+ * dev console told you to reload. Two things are easy to get wrong here and
+ * both are silent: a sync racing an identity change can land the previous
+ * person's merge over the new one's, and a sync that MERGES across an identity
+ * boundary writes one child's currency into another's row.
+ */
+describe('createSupabaseProgressionStore, across an identity change', () => {
+  it('re-syncs when a sign-in lands after the boot read', async () => {
+    const r = fakeRemote(snapshotOf({ n: 42, label: 'remote', grade: 'K' }, 4));
+    r.signOut();
+    const t = open(r.remote, { k: JSON.stringify({ n: 7, label: 'local', grade: 'K' }) });
+    const seen: Counter[] = [];
+    t.handle.onRemote((m) => void seen.push(m));
+    await settle();
+
+    // Signed out at boot, so the read returned early and nothing was emitted.
+    expect(seen).toHaveLength(0);
+
+    r.signInAs('profile-1');
+    t.fireIdentityChange();
+    await settle();
+
+    // No reload. This is the whole point of the option.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.n).toBe(42);
+  });
+
+  it('ADOPTS the new identity, and never merges the previous one into it', async () => {
+    const local = { n: 50, label: 'p1', grade: 'K' };
+    const r = fakeRemote(snapshotOf(local, 4));
+    const t = open(r.remote, { k: JSON.stringify(local) });
+    const seen: Counter[] = [];
+    t.handle.onRemote((m) => void seen.push(m));
+    await settle();
+
+    r.signInAs('profile-2');
+    r.setSnapshot(snapshotOf({ n: 5, label: 'p2', grade: 'K' }, 2));
+    t.fireIdentityChange();
+    await settle();
+
+    // 5, not max(50, 5). The 50 belongs to the previous person, and the cache
+    // still holds it - which is exactly why merging here would leak it.
+    expect(seen.at(-1)).toEqual({ n: 5, label: 'p2', grade: 'K' });
+    expect(r.writes).toHaveLength(0);
+  });
+
+  it('MERGES when the same person is re-notified, so a token refresh cannot wipe a run', async () => {
+    const r = fakeRemote(snapshotOf({ n: 5, label: 'server', grade: 'K' }, 4));
+    const t = open(r.remote, { k: JSON.stringify({ n: 50, label: 'local', grade: 'K' }) });
+    const seen: Counter[] = [];
+    t.handle.onRemote((m) => void seen.push(m));
+    await advance(5000);
+
+    // Supabase fires its auth listener for TOKEN_REFRESHED and INITIAL_SESSION
+    // as well as for a sign-in. The profile id has not moved, so this must be
+    // an ordinary merge - a store that adopted on notification alone would
+    // reset a playing child to nothing.
+    r.setSnapshot(snapshotOf({ n: 5, label: 'server', grade: 'K' }, 9));
+    t.fireIdentityChange();
+    await settle();
+
+    expect(seen.at(-1)?.n).toBe(50);
+    expect(seen.at(-1)?.label).toBe('local');
+  });
+
+  it('never writes a queued payload into a different identity, event or no event', async () => {
+    const same = { n: 5, label: 'server', grade: 'K' };
+    const r = fakeRemote(snapshotOf(same, 4));
+    const t = open(r.remote, { k: JSON.stringify(same) });
+    await settle();
+    expect(r.writes).toHaveLength(0);
+
+    // No `fireIdentityChange` on purpose: the auth event can arrive later than
+    // the session it describes, so the push has to check for itself.
+    r.signInAs('profile-2');
+    t.handle.put({ n: 80, label: 'server', grade: 'K' });
+    await advance(5000);
+
+    expect(r.writes).toHaveLength(0);
+    // ...but the LOCAL write still happened. Only the remote one was dropped.
+    expect(JSON.parse(t.storage.read('k') ?? '{}')).toEqual({ n: 80, label: 'server', grade: 'K' });
+  });
+
+  it("takes the adopted row's preferences even when its grade_source is 'self'", async () => {
+    const p1 = { n: 5, label: 'p1', grade: '2' };
+    const r = fakeRemote(snapshotOf(p1, 1, { gradeSource: 'self', gradeLevel: '2' }));
+    const t = open(r.remote, { k: JSON.stringify(p1) });
+    const seen: Counter[] = [];
+    t.handle.onRemote((m) => void seen.push(m));
+    await settle();
+
+    r.signInAs('profile-2');
+    r.setSnapshot(snapshotOf({ n: 7, label: 'p2', grade: '3' }, 2, { gradeSource: 'self', gradeLevel: '3' }));
+    t.fireIdentityChange();
+    await settle();
+
+    // `hintFor('self')` says the LOCAL pick wins, which is right for a merge
+    // and wrong for an adopt: there is no local pick, only `empty()`'s default.
+    // Left on the hint this would come back 'K'.
+    expect(seen.at(-1)).toEqual({ n: 7, label: 'p2', grade: '3' });
+  });
+
+  it('starts clean, and spends no write, adopting into an account that has never played', async () => {
+    const p1 = { n: 5, label: 'p1', grade: 'K' };
+    const r = fakeRemote(snapshotOf(p1, 1));
+    const t = open(r.remote, { k: JSON.stringify(p1) });
+    const seen: Counter[] = [];
+    t.handle.onRemote((m) => void seen.push(m));
+    await settle();
+
+    r.signInAs('profile-2');
+    r.setSnapshot(null);
+    t.fireIdentityChange();
+    await advance(30000);
+
+    // The game must stop showing the previous person's numbers...
+    expect(seen.at(-1)).toEqual(codec.empty());
+    // ...and seeding the new row from `empty()` would be a write that says
+    // nothing. The first real `put()` inserts.
+    expect(r.writes).toHaveLength(0);
+  });
+
+  it('abandons a read that was already in flight for the previous identity', async () => {
+    const r = fakeRemote(snapshotOf({ n: 1, label: 'p1', grade: 'K' }, 1));
+    r.gateNextRead();
+    const t = open(r.remote, { k: JSON.stringify({ n: 50, label: 'local', grade: 'K' }) });
+    const seen: Counter[] = [];
+    t.handle.onRemote((m) => void seen.push(m));
+    await settle();
+
+    // The boot read is held open. Change identity underneath it.
+    r.signInAs('profile-2');
+    r.setSnapshot(snapshotOf({ n: 7, label: 'p2', grade: 'K' }, 2));
+    t.fireIdentityChange();
+
+    r.releaseRead();
+    await settle();
+    await settle();
+
+    // Exactly one emit, and it is the NEW identity's. The stale sync would have
+    // emitted n: 50 - the previous person's local state - had it not checked.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual({ n: 7, label: 'p2', grade: 'K' });
+  });
+
+  it('leaves everything alone on sign-out, and merges when the same person returns', async () => {
+    const p1 = { n: 5, label: 'p1', grade: 'K' };
+    const r = fakeRemote(snapshotOf(p1, 1));
+    const t = open(r.remote, { k: JSON.stringify(p1) });
+    const seen: Counter[] = [];
+    t.handle.onRemote((m) => void seen.push(m));
+    await settle();
+    expect(seen).toHaveLength(1);
+
+    r.signOut();
+    t.fireIdentityChange();
+    await settle();
+
+    // A signed-out player gets exactly the local game, not an emptied one.
+    expect(seen).toHaveLength(1);
+    expect(t.handle.current).toEqual(p1);
+
+    // And because sign-out did not forget who we were, coming back is a merge.
+    r.signInAs('profile-1');
+    r.setSnapshot(snapshotOf({ n: 3, label: 'server', grade: 'K' }, 5));
+    t.fireIdentityChange();
+    await settle();
+
+    expect(seen.at(-1)?.n).toBe(5);
+  });
+
+  it('collapses a burst of events into one read, by superseding rather than queueing', async () => {
+    const r = fakeRemote(snapshotOf({ n: 1, label: 'p1', grade: 'K' }, 1));
+    r.gateNextRead();
+    const t = open(r.remote, { k: JSON.stringify({ n: 1, label: 'p1', grade: 'K' }) });
+    await settle();
+
+    t.fireIdentityChange();
+    t.fireIdentityChange();
+    t.fireIdentityChange();
+
+    r.releaseRead();
+    await settle();
+    await settle();
+
+    // Boot read plus ONE more. Note WHICH mechanism this pins: each event
+    // bumps the epoch, so the first two follow-up syncs abandon themselves at
+    // their first check - before reaching `read` - and only the newest runs.
+    // The `syncing` guard in `syncFromRemote` is not what produces this, and
+    // removing that guard leaves this test green; it is there for a future
+    // caller that does not bump the epoch.
+    expect(r.reads).toBe(2);
+  });
+
+  it('unsubscribes from identity changes on dispose', async () => {
+    const r = fakeRemote(snapshotOf({ n: 1, label: 'p1', grade: 'K' }, 1));
+    const t = open(r.remote, { k: JSON.stringify({ n: 1, label: 'p1', grade: 'K' }) });
+    await settle();
+    expect(t.identity.listeners.size).toBe(1);
+
+    t.handle.dispose();
+    expect(t.identity.unsubscribes).toBe(1);
+    expect(t.identity.listeners.size).toBe(0);
+
+    const before = r.reads;
+    t.fireIdentityChange();
+    await settle();
+    expect(r.reads).toBe(before);
   });
 });

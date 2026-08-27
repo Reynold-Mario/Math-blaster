@@ -98,3 +98,38 @@ export function getSupabaseClient(): Promise<SupabaseClient> {
 export async function loadSupabaseRemote(): Promise<RemoteProgression> {
   return createSupabaseRemote(await getSupabaseClient());
 }
+
+/**
+ * Fire `listener` whenever Supabase's auth state changes.
+ *
+ * Every event, deliberately unfiltered. Deciding which ones MEAN something is
+ * `supabaseStore`'s job, and it does it by comparing the profile id it actually
+ * observes rather than by trusting an event name - so filtering here would
+ * require a second idea of the current identity, kept in step with that one.
+ * The cost of over-notifying is one read.
+ *
+ * Subscribing loads the client, which is the same thing the store's boot read
+ * already does, so this pulls nothing forward. The unsubscribe is safe to call
+ * before the load has finished.
+ */
+export function onSupabaseIdentityChange(listener: () => void): () => void {
+  let unsubscribe: (() => void) | null = null;
+  let cancelled = false;
+  void getSupabaseClient()
+    .then((client) => {
+      if (cancelled) return;
+      const { data } = client.auth.onAuthStateChange(() => listener());
+      unsubscribe = () => data.subscription.unsubscribe();
+    })
+    .catch(() => {
+      // Unconfigured, or the chunk never arrived. Either way there is no
+      // identity to hear about and the local game is unaffected. Swallowed
+      // rather than reported: the store's own read reports the same failure,
+      // and two lines per boot for one cause is noise.
+    });
+  return () => {
+    cancelled = true;
+    unsubscribe?.();
+    unsubscribe = null;
+  };
+}

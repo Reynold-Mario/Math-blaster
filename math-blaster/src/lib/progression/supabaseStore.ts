@@ -60,6 +60,20 @@ export interface SupabaseProgressionStoreOptions {
   retryMaxMs?: number;
   now?(): number;
   /**
+   * Subscribe to "the signed-in identity may have changed". Returns an
+   * unsubscribe, which `dispose()` calls.
+   *
+   * Without it the remote read happens exactly once, at `open()`, so a sign-in
+   * landing afterwards is invisible until the next boot - which is why the dev
+   * console used to tell you to reload the page.
+   *
+   * **Fire it for every auth event; do not try to filter here.** This store
+   * decides what an event MEANS by comparing the profile id it actually
+   * observes, so a caller that filtered would need its own idea of the current
+   * identity kept in step with this one's. Over-notifying costs one read.
+   */
+  onIdentityChange?(listener: () => void): () => void;
+  /**
    * Where sync failures go. Reported, never thrown: `put()` is called from the
    * game loop and an exception escaping it would take the run down over a
    * failed HTTP request.
@@ -104,6 +118,7 @@ export function createSupabaseProgressionStore(
     retryBaseMs = RETRY_BASE_MS,
     retryMaxMs = RETRY_MAX_MS,
     now = () => Date.now(),
+    onIdentityChange,
     onError = () => {},
   } = options;
 
@@ -146,6 +161,36 @@ export function createSupabaseProgressionStore(
        * returning player on a new device - is the one that gets dropped.
        */
       let lastEmitted: S | null = null;
+
+      /**
+       * The profile the state in hand belongs to, once anything has been read.
+       *
+       * **THIS, AND NOT THE EVENT THAT WOKE US, DECIDES WHETHER A SYNC MERGES
+       * OR ADOPTS.** Supabase's auth listener fires for token refreshes and for
+       * `INITIAL_SESSION` as well as for a real sign-in, so a store that
+       * adopted whenever it was notified would wipe a playing child's profile
+       * to empty on a routine refresh. Comparing the id cannot be fooled in
+       * either direction and costs one read.
+       *
+       * Deliberately NOT cleared on sign-out. Signing out must leave the local
+       * game exactly as it is, and remembering who we were is what makes
+       * signing back in as the same person a merge and as somebody else an
+       * adopt.
+       */
+      let syncedProfileId: string | null = null;
+      /**
+       * Which identity the in-flight sync belongs to. An identity change bumps
+       * it and every `await` re-checks it, so a read already in flight for the
+       * previous identity abandons itself rather than emitting one child's
+       * profile into another's session. `disposed` cannot express this: the
+       * handle is alive, it is the ANSWER that went stale.
+       */
+      let epoch = 0;
+      /** One sync at a time - enforced in `syncFromRemote` and nowhere else. */
+      let syncing = false;
+      /** Set only by that guard, so today it is never true. See the comment
+       * there for the caller it is waiting for. */
+      let resyncQueued = false;
 
       function emit(merged: S): void {
         lastEmitted = merged;
@@ -204,19 +249,67 @@ export function createSupabaseProgressionStore(
 
       async function syncFromRemote(): Promise<void> {
         if (remote === null || disposed) return;
+        if (syncing) {
+          // Asked again while one is running: it gets its own pass afterwards
+          // rather than racing this one, because two concurrent reads can
+          // resolve out of order and the loser lands a stale merge over the
+          // winner.
+          //
+          // NO CURRENT CALLER REACHES THIS, and that is worth stating rather
+          // than leaving for someone to discover. Every path in bumps `epoch`
+          // first, so a superseded sync abandons itself at its first check -
+          // before it reads - and the newest request is always the one that
+          // runs. This exists for the caller that does NOT bump: "we are back
+          // online, re-read" is the obvious one to add to the `online`
+          // handler below, and without this guard it would read concurrently
+          // with a sync already in flight at the same epoch.
+          resyncQueued = true;
+          return;
+        }
+        syncing = true;
+        const mine = epoch;
+        // Not simply `disposed`: an identity change mid-read invalidates the
+        // answer without ending the handle.
+        const stale = () => disposed || epoch !== mine;
         try {
           const profileId = await remote.currentProfileId();
-          // Signed out is the default state, not a failure.
-          if (profileId === null || disposed) return;
+          // Signed out is the default state, not a failure. Note what is NOT
+          // done here: `syncedProfileId` is left alone.
+          if (profileId === null || stale()) return;
+
+          // ADOPT, NEVER MERGE, ACROSS AN IDENTITY BOUNDARY. `inner.current`
+          // still holds the previous identity's state - the cache is keyed by
+          // learner, not by session - so offering it to the merge is exactly
+          // how one child's currency lands on another's account.
+          const adopting = syncedProfileId !== null && syncedProfileId !== profileId;
+          if (adopting) {
+            // Everything below belonged to the previous identity's row.
+            outgoing = null;
+            lastEmitted = null;
+            lastRevision = null;
+            rowKnown = false;
+            pendingSince = null;
+            retryDelay = retryBaseMs;
+            clearTimer();
+          }
+          syncedProfileId = profileId;
 
           const snapshot = await remote.read(codec.gameSlug);
-          if (disposed) return;
+          if (stale()) return;
 
           if (snapshot === null) {
-            // Never played on this account. Our local copy is the only copy,
-            // so seed the row from it.
             rowKnown = true;
             lastRevision = null;
+            if (adopting) {
+              // Never played on this account, and the state in hand is not
+              // theirs to seed it with. Tell the game to start clean and let
+              // the first `put()` insert - pushing `empty()` here would spend
+              // a write to say nothing.
+              emit(codec.empty());
+              return;
+            }
+            // Never played on this account. Our local copy is the only copy,
+            // so seed the row from it.
             outgoing = inner.current;
             schedulePush();
             return;
@@ -225,9 +318,13 @@ export function createSupabaseProgressionStore(
           rowKnown = true;
           lastRevision = snapshot.revision;
 
-          const local = inner.current;
+          const local = adopting ? codec.empty() : inner.current;
           const incoming = codec.parse(snapshot.state);
-          let merged = codec.merge(local, incoming, hintFor(snapshot.gradeSource));
+          // Adopting means we hold nothing of our own, so every PREFERENCE has
+          // to come from the row. Left on `hintFor`, a `'self'` row would lose
+          // its own grade to `empty()`'s default - the merge would be reading a
+          // local pick that is not a pick at all.
+          let merged = codec.merge(local, incoming, adopting ? 'b-is-newer' : hintFor(snapshot.gradeSource));
 
           // A grade the platform asserts outranks the local picker, and the
           // codec decides where it lands - this store does not know what field
@@ -253,6 +350,12 @@ export function createSupabaseProgressionStore(
           }
         } catch (error) {
           onError('syncFromRemote', error);
+        } finally {
+          syncing = false;
+          if (!disposed && resyncQueued) {
+            resyncQueued = false;
+            void syncFromRemote();
+          }
         }
       }
 
@@ -270,6 +373,17 @@ export function createSupabaseProgressionStore(
             // Signed out. Keep the payload: if a session appears later, the
             // next `put()` sends it. Do not retry on a timer - there is
             // nothing to wait for.
+            return;
+          }
+          // NEVER WRITE ACROSS AN IDENTITY BOUNDARY. An identity can change
+          // between the `put()` that queued this payload and the debounced push
+          // that sends it, and the payload belongs to whoever was signed in at
+          // the time. Dropping it loses nothing - the cache already has it, and
+          // the sync that follows the change decides what the new identity's
+          // row should say. This is the guard that makes the window between the
+          // auth event and that sync safe.
+          if (syncedProfileId !== null && profileId !== syncedProfileId) {
+            outgoing = null;
             return;
           }
 
@@ -336,6 +450,17 @@ export function createSupabaseProgressionStore(
       };
       if (typeof window !== 'undefined') window.addEventListener('online', onOnline);
 
+      // A sign-in after boot is otherwise invisible until the next one. The
+      // listener only says "look again" - `syncFromRemote` works out whether
+      // anything actually changed.
+      const unbindIdentity =
+        onIdentityChange?.(() => {
+          // Bump first: this invalidates any read already in flight for the
+          // identity we are leaving, whether or not a fresh sync starts now.
+          epoch += 1;
+          void syncFromRemote();
+        }) ?? null;
+
       // Kick the boot read off without awaiting it. Nothing below this line
       // depends on it having finished, which is the property that keeps boot
       // synchronous.
@@ -374,6 +499,7 @@ export function createSupabaseProgressionStore(
           disposed = true;
           clearTimer();
           listeners.clear();
+          if (unbindIdentity !== null) unbindIdentity();
           if (typeof window !== 'undefined') window.removeEventListener('online', onOnline);
           inner.dispose();
         },

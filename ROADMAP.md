@@ -937,30 +937,55 @@ reload as B (fresh, A's slot untouched); reload as A (A's profile back).
 Replaces the dev sign-in. **Depends on the routing**, because the exchange is the only
 thing that can see the cookies.
 
-### - [ ] PR 21 — The store re-syncs when identity changes
+### - [x] PR 21 — The store re-syncs when identity changes
 
-`supabaseStore` fires `syncFromRemote()` exactly once at `open()` and returns early when
-`currentProfileId()` is `null`. Nothing anywhere subscribes to an auth change, which is
-why `devTools` tells you to reload. Adds one option:
+`supabaseStore` fired `syncFromRemote()` exactly once at `open()` and returned early when
+`currentProfileId()` was `null`. Nothing subscribed to an auth change, which is why
+`devTools` told you to reload. One option:
 
 ```ts
 onIdentityChange?(listener: () => void): () => void;
 ```
 
-Two things it must get right, and both are silent when wrong:
+**The plan had the listener deciding that an identity changed. It must not, and that is
+the one thing this PR got wrong on paper.** Supabase's auth listener fires for
+`TOKEN_REFRESHED` and `INITIAL_SESSION` as well as for a sign-in, so a store that adopted
+whenever it was notified would reset a playing child to an empty profile on a routine
+token refresh. So the store compares the profile id it *observes* against the one the
+state in hand belongs to, and an event only ever means "look again". The subscription
+helper deliberately does not filter either: a second idea of the current identity would
+have to be kept in step with the store's.
 
-- **A re-entrancy guard.** An identity event racing the boot read produces two reads and
-  two emits, and the second can land a stale merge over the first.
+Four properties, each silent when wrong:
+
 - **AN IDENTITY CHANGE ADOPTS, IT NEVER MERGES.** `inner.current` still holds the
-  *previous* learner's cached state until the cache rekeys. Merging that into the new
-  learner's row is exactly how sibling A's currency lands on sibling B's account, so the
-  sync after an identity change starts from `codec.empty()` and clears the pending push.
+  *previous* identity's state - the cache is keyed by learner, not by session - so merging
+  it is exactly how sibling A's currency lands on sibling B's account. An adopting sync
+  starts from `codec.empty()` and discards the pending push.
+- **An adopt takes the row's PREFERENCES too.** Left on `hintFor`, a `grade_source` of
+  `'self'` would lose the row's own grade to `empty()`'s default: the hint says "the local
+  pick wins", and on this path there is no local pick.
+- **A superseded sync abandons itself.** An `epoch`, bumped by every request and
+  re-checked after every `await`, so a read already in flight for the previous identity
+  cannot emit one child's profile into another's session. `disposed` cannot express this -
+  the handle is alive, it is the answer that went stale.
+- **A push never crosses an identity boundary.** An identity can change between the
+  `put()` that queued a payload and the debounced push that sends it, so `push()`
+  re-checks and drops the payload rather than writing it to the wrong row. Nothing is
+  lost: the cache already has it.
 
-Independently verifiable now: the dev console's "RELOAD THE PAGE" wart goes.
+Sign-out deliberately changes nothing on screen - a signed-out player gets exactly the
+local game, not an emptied one. Not forgetting the id is also what makes signing back in
+as the same person a merge and as somebody else an adopt.
 
-*Verify:* against staging, `signOut()` then `signIn()` as the second test user, and
-confirm the first user's currency is **not** written into the second's `game_progress`
-row.
+*Verify:* 10 tests in `supabaseStore.test.ts`, driven through the real cache. Each was
+mutation-checked: disabling adopt, the adopt hint, the epoch, the push guard or the
+empty-row emit fails at least one test. The `syncing` re-entrancy guard is the exception,
+and says so in the code - every current caller bumps the epoch first, so nothing reaches
+it and removing it leaves the suite green. It is kept for the caller that would not bump.
+Bundle with no credentials: 133.37 -> 133.94 kB (+0.57 kB, +0.26 kB gzip) with `@supabase`
+still absent from the output entirely, so [the fold](#invariants) holds. The dev console's
+"RELOAD THE PAGE" wart is gone.
 
 ### - [ ] PR 22 — The session and JWKS functions
 
