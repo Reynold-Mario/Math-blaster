@@ -24,8 +24,9 @@ progression layer that survives the arrival of real authentication without a rew
 
 **The order has since changed, and the scope has grown.** Progression now goes first and
 runs all the way through to a working Supabase prototype — including achievements and a
-personal best score, neither of which existed in the original plan. The site track is held until
-the Netlify deploy is approved. See
+personal best score, neither of which existed in the original plan. **The Netlify deploy is now
+approved**, so the site track is ordinary work; a manual preview is already live, and
+[Where the site stands](#where-the-site-stands) records what it does and does not prove. See
 [Why the progression track goes first](#why-the-progression-track-goes-first).
 
 ## Decisions
@@ -40,7 +41,7 @@ the Netlify deploy is approved. See
 | Launch context | The VT games catalog at `/learner/games`, by an already-signed-in learner |
 | Who reads progress | The student only, for now |
 | Backend scope now | Local-first SDK, SQL migrations, **and a working Supabase prototype** |
-| Deploy scope now | **Held.** Netlify waits for approval; nothing else waits on Netlify |
+| Deploy scope now | **Approved**, 2026-08-27. A manual preview is live; PR 12 turns it into a build |
 | Mastery join key | Internal topic id, with an optional CCSS `standard_code` alongside |
 | Prototype identity | Real Supabase auth, dev-only test users. Anonymous sessions stay rejected |
 | Real identity | The VT **learner** (per child, not per household), via [Track D](#track-d--vt-identity) |
@@ -115,8 +116,9 @@ workspace move is a `git mv` with zero source changes, so it stays a clean opera
 matter how much progression code exists when it happens. The dependency was an artifact of
 writing the plan in the order the *site* made sense in.
 
-So the tracks are now independent, and only one of them is actually waiting on anything:
-Netlify needs approval, and Track C is mostly the work that makes that deploy correct.
+So the tracks are now independent, and none of them is waiting on anything any more: Netlify
+was approved on 2026-08-27, and Track C is the work that makes that deploy *correct* rather
+than merely live.
 
 ### Why the prototype uses real auth
 
@@ -265,8 +267,8 @@ One branch, one PR, one change. Each must be independently green in CI.
 
 **Three tracks, and the order between them is the change this document last took.**
 Track A is the work in flight. Track B turns it into a running prototype against a real
-Supabase project. Track C is the site, and it is *held* — the Netlify deploy needs
-approval, and most of Track C exists to make that deploy correct.
+Supabase project. Track C is the site, and it is **no longer held** — the Netlify deploy was
+approved on 2026-08-27, and most of Track C exists to make that deploy correct.
 
 Nothing in A or B depends on C. The store is defined inside the game, `supabase/` sits at
 the repo root under either layout, and the workspace move is a `git mv` with zero source
@@ -555,11 +557,38 @@ refused. Confirm re-submitting an already-unlocked achievement does not move its
 
 ---
 
-## Track C — the site (held pending approval)
+## Track C — the site
 
-Unchanged from the original ladder apart from its numbers and its position. **PR 12 is the
-approval gate**; PRs 7–11 are the work that makes it correct, and may be taken early if
-convenient — none of them touches progression.
+Unchanged from the original ladder apart from its numbers and its position. The approval PR 12
+was waiting on **arrived on 2026-08-27**, so nothing here is gated any more; PRs 7–11 are the
+work that makes the deploy correct, and may be taken in any convenient order — none of them
+touches progression.
+
+### Where the site stands
+
+A **manual drag-and-drop deploy of `math-blaster/dist` is live**, published 2026-08-27 outside
+this ladder. It is a preview, and four things about it are worth writing down, because every one
+of them looks like working software:
+
+- **It is built at `base: '/'`, not `/learner/games/math-blaster/`.** `vite.config.ts` still has
+  no `base`, so the game sits at the site root and its assets resolve there. Every URL shared
+  from this deploy therefore moves once, when PR 9 lands — which is a reason to take PR 9 before
+  circulating the link rather than after.
+- **It plays local-only, and cannot do otherwise.** `VITE_SUPABASE_URL` and
+  `VITE_SUPABASE_PUBLISHABLE_KEY` *are* baked into that bundle, but the only sign-in this game
+  has is the dev-console helper, and `import.meta.env.DEV` correctly strips it from a production
+  build — verified in the shipped JS, which contains no `unlockAll`, `resetProfile` or
+  `sign-in refused`. So the deploy exercises Track C's asset story and says nothing at all about
+  Track B. A signed-in prototype needs the dev build or Track D's PRs 22–23, and **not** a
+  production build with the dev sign-in left in: that would put test credentials and a live
+  database behind a public URL.
+- **The cache-header rule is not in place.** There is no `netlify.toml` yet, so PR 12's
+  distinction — `/assets/*` may be `immutable`, `/learner/games/*/sprites/*` must not be,
+  because `npm run sprites` rewrites those filenames in place — is unenforced. Nothing is stale
+  yet only because nothing has been redeployed.
+- **The site is unlinked from the repo.** A drag-and-drop site carries no build command and no
+  repo connection, so it cannot rebuild itself and the next deploy is another manual drag. PR 12
+  is what replaces that.
 
 ### - [ ] PR 7 — Move the game into an npm workspace
 
