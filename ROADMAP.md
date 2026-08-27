@@ -670,7 +670,7 @@ first contact. Isolated, that is a three-line fix; bundled, it blocks the restru
 
 *Verify:* CI green, with the build step visibly executing.
 
-### - [ ] PR 9 — Serve the game under `/learner/games/math-blaster/`
+### - [x] PR 9 — Serve the game under `/learner/games/math-blaster/`
 
 ```ts
 // games/math-blaster/vite.config.ts
@@ -691,9 +691,19 @@ then open `/learner/games/math-blaster/`.
 - Console: **no `[sprites]` output at all**. This is the check that matters.
 - Visually: enemies are pixel art, not grey rectangles.
 
-`/` returning 404 under preview is expected until PR 12. Note in the game's README that
-the dev URL is now `localhost:5173/learner/games/math-blaster/` — this will confuse
-someone.
+**`/` does not 404 under preview — it 302s to the base.** This line used to predict a 404;
+Vite 8's preview server redirects the bare root to `base` instead, so the check is
+`curl -sI localhost:PORT/` showing `302 -> /learner/games/math-blaster/`. Do not read that
+as the deploy's behaviour: it is a preview-server convenience, and under PR 12's assembled
+`dist/` the root is the catalog's own `index.html`, not a redirect.
+
+The game's README now says the dev URL is `localhost:5173/learner/games/math-blaster/` —
+this will confuse someone.
+
+*Verified on landing:* three absolute paths in the built HTML, all prefixed; `ASSET_BASE`
+folded to `/learner/games/math-blaster/sprites/` in the bundle with **no bare `/sprites/`
+left**; from inside the running page, **nine `.apng` resources, all under the based path,
+none zero-bytes, and zero failed resources**; console silent; a wave played and scored.
 
 ### - [ ] PR 10 — Extract the colour palette into `packages/theme`
 

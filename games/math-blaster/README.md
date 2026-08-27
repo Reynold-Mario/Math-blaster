@@ -236,7 +236,11 @@ npm ci
 npm run dev
 ```
 
-Then open the printed local URL (usually `http://localhost:5173`).
+Then open the printed local URL. **It is
+`http://localhost:5173/learner/games/math-blaster/`, not `http://localhost:5173/`** - the
+game is built at that `base` so a published URL survives being proxied onto the Varsity
+Tutors domain unchanged. Vite prints the right one and redirects the bare root to it, but
+a bookmark from before the move will land nowhere.
 
 `npm run dev` at the root is aimed at this game. To target it explicitly - which is what
 you want once there is more than one workspace - use `npm run dev -w games/math-blaster`.
