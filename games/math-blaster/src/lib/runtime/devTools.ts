@@ -40,7 +40,7 @@ async function withClient(what: string, fn: (client: Awaited<ReturnType<typeof g
   if (!isSupabaseConfigured()) {
     console.error(
       `[pixelMathBlaster] ${what} needs Supabase credentials. Put VITE_SUPABASE_URL and ` +
-        'VITE_SUPABASE_PUBLISHABLE_KEY in .env.local AT THE REPO ROOT (not in math-blaster/), ' +
+        'VITE_SUPABASE_PUBLISHABLE_KEY in .env.local AT THE REPO ROOT (not in games/math-blaster/), ' +
         'then restart the dev server.'
     );
     return;

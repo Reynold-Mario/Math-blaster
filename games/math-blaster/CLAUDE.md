@@ -665,11 +665,14 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   test codec emitted its keys in the same order from both methods; it is caught
   now, and the test codec deliberately disagrees with itself on key order.
 - **`.env.local` lives at the REPO ROOT, and `vite.config.ts` needs
-  `envDir: '..'` for that to work.** Without it every `import.meta.env.VITE_*`
+  `envDir: '../..'` for that to work.** Without it every `import.meta.env.VITE_*`
   reads `undefined`, the client returns null, and the game falls back to
   local-only - which looks exactly like working software. `src/vite-env.d.ts`
   declares the two vars so a typo is a type error rather than the same silent
-  fallback.
+  fallback. **The depth is counted from this package, and it has moved once**:
+  it was `'..'` while the game sat at the repo root, and the workspace move to
+  `games/math-blaster/` made that resolve to `games/`, which holds no env file.
+  Nothing throws when it is wrong, so a move has to re-count it deliberately.
 - Skill effects are a discriminated union (`BaseSkillEffect`) with `effectAtLevel(0)`
   always meaning "not purchased yet" - safe to call before any purchase exists.
 - New `GameEvent` variants: add the type, then update both `GameCanvas.svelte`'s

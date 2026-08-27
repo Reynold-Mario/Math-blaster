@@ -229,12 +229,17 @@ architectural breakdown.
 
 ## Running it
 
+This is an npm workspace, so install and run from the **repo root**, two levels up:
+
 ```
-npm install
+npm ci
 npm run dev
 ```
 
 Then open the printed local URL (usually `http://localhost:5173`).
+
+`npm run dev` at the root is aimed at this game. To target it explicitly - which is what
+you want once there is more than one workspace - use `npm run dev -w games/math-blaster`.
 
 `npm run build` produces a production bundle; `npm run check` runs the
 full type-check (svelte-check + tsc).

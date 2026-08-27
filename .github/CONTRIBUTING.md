@@ -1,27 +1,32 @@
-# Contributing to Math Blaster
+# Contributing to Pixel Blaster
 
-Thanks for your interest in contributing! This project lives entirely inside the
-`math-blaster/` subfolder of this repository.
+Thanks for your interest in contributing! This repository is an npm-workspace monorepo.
+The game lives in `games/math-blaster/`; every command below runs from the repo root.
 
 ## Getting started
 
 ```
 git clone https://github.com/Reynold-Mario/Math-blaster.git
-cd Math-blaster/math-blaster
-npm install
+cd Math-blaster
+npm ci
 ```
 
 ## Development
 
-- `npm run dev` — start the Vite dev server
-- `npm run build` — production build
-- `npm run preview` — preview a production build locally
+- `npm run dev` — start the game's Vite dev server
+- `npm run build` — production build of every workspace
+- `npm run preview -w games/math-blaster` — preview a production build locally
+
+`-w <workspace>` targets one package; without it the root scripts fan out across all of
+them with `--workspaces --if-present`.
 
 ## Before opening a pull request
 
-All PRs into `main` are gated by CI, which runs two checks. Please run both locally first:
+All PRs into `main` are gated by CI, which runs three checks. Please run all three from
+the repo root first:
 
 ```
+npm run build   # vite build — type-checking is not bundling, so this catches what check cannot
 npm run check   # svelte-check + tsc — must pass with 0 errors/warnings
 npm test        # jest unit tests
 ```
@@ -44,9 +49,9 @@ including it alongside an unrelated change.
 
 ## Architecture & project conventions
 
-See [`math-blaster/CLAUDE.md`](../math-blaster/CLAUDE.md) for architecture notes and
-AI-agent guidance, and [`math-blaster/README.md`](../math-blaster/README.md) for a
-gameplay/feature overview.
+See [`games/math-blaster/CLAUDE.md`](../games/math-blaster/CLAUDE.md) for architecture
+notes and AI-agent guidance, and [`games/math-blaster/README.md`](../games/math-blaster/README.md)
+for a gameplay/feature overview.
 
 For where the repository is headed — a multi-game monorepo with a landing page and
 per-profile progression — see [`ROADMAP.md`](../ROADMAP.md). It carries the ordered list

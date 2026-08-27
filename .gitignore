@@ -9,10 +9,31 @@
 .env.*
 !.env.example
 
-# Build output and dependencies. Each workspace carries its own ignore too;
-# these are here so a new workspace is covered before it remembers to.
+# Build output and dependencies. There is one ignore file now, at the root:
+# the workspaces used to carry their own, which meant a new workspace was
+# uncovered until it remembered to add one. No leading slash, so these match
+# at any depth - root, `apps/*`, `games/*` and `packages/*` alike.
 node_modules/
 dist/
+dist-ssr/
+.netlify/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Editor and OS cruft, merged in from the game's own ignore file.
+.vscode/*
+!.vscode/extensions.json
+*.local
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Per-user agent state. `.claude/` itself is not ignored - project-level agent
 # config belongs in review.
