@@ -1,40 +1,12 @@
-@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Press+Start+2P&display=swap');
+@import '@pixel-blaster/theme/tokens.css';
 
 /**
- * The space palette.
- *
- * `--ink` is gone on purpose. It meant "the one dark colour" and was used for
- * BOTH borders and text, which is fine in a light UI and impossible in a dark
- * one - the two roles have to move in opposite directions. Everything is
- * named for its role now, so inverting again would be a change to this block
- * alone.
- *
- * `--cream` and `--shadow` are also gone; both were declared and never used.
+ * The palette and the fonts now live in `packages/theme`. What stays here is
+ * LAYOUT, and it is app-specific on purpose: `body { display: flex }` centres
+ * this game's single 720px stage, and the catalog page deliberately does not
+ * have it - it would collapse a grid whose column count is resolved by
+ * `auto-fill` against the container width.
  */
-:root {
-  --bg: #060a16; /* deepest: the page behind everything */
-  --surface: #121a2e; /* panel fill */
-  --surface-alt: #1b2540; /* raised controls - keys, buttons, chips */
-  --tooltip: #0b1226; /* popovers, which sit above panels */
-  --edge: #33415c; /* borders */
-  --edge-strong: #4b5f85;
-  --text: #e6edf9;
-  --text-dim: #98a7c4;
-
-  /* Accents. `--accent-hot` and `--accent-warm` were `--marquee-red` and
-     `--marquee-yellow`; there is no marquee any more. */
-  --accent-hot: #f4526a; /* primary action, FIRE, low clock */
-  --accent-warm: #f7b955; /* selection, countdown, economy */
-  --accent-cyan: #5cc8ff;
-  --accent-green: #3ddc97;
-  --accent-violet: #b98cff;
-
-  color-scheme: dark;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
 
 * {
   box-sizing: border-box;

@@ -232,7 +232,7 @@ pixel-blaster/                  repo root == Netlify base directory
 ├── apps/
 │   └── web/                    the catalog page
 └── packages/
-    └── theme/                  (PR 10) tokens.css only
+    └── theme/                  tokens.css only - the one palette
 
 `supabase/` sits at the repo root under either layout — it is platform-level, not a
 workspace — which is why Track A can land it before the workspace move happens.
@@ -267,10 +267,10 @@ would hand every contributor a page whose only action is broken, in exchange for
 PR 12 is when an assembled site exists and the question has a real answer.
 
 `--workspaces` excludes the root, so a root script calling the same script name in each
-workspace does not recurse. `--if-present` is what lets `packages/theme` (PR 10), which
-will have neither `check` nor `test`, sit alongside a workspace that has both — at the
-cost of a new silent-green mode, which is why the verification below asserts on the
-*counts* CI prints rather than on its exit code. `.nvmrc` at the root serves both `actions/setup-node` and
+workspace does not recurse. `--if-present` is what lets `packages/theme`, which has
+neither `check` nor `test`, sit alongside workspaces that do — at the cost of a new
+silent-green mode, which is why the verification below asserts on the *counts* CI prints
+rather than on its exit code. `.nvmrc` at the root serves both `actions/setup-node` and
 Netlify's own version detection. The lockfile consolidates at the root; npm hoists, so
 `jest` / `vite` / `svelte-check` / `tsc` still resolve from inside `games/math-blaster`.
 
@@ -705,7 +705,7 @@ folded to `/learner/games/math-blaster/sprites/` in the bundle with **no bare `/
 left**; from inside the running page, **nine `.apng` resources, all under the based path,
 none zero-bytes, and zero failed resources**; console silent; a wave played and scored.
 
-### - [ ] PR 10 — Extract the colour palette into `packages/theme`
+### - [x] PR 10 — Extract the colour palette into `packages/theme`
 
 Ships one file, `tokens.css` (the font `@import` plus the `:root` block), consumed via
 `@import '@pixel-blaster/theme/tokens.css'`. Visually identical.
@@ -714,10 +714,25 @@ This is the only package with no resolution hazards: jest never sees it (the sol
 import is in `main.ts`, which no test imports), and `svelte-check` already has
 `vite/client` in `types`.
 
-Move only the tokens. Leave `body`, `#app`, and the element rules in the game's
+Move only the tokens. Leave `body`, `#app`, and the element rules in each app's own
 `app.css` — `body { display: flex }` is game layout and would fight the catalog grid.
 
-*Verify:* `npm run check --workspaces`; the game looks unchanged.
+**This landed after PR 11 rather than before it, and that ordering is the point.**
+Invariant 3 wants a *second real consumer* before a module moves to `packages/`, and until
+the catalog page existed the palette had exactly one. PR 11's duplicated `:root` block was
+the evidence; deleting it is this PR.
+
+*Verify:* `npm run check --workspaces`; the game looks unchanged. **"Unchanged" is provable
+rather than eyeballed**: Vite content-hashes its CSS, so the built stylesheets keeping their
+hashes across the extraction (`index-DyPwrbg9.css` for the game, `index-B4jU_El1.css` for
+the catalog) means the output is byte-identical.
+
+That covers the build, but **Vite's dev server runs a different CSS pipeline**, so a bare
+package specifier in an `@import` can resolve in one and not the other. Check both dev
+servers too: all nine tokens resolve to their expected values, `Press Start 2P` reports
+loaded (the font `@import` travels with the package), and `body` computes to `flex` in the
+game and `block` in the catalog — which is the layout split above, observed rather than
+assumed.
 
 ### - [x] PR 11 — Add the landing page
 
