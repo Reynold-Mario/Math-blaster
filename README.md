@@ -29,6 +29,23 @@ npm test         # jest across every workspace
 npm run build    # production build of every workspace
 ```
 
+The two dev servers are separate, and the catalog's Play links point at the games by
+absolute path (`/learner/games/math-blaster/`) because in production one origin serves
+both. So **to follow a Play link locally, run both** — the game on Vite's default 5173,
+then the catalog, which proxies that path prefix through to it (see
+[`apps/web/vite.config.ts`](./apps/web/vite.config.ts)):
+
+```
+npm run dev                 # terminal 1 — the game, on :5173
+npm run dev -w apps/web     # terminal 2 — the catalog, on :5174
+```
+
+Then browse the catalog at `:5174` and click through. With only the catalog running, a
+Play link lands on its SPA fallback and quietly re-serves the catalog itself — same URL,
+no error. Reaching the game through `:5174` rather than `:5173` also puts both surfaces
+on one origin, so `localStorage` progression behaves the way it will in production
+instead of splitting into a per-port slot.
+
 Where this is going — more games, a catalog page, and per-profile progression — is in
 [`ROADMAP.md`](./ROADMAP.md), along with the ordered list of changes to get there.
 
