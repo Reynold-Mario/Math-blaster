@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import GameCanvas from './render/GameCanvas.svelte';
+  import MotionToggle from './MotionToggle.svelte';
   import SkillTreeScreen from './skills/SkillTreeScreen.svelte';
   import { InputManager } from './input/InputManager';
   import { createInitialRuntimeState, resetRun, tick, handleInputAction } from './runtime/gameFlow';
@@ -39,6 +40,7 @@
   import type { Backdrop } from './levels/LevelDefinition';
   import { gameEvents, type GameEvent } from './events';
   import { wireAudioToEvents, setMuted, isMuted } from './audio';
+  import { motion } from '@pixel-blaster/motion';
   import type { GamePhase } from './types';
 
   /**
@@ -140,6 +142,13 @@
   let gradeLocked = $state(false);
   let countdownValue = $state(3);
   let muted = $state(isMuted());
+  /**
+   * WHETHER TO DRAW THE EFFECTS, resolved by `packages/motion` from the OS
+   * setting and the child's own override. It lives here rather than in the
+   * canvas so that the canvas keeps drawing from its props alone, and so the
+   * HUD's toggle and the scene can never disagree about which one is in force.
+   */
+  let reducedMotion = $state(motion.reduced);
   let finalScore = $state(0);
   /** How far the run got, for the end-of-run readout. The wave number is
    * the score that actually means something in an endless run. */
@@ -387,6 +396,10 @@
 
     const unbindKeyboard = input.attachKeyboard(window);
     const unbindAudio = wireAudioToEvents();
+    // Fires only when the RESOLVED answer moves, so an OS toggle underneath an
+    // explicit preference costs nothing. It can land mid-run, which is fine:
+    // every gate in GameCanvas is read per frame.
+    const unbindMotion = motion.subscribe((next) => (reducedMotion = next));
     const unbindFlow = gameEvents.on(handleFlowEvent);
     const unbindInput = input.on((action) => {
       if (phase === 'playing') handleInputAction(runtime, profile, action);
@@ -415,6 +428,7 @@
     return () => {
       unbindKeyboard();
       unbindAudio();
+      unbindMotion();
       unbindFlow();
       unbindInput();
       unbindRemote();
@@ -443,6 +457,13 @@
       </ul>
       <button class="big-btn" onclick={goToSkillTree}>Press Start ▶</button>
       <div class="mini-scores currency-note">💰 {profile.currency} banked</div>
+      <!--
+        ON THE FIRST SCREEN, not only in the HUD. The starfield, the shake and
+        the hit flash all start the moment a run does, so a child who needs them
+        gone has to be able to say so before playing a wave - not after seeing
+        one. The HUD carries the same control for changing your mind mid-run.
+      -->
+      <MotionToggle label="Reduce motion" />
     </div>
   {:else if phase === 'skillTree'}
     <SkillTreeScreen
@@ -512,7 +533,12 @@
       </div>
       <div class="hud-right">
         <div class="currency">💰 {profile.currency}</div>
-        <button class="mute-btn" onclick={toggleMute} aria-label="Toggle sound">{muted ? '🔇' : '🔊'}</button>
+        <!-- A row rather than a third stacked item: the HUD sits above a fixed
+             400x320 stage, and growing it taller pushes the keypad off a phone. -->
+        <div class="hud-buttons">
+          <button class="mute-btn" onclick={toggleMute} aria-label="Toggle sound">{muted ? '🔇' : '🔊'}</button>
+          <MotionToggle />
+        </div>
       </div>
     </div>
 
@@ -526,7 +552,7 @@
       onpointerup={onPointerUp}
       onpointerleave={onPointerUp}
     >
-      <GameCanvas runtime={runtime} theme={currentTheme} />
+      <GameCanvas runtime={runtime} theme={currentTheme} {reducedMotion} />
 
       {#if phase === 'countdown'}
         <div class="overlay">
@@ -749,6 +775,25 @@
     from { opacity: 1; }
     to { opacity: 0.55; }
   }
+  /*
+   * REDUCED MOTION, IN THE CHROME. The canvas half is `GameCanvas.svelte`; these
+   * two rules are everything in here that animates.
+   *
+   * `html[data-motion='reduce']` and NOT `@media (prefers-reduced-motion:
+   * reduce)`: `packages/motion` folds the OS setting and the child's own
+   * override into one answer and mirrors it onto `<html>` before `mount()`,
+   * which is the only form that can honour a child whose device setting is not
+   * theirs to change. Running the media query alongside it would mean writing
+   * every rule twice, the second copy guarded on `:not([data-motion='full'])`.
+   *
+   * The colour is the warning here; the pulse was only ever emphasis, so losing
+   * it costs no information. `animation: none` rather than a 0s duration - an
+   * infinite `alternate` animation with no duration is not reliably a still
+   * element across browsers.
+   */
+  :global(html[data-motion='reduce']) .timer.low {
+    animation: none;
+  }
   .score {
     font-family: 'Press Start 2P', monospace;
     font-size: 10px;
@@ -814,6 +859,15 @@
   .bar.boss .fill {
     background: linear-gradient(90deg, #f87171, #fbbf24);
     transition: width 0.2s;
+  }
+  /* The bar still moves - it is a clock draining, which is gameplay - it just
+     stops easing there. */
+  :global(html[data-motion='reduce']) .bar.boss .fill {
+    transition: none;
+  }
+  .hud-buttons {
+    display: flex;
+    gap: 6px;
   }
   .mute-btn {
     border: 3px solid var(--edge);

@@ -119,13 +119,26 @@ lib/targeting.ts     resolveTarget() - single source of truth for "what's the
 lib/events.ts        GameEvent union + a shared EventBus (gameEvents). gameFlow
                     emits; GameCanvas and audio.ts independently subscribe.
 
-lib/render/           GameCanvas.svelte draws the scene from (runtime, theme)
-                    props alone, and manages its OWN transient FX (float text,
-                    hit-flash, shake, one-shot sprite FX, the banner, and the
-                    parallax starfield) by subscribing to gameEvents - it never
-                    touches gameplay logic. spriteAtlas.ts owns what art
-                    exists and which frame of it to draw; apng.ts decodes the
-                    APNGs at boot; apngParse.ts is the pure byte half of that.
+lib/render/           GameCanvas.svelte draws the scene from (runtime, theme,
+                    reducedMotion) props alone, and manages its OWN transient FX
+                    (float text, hit-flash, shake, one-shot sprite FX, the
+                    banner, and the parallax starfield) by subscribing to
+                    gameEvents - it never touches gameplay logic. spriteAtlas.ts
+                    owns what art exists and which frame of it to draw; apng.ts
+                    decodes the APNGs at boot; apngParse.ts is the pure byte half
+                    of that.
+
+                    EVERY AMBIENT LOOP READS THE CLOCK THROUGH `animClock()`,
+                    which reduced motion freezes - so one helper turns every
+                    `% totalMs` and every `Math.sin()` in the file into a
+                    constant and no call site learns the setting exists.
+                    LIFETIMES DO NOT USE IT: floats, banners and one-shots
+                    measure `nowMs - createdAt` against real time, and freezing
+                    that would strand them on screen forever. The rest of the
+                    setting is four gates (shake, hit flash, the float rise, and
+                    the muzzle/bolt one-shots). See the block at the top of the
+                    file for the rule they all follow and for what is
+                    deliberately NOT reduced.
 
 tools/                THE ART SOURCE, run at build time, not shipped.
                     spriteFrames.mjs holds the pixel grids and per-frame
@@ -135,10 +148,23 @@ tools/                THE ART SOURCE, run at build time, not shipped.
 lib/input/            InputManager abstracts keyboard/touch/future-gamepad into
                     one action vocabulary (move/moveTo/digit/backspace/fire/skill).
 
+lib/MotionToggle.svelte
+                    The reduced-motion control, on the boot screen (labelled)
+                    and in the HUD (icon, beside mute). It reads
+                    @pixel-blaster/motion, which is SHARED WITH THE CATALOG
+                    through one un-namespaced localStorage key - so this and the
+                    catalog's toggle are the same switch seen from two pages, and
+                    a child never has to press it twice. ROADMAP invariant 19:
+                    nothing here writes `@media (prefers-reduced-motion)` of its
+                    own, because a media query cannot see an override.
+
 lib/Game.svelte       Top-level orchestrator: phases (boot/skillTree/runSetup/
                     countdown/playing/gameover - the full list is `GamePhase`
                     in lib/types.ts), HUD, wires InputManager, runs the
                     SIMULATION rAF loop, mounts GameCanvas + SkillTreeScreen.
+                    Also owns the resolved `reducedMotion` and passes it down,
+                    so the canvas keeps drawing from its props alone and the
+                    HUD's toggle and the scene cannot disagree.
 
                     THERE ARE TWO INDEPENDENT rAF LOOPS: this one advances
                     `tick()` and GameCanvas runs its own for drawing. Keep
@@ -740,7 +766,8 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
     enemy shows is a pure function of the clock and the enemy's `uid`
     (`spritePhase()`, which is what stops a formation of identical enemies
     animating in lockstep). `EnemyInstance` has no `frame` field and must not
-    grow one - the renderer stays a pure function of `(runtime, theme, nowMs)`.
+    grow one - the renderer stays a pure function of
+    `(runtime, theme, nowMs, reducedMotion)`.
   - **`spriteSize()` returns the ON-SCREEN footprint and works before the art
     loads.** Every overlay - problem label, reticle box, shield bubble, layer
     pips, boss weak point - is positioned from it, so native sizes are declared
@@ -759,3 +786,15 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
   flash and a rising bolt, `shield-broken` a hue-shifted explosion. These events
   were always on the bus with nothing listening. The bolt is cosmetic only -
   shots resolve instantly in the rules, so nothing waits for it to arrive.
+- **EVERY NEW EFFECT HAS TO ANSWER FOR REDUCED MOTION, AND THE RULE IS ONE
+  SENTENCE:** take away what MOVES OR REPEATS, keep what appears, says
+  something, and goes. An ambient loop qualifies by reading `animClock()`
+  instead of `nowMs` and needs nothing else; anything else needs a gate on
+  `reducedMotion`. This is a safety setting rather than a taste one - for a
+  photosensitive or vestibular child, parallax under a screen shake under a
+  150ms brightness flash is a hazard - so an ungated effect is a real defect and
+  not a polish gap. What the setting deliberately does NOT touch is the enemies'
+  descent: it reaches effects, never rules, and a version where nothing falls
+  would be a different game rather than a calmer one. See ROADMAP invariant 19
+  for the CSS half, which is `html[data-motion='reduce']` and never a media
+  query of its own.

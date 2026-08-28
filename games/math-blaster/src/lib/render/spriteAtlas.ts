@@ -126,6 +126,19 @@ export function animationDurationMs(key: SpriteKey): number {
 }
 
 /**
+ * How many frames a sprite's art actually has, or 0 before it has decoded.
+ *
+ * Exists for reduced motion: `GameCanvas` draws ONE still frame of a one-shot
+ * effect instead of playing it, and the frame worth showing is the middle one
+ * (an explosion's first frame is a spark and its last is smoke). Picking that
+ * needs the count, and the count belongs here with everything else about what
+ * art exists.
+ */
+export function frameCount(key: SpriteKey): number {
+  return decoded.get(key)?.frames.length ?? 0;
+}
+
+/**
  * A per-entity offset into the animation cycle, derived from the entity's
  * uid. Without it, a formation of six identical drifters blinks and breathes
  * in perfect unison, which reads as obviously mechanical.

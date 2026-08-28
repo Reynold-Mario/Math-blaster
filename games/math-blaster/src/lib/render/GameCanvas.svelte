@@ -4,7 +4,7 @@
   import type { Backdrop } from '../levels/LevelDefinition';
   import {
     loadSpriteAtlas, drawSprite, spriteSize, spriteScale, spritePhase,
-    frameIndexAt, frameIndexOnce, animationDurationMs, type SpriteKey,
+    frameIndexAt, frameIndexOnce, animationDurationMs, frameCount, type SpriteKey,
   } from './spriteAtlas';
   import { resolveTarget, weakPointXPct, type Target } from '../targeting';
   import { gameEvents, type GameEvent } from '../events';
@@ -24,8 +24,61 @@
   interface Props {
     runtime: RuntimeState;
     theme: Backdrop;
+    /**
+     * Resolved by `packages/motion` and PASSED IN rather than read here, so this
+     * component still draws from its props alone - the same reason `theme`
+     * arrives this way instead of the canvas asking which wave it is.
+     */
+    reducedMotion: boolean;
   }
-  let { runtime, theme }: Props = $props();
+  let { runtime, theme, reducedMotion }: Props = $props();
+
+  /* ------------------------------------------------------------------------
+   * REDUCED MOTION, AND THE RULE IT FOLLOWS.
+   *
+   * `prefers-reduced-motion` is a safety setting here rather than a taste one:
+   * for a photosensitive or vestibular child, three-layer parallax under a
+   * screen shake under a 150ms hit flash is a hazard. So:
+   *
+   *   TAKE AWAY WHAT MOVES OR REPEATS. KEEP WHAT APPEARS, SAYS SOMETHING, AND
+   *   GOES.
+   *
+   * Applied consistently that comes out as:
+   *
+   *   frozen  the parallax starfield; every looping sprite (each enemy holds
+   *           the frame its own uid picked, so a formation still looks varied
+   *           rather than stamped); the reticle's marching dashes; the shield
+   *           and weak-point pulses
+   *   gone    screen shake, the hit flash, and the muzzle and bolt of a shot
+   *   still   an explosion - one frame, for the same beat the animation had
+   *   kept    float text and banners in full. They are the information, and a
+   *           fade is not movement; only their 40px rise is dropped.
+   *
+   * WHAT IS NOT NEGOTIABLE is the enemies' descent. It is the game rather than
+   * an effect, and the setting is deliberately honest about only reaching
+   * effects - a version where nothing falls is a different game, not a calmer
+   * one. Nothing in here touches `runtime`.
+   *
+   * The hit flash is the one real loss: it said "your shot landed on THIS
+   * target". What carries that instead is the float text, already drawn at the
+   * target's own position. A brightness jump per hit, several a second while a
+   * child holds FIRE, is precisely the luminance strobe the setting exists to
+   * prevent.
+   * --------------------------------------------------------------------- */
+
+  /**
+   * The clock every AMBIENT loop reads - anything whose whole job is to keep
+   * changing while nothing is happening. Frozen under reduced motion, so every
+   * `% totalMs` and every `Math.sin()` downstream resolves to a constant and no
+   * call site has to learn that the setting exists.
+   *
+   * LIFETIMES MUST NOT USE IT. Floats, banners and one-shots all measure
+   * `nowMs - createdAt` against real time; freezing that would strand every one
+   * of them on screen forever.
+   */
+  function animClock(nowMs: number): number {
+    return reducedMotion ? 0 : nowMs;
+  }
 
   let canvasEl: HTMLCanvasElement;
   let fontsReady = false;
@@ -77,7 +130,17 @@
   }
   let oneShots: OneShotFx[] = [];
 
+  /**
+   * The two one-shots one trigger-pull produces. Under reduced motion these are
+   * SUPPRESSED where an explosion is merely frozen, and the difference is rate:
+   * a child holding FIRE emits several a second, so even a still frame
+   * appearing and vanishing that often is a strobe. A kill is rare enough to
+   * keep, and is the one worth keeping.
+   */
+  const SHOT_COSMETICS: ReadonlySet<SpriteKey> = new Set<SpriteKey>(['muzzle', 'bolt']);
+
   function pushOneShot(fx: Omit<OneShotFx, 'id' | 'createdAt'>) {
+    if (reducedMotion && SHOT_COSMETICS.has(fx.sprite)) return;
     oneShots.push({ ...fx, id: ++floatIdCounter, createdAt: performance.now() });
   }
 
@@ -376,7 +439,7 @@
     // Each layer is drawn twice, offset by a screen height, so the scroll
     // wraps without a seam.
     for (let i = 0; i < starLayers.length; i++) {
-      const offset = ((nowMs / 1000) * STAR_LAYERS[i].speed) % LOGICAL_H;
+      const offset = ((animClock(nowMs) / 1000) * STAR_LAYERS[i].speed) % LOGICAL_H;
       ctx.drawImage(starLayers[i], 0, Math.round(offset) - LOGICAL_H);
       ctx.drawImage(starLayers[i], 0, Math.round(offset));
     }
@@ -459,14 +522,14 @@
     ctx.strokeStyle = '#fde047';
     ctx.lineWidth = 3;
     ctx.setLineDash([8, 5]);
-    ctx.lineDashOffset = -((nowMs / 30) % 13);
+    ctx.lineDashOffset = -((animClock(nowMs) / 30) % 13);
     const pad = 8;
     ctx.strokeRect(cx - size.width / 2 - pad, cy - pad, size.width + pad * 2, size.height + pad * 2);
     ctx.restore();
   }
 
   function flashFilter(active: boolean): string {
-    return active ? 'brightness(2.2) saturate(0.4)' : '';
+    return active && !reducedMotion ? 'brightness(2.2) saturate(0.4)' : '';
   }
 
   /** A translucent bubble around whatever is still shielded. Drawn rather
@@ -479,7 +542,7 @@
     size: { width: number; height: number },
     nowMs: number
   ) {
-    const pulse = 0.55 + 0.25 * Math.sin(nowMs / 180);
+    const pulse = 0.55 + 0.25 * Math.sin(animClock(nowMs) / 180);
     ctx.save();
     ctx.strokeStyle = COLOR_SHIELD;
     ctx.globalAlpha = pulse;
@@ -527,7 +590,7 @@
     drawSprite(ctx, enemy.kind, x, y, scale, {
       centerX: true,
       filter: flashFilter(isFlashing(enemy.uid, nowMs)),
-      frame: frameIndexAt(enemy.kind, nowMs, spritePhase(enemy.uid)),
+      frame: frameIndexAt(enemy.kind, animClock(nowMs), spritePhase(enemy.uid)),
     });
     if (enemy.shielded) drawShieldBubble(ctx, x, y + size.height / 2, size, nowMs);
 
@@ -571,7 +634,7 @@
   function drawWeakPoint(ctx: CanvasRenderingContext2D, boss: BossState, targeted: boolean, nowMs: number) {
     const x = px(weakPointXPct(boss), LOGICAL_W);
     const y = px(BOSS_Y_PCT, LOGICAL_H) + spriteSize(boss.sprite).height / 2;
-    const pulse = 5 + 2.5 * Math.sin(nowMs / 120);
+    const pulse = 5 + 2.5 * Math.sin(animClock(nowMs) / 120);
 
     ctx.save();
     ctx.fillStyle = '#f87171';
@@ -601,7 +664,7 @@
     drawSprite(ctx, boss.sprite, x, y, scale, {
       centerX: true,
       filter: flashFilter(isFlashing('boss', nowMs)),
-      frame: frameIndexAt(boss.sprite, nowMs),
+      frame: frameIndexAt(boss.sprite, animClock(nowMs)),
     });
 
     if (!boss.vulnerable) {
@@ -646,7 +709,7 @@
     const y = px(PLAYER_Y_PCT, LOGICAL_H);
     drawSprite(ctx, 'player', x, y, spriteScale('player'), {
       centerX: true,
-      frame: frameIndexAt('player', nowMs),
+      frame: frameIndexAt('player', animClock(nowMs)),
     });
 
     const text = player.inputBuffer || '·';
@@ -727,7 +790,9 @@
       const t = (nowMs - f.createdAt) / FLOAT_DURATION_MS;
       const alpha = 1 - t;
       const x = px(f.xPct, LOGICAL_W);
-      const y = px(f.y, LOGICAL_H) - t * 40;
+      // The rise is the only movement here. The fade stays: it is what stops
+      // labels piling up, and it is not motion.
+      const y = px(f.y, LOGICAL_H) - (reducedMotion ? 0 : t * 40);
 
       if (f.kind === 'text') drawTextFloat(ctx, f, x, y, alpha);
       else drawDigitFloat(ctx, f, x, y, alpha);
@@ -744,8 +809,8 @@
     const alive: OneShotFx[] = [];
     for (const fx of oneShots) {
       const elapsed = nowMs - fx.createdAt;
-      const frame = frameIndexOnce(fx.sprite, elapsed);
-      if (frame < 0) {
+      const playing = frameIndexOnce(fx.sprite, elapsed);
+      if (playing < 0) {
         // -1 also means "not decoded yet"; either way there is nothing to
         // draw and nothing to wait for.
         if (animationDurationMs(fx.sprite) === 0 && elapsed < 500) alive.push(fx);
@@ -753,8 +818,15 @@
       }
       alive.push(fx);
 
+      // Under reduced motion the effect is ONE frame held for the life the art
+      // would have taken - so the lifetime still comes from the art rather than
+      // from a second constant. The middle frame is the one that reads as
+      // "something happened here"; the first is a spark and the last is smoke.
+      const frame = reducedMotion ? Math.floor(frameCount(fx.sprite) / 2) : playing;
       const size = spriteSize(fx.sprite, fx.scale);
-      const yPct = fx.y + (fx.riseRatePct * elapsed) / 1000;
+      // Only the bolt travels, and the bolt is already suppressed at the push -
+      // this keeps the arithmetic true on its own rather than depending on that.
+      const yPct = fx.y + (reducedMotion ? 0 : (fx.riseRatePct * elapsed) / 1000);
       drawSprite(ctx, fx.sprite, px(fx.xPct, LOGICAL_W), px(yPct, LOGICAL_H) - size.height / 2, fx.scale, {
         centerX: true,
         frame,
@@ -773,7 +845,7 @@
   }
 
   function getShakeOffset(nowMs: number): { x: number; y: number } {
-    if (nowMs > shakeUntilMs) return { x: 0, y: 0 };
+    if (reducedMotion || nowMs > shakeUntilMs) return { x: 0, y: 0 };
     const remainingMs = shakeUntilMs - nowMs;
     const intensity = Math.min(6, remainingMs / 40);
     return { x: (Math.random() - 0.5) * intensity * 2, y: (Math.random() - 0.5) * intensity * 2 };

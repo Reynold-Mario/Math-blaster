@@ -232,6 +232,7 @@ pixel-blaster/                  repo root == Netlify base directory
 ├── apps/
 │   └── web/                    the catalog page
 └── packages/
+    ├── motion/                 the resolved reduced-motion setting
     └── theme/                  tokens.css only - the one palette
 
 `supabase/` sits at the repo root under either layout — it is platform-level, not a
@@ -268,7 +269,10 @@ PR 12 is when an assembled site exists and the question has a real answer.
 
 `--workspaces` excludes the root, so a root script calling the same script name in each
 workspace does not recurse. `--if-present` is what lets `packages/theme`, which has
-neither `check` nor `test`, sit alongside workspaces that do — at the cost of a new
+neither `check` nor `test`, sit alongside workspaces that do (`packages/motion` has both,
+and needs no wiring beyond declaring them — the fan-out picks a new workspace up on its
+own, which is the whole reason a shared module tests itself here rather than through a
+consumer's `moduleNameMapper`) — at the cost of a new
 silent-green mode, which is why the verification below asserts on the *counts* CI prints
 rather than on its exit code. `.nvmrc` at the root serves both `actions/setup-node` and
 Netlify's own version detection. The lockfile consolidates at the root; npm hoists, so
@@ -1385,6 +1389,13 @@ expensive, quiet consequences.
    currency, skills and each other's queued runs. **The un-namespaced key never moves** —
    it is the anonymous slot, a learner gets a suffix, and relocating it would strand every
    current player.
+   **`pixel-blaster:motion` is the one documented exception, and it is deliberately
+   neither namespaced nor scoped.** It is an accessibility setting rather than game state,
+   so the failure this rule prevents runs the other way: a preference stored per game is
+   one a child has to re-make on the catalog, again in Math Blaster, and again in the next
+   game. It is not learner-scoped either — the hazard belongs to whoever is looking at the
+   screen, which is knowable before identity resolves (invariant 16) and is often not a
+   signed-in child at all. See `packages/motion`.
 3. **A module moves to `packages/` when it has a second real consumer**, not when it looks
    reusable. With one consumer, every boundary is a guess, and extraction also costs a
    jest `moduleNameMapper` entry and a new class of "works in `vite build`, fails in
@@ -1444,6 +1455,17 @@ expensive, quiet consequences.
     five-minute cookie cache, so checking it here either needs the auth database too or
     trusts a stale snapshot. The only signing key this repo ever holds is the one it
     generates for its own JWKS.
+19. **Reduced motion is a resolved answer, not a media query.** Every surface reads it
+    from `packages/motion` — in CSS as `html[data-motion='reduce']`, in code as
+    `motion.reduced` — and no stylesheet in this repo may write
+    `@media (prefers-reduced-motion: reduce)` of its own. A media query cannot see the
+    in-product override, and the override is the whole point: a child on a managed school
+    device does not control the OS setting, so a surface that consults only the query
+    silently ignores the button they just pressed. It fails quiet, and it fails for
+    exactly the child the setting exists to protect. The store still listens to the query,
+    so following the device remains the default and stays live with no reload.
+    **The numbering is why this is 19 and not slotted in beside invariant 2**, which it
+    amends: two sections above link to `[invariant 18]` by number.
 
 ## Open questions for Varsity Tutors
 

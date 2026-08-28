@@ -253,30 +253,48 @@
     opacity: 0.45;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .card {
-      transition: none;
-    }
+  /* ---- reduced motion ---- */
 
-    .card:not(.upcoming):hover {
-      transform: none;
-    }
+  /*
+   * KEYED ON AN ATTRIBUTE, AND `@media (prefers-reduced-motion: reduce)` IS
+   * GONE RATHER THAN KEPT ALONGSIDE IT.
+   *
+   * `packages/motion` resolves the OS setting and an explicit override into one
+   * answer and mirrors it onto `<html>` before `mount()` runs. That buys the two
+   * things the media query could not: a child on a managed school device, who
+   * does not control the OS setting, can still turn this off; and a child whose
+   * device forces `reduce` system-wide can turn it back on. It keeps the one
+   * thing the media query was good for - the store listens to the query, so an
+   * OS-level toggle still applies live with no reload.
+   *
+   * Running both would mean writing every rule below twice: once inside the
+   * query guarded on `:not([data-motion='full'])`, once on
+   * `[data-motion='reduce']`. That guard is exactly the kind of thing that gets
+   * copied correctly three times and wrongly the fourth.
+   */
+  :global(html[data-motion='reduce']) .card {
+    transition: none;
+  }
 
-    /* AN APNG CANNOT BE PAUSED FROM CSS. There is no `animation-play-state` for
-       an `<img>`, and every one of these sprites declares `num_plays: 0` in its
-       `acTL` chunk, which means loop forever. The two options were authoring a
-       static twin of each sprite - doubling the art pipeline for one media
-       query - or not painting it. This does the second, and stands an emoji in
-       its place, which is the icon vocabulary the game already uses throughout.
+  :global(html[data-motion='reduce']) .card:not(.upcoming):hover {
+    transform: none;
+  }
 
-       Being a media query rather than a one-shot `matchMedia` read, this
-       applies live when the OS setting is toggled, with no reload. */
-    .hero-sprite {
-      display: none;
-    }
+  /* AN APNG CANNOT BE PAUSED FROM CSS. There is no `animation-play-state` for
+     an `<img>`, and every one of these sprites declares `num_plays: 0` in its
+     `acTL` chunk, which means loop forever. The two options were authoring a
+     static twin of each sprite - doubling the art pipeline for one setting - or
+     not painting it. This does the second, and stands an emoji in its place,
+     which is the icon vocabulary the game already uses throughout.
 
-    .hero-glyph {
-      display: block;
-    }
+     The game does NOT have to make this trade: a canvas draws whichever frame
+     it is told to, so `GameCanvas.svelte` freezes the same art instead of
+     hiding it. */
+  :global(html[data-motion='reduce']) .hero-sprite {
+    display: none;
+  }
+
+  :global(html[data-motion='reduce']) .hero-glyph {
+    display: block;
   }
 </style>
