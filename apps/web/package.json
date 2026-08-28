@@ -19,6 +19,7 @@
     "vite": "^8.2.0"
   },
   "dependencies": {
+    "@pixel-blaster/motion": "*",
     "@pixel-blaster/theme": "*"
   }
 }

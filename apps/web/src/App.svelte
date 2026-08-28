@@ -1,18 +1,26 @@
 <script lang="ts">
   import GameCard from './lib/GameCard.svelte'
+  import MotionToggle from './lib/MotionToggle.svelte'
   import { GAMES } from './games'
 </script>
 
 <main class="page">
   <header class="masthead">
-    <!-- Two block spans rather than a `<br>`. A `<br>` gives the same two lines
-         visually but concatenates the accessible name to "PIXELBLASTER", which a
-         screen reader reads as one invented word. -->
-    <h1 class="wordmark"><span>Pixel</span> <span>Blaster</span></h1>
-    <p class="tagline">
-      Arcade games with the maths built into the mechanics, rather than bolted on as quiz
-      screens between the fun bits.
-    </p>
+    <div class="masthead-text">
+      <!-- Two block spans rather than a `<br>`. A `<br>` gives the same two lines
+           visually but concatenates the accessible name to "PIXELBLASTER", which a
+           screen reader reads as one invented word. -->
+      <h1 class="wordmark"><span>Pixel</span> <span>Blaster</span></h1>
+      <p class="tagline">
+        Arcade games with the maths built into the mechanics, rather than bolted on as quiz
+        screens between the fun bits.
+      </p>
+    </div>
+
+    <!-- Above the grid on purpose: the card heroes are looping sprites, so the
+         control that turns them off has to come before them in reading order as
+         well as in the layout. -->
+    <MotionToggle />
   </header>
 
   <ul class="grid">
@@ -44,8 +52,22 @@
     padding: 40px 16px 56px;
   }
 
+  /* A row, so the motion toggle can sit opposite the wordmark. It wraps rather
+     than shrinking - at 9px `Press Start 2P` the label has no give in it. */
   .masthead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
     margin-bottom: 28px;
+  }
+
+  /* `flex: 1` and not `auto`: the tagline's own `max-width: 46ch` is what should
+     set the measure, and a content-sized flex item would let a long line push
+     the toggle off the row instead. */
+  .masthead-text {
+    flex: 1 1 300px;
   }
 
   /* The same typeface treatment as the game's boot screen title. */

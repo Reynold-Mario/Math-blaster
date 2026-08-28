@@ -1,0 +1,28 @@
+{
+  /**
+   * Ships TypeScript SOURCE, with no build step - both consumers are Vite apps
+   * and Vite resolves the symlinked workspace package to its real path, which
+   * puts it outside `node_modules` and therefore through the ordinary TS
+   * transform. A `dist/` here would buy nothing and add a build ordering
+   * problem to CI's `--workspaces` fan-out.
+   *
+   * `types: []` on purpose: this module may touch the DOM and must not touch
+   * node or jest globals, and the cheapest way to enforce that is to not put
+   * them in scope.
+   */
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom"],
+    "types": [],
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

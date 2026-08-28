@@ -691,18 +691,30 @@ Not "later"; **blocked**. Do not start these.
   K-3. Analytics, and especially session replay on a child's screen, is a COPPA
   question rather than an engineering one. Needs a written answer before any
   telemetry ships. Default to no replay and no stable per-child identifier.
-- **Accessibility.** One item here is a safety issue rather than polish and should
-  jump the queue the moment anyone outside the team plays it:
-  **honour `prefers-reduced-motion`.** `GameCanvas.svelte` runs hit-flash, screen
-  shake, one-shot explosions and three-layer parallax; for a photosensitive child
-  that is a hazard. Both student apps force `reducedMotion: 'reduce'` in
-  Playwright, which is what the org treats as default. Add an in-game toggle too —
-  a child on a school device may not control the OS setting. Then: WCAG AA
-  contrast on `Press Start 2P` at small sizes, visible focus rings and no keyboard
-  traps across `GamePhase` transitions, a written screen-reader boundary (a
-  real-time canvas arcade game is not screen-reader playable; saying so is better
-  than an audit that pretends otherwise), and an a11y CI gate scoped to the Svelte
-  chrome with the canvas baselined and commented.
+- **Accessibility.** ~~One item here is a safety issue rather than polish and should
+  jump the queue the moment anyone outside the team plays it: **honour
+  `prefers-reduced-motion`.**~~ **Done — it jumped the queue and landed.**
+  `packages/motion` resolves the OS setting and an in-product override into one
+  answer, mirrored onto `<html>` as `data-motion` (ROADMAP invariant 19, and the
+  documented exception to invariant 2 for its storage key). `GameCanvas.svelte`
+  freezes the parallax, the looping sprites, the reticle dashes and the shield
+  pulses, drops the shake, the hit flash and the muzzle/bolt, and holds an
+  explosion as a single still frame; the catalog swaps its APNG heroes for glyphs
+  and stops the card lift. A **toggle** ships on the game's boot screen, in its
+  HUD beside mute, and in the catalog masthead — one switch, one origin, so a
+  child on a school device who does not control the OS setting presses it once.
+  Note the org's Playwright default (`reducedMotion: 'reduce'` in both student
+  apps) now exercises the reduced path, not the full one, for anything we add
+  later.
+
+  **Still open, and all of it polish rather than safety** — note that none of it
+  is approval-blocked either, so this bullet now sits in the wrong section and is
+  merely unscheduled: WCAG AA contrast on
+  `Press Start 2P` at small sizes, visible focus rings and no keyboard traps
+  across `GamePhase` transitions, a written screen-reader boundary (a real-time
+  canvas arcade game is not screen-reader playable; saying so is better than an
+  audit that pretends otherwise), and an a11y CI gate scoped to the Svelte chrome
+  with the canvas baselined and commented.
 - **`LICENSE`.** There is none. `eng-mcp-server` ships MIT, but a VT-owned consumer
   product is probably proprietary — confirm rather than copy.
 
