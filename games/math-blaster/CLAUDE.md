@@ -4,10 +4,7 @@ Pixel-art arcade math shooter for K-3 kids, set in space. Svelte 5 (runes) +
 TypeScript + Vite.
 Gameplay renders on `<canvas>`; Svelte owns UI chrome only.
 
-Commands: `npm run dev` / `npm run build` / `npm run preview` / `npm run check`
-/ `npm test` / `npm run sprites`. `check` = svelte-check + tsc; `sprites`
-regenerates the APNG art from `tools/` (see the sprite conventions at the
-bottom). Always run `npm run check` AND `npm test` after edits - CI gates both,
+Always run `npm run check` AND `npm test` after edits - CI gates both,
 and the whole codebase currently passes with 0 errors/warnings; keep it that
 way.
 
@@ -38,9 +35,9 @@ lib/levels/         enemyArchetypes.ts = the LEAF module: sprite-kind vocabulary
                     gradeTree.ts (K-3 curriculum-unlock nodes, built on SkillTree),
                     problemGenerators.ts (generated + authored problems)
 
-lib/skills/         SkillTree.ts = generic, content-free engine (nodes, prereqs,
-                    costPerLevel, purchase logic). baseSkillTree.ts = the concrete
-                    combat/economy nodes. SkillTreeScreen.svelte = the shop UI.
+lib/skills/         SkillTree.ts = generic, content-free engine.
+                    baseSkillTree.ts = the concrete combat/economy nodes.
+                    SkillTreeScreen.svelte = the shop UI.
 
 lib/identity/       WHO IS PLAYING, and a leaf like enemyArchetypes is.
                     LearnerIdentity.ts is the PORT (types only - no fetch, no
@@ -146,7 +143,7 @@ tools/                THE ART SOURCE, run at build time, not shipped.
                     emits public/sprites/*.apng (`npm run sprites`).
 
 lib/input/            InputManager abstracts keyboard/touch/future-gamepad into
-                    one action vocabulary (move/moveTo/digit/backspace/fire/skill).
+                    ONE action vocabulary - never per-device branching above it.
 
 lib/MotionToggle.svelte
                     The reduced-motion control, on the boot screen (labelled)
@@ -158,8 +155,7 @@ lib/MotionToggle.svelte
                     nothing here writes `@media (prefers-reduced-motion)` of its
                     own, because a media query cannot see an override.
 
-lib/Game.svelte       Top-level orchestrator: phases (boot/skillTree/runSetup/
-                    countdown/playing/gameover - the full list is `GamePhase`
+lib/Game.svelte       Top-level orchestrator: phases (the list is `GamePhase`
                     in lib/types.ts), HUD, wires InputManager, runs the
                     SIMULATION rAF loop, mounts GameCanvas + SkillTreeScreen.
                     Also owns the resolved `reducedMotion` and passes it down,
