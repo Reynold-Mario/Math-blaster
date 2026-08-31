@@ -60,6 +60,8 @@ actually owns it.
 | 2026-08-26 | Achievements are **not** based on defeating bosses, and **not** on completing topics. What they *are* based on stays open until discussed. | `ROADMAP.md` PR 3 item 3 |
 | 2026-08-26 | Drift fixed by renaming local files to the applied versions, not `migration repair`. | 1.1 |
 | 2026-08-26 | Docker is optional; only `supabase login` blocks Phase 1. | 1.2 / 1.2b |
+| 2026-08-31 | Where `the-student-experience` and this file disagree about what the reference contains, **the reference wins.** Three of 2.1/2.2's claims about it did not survive checking. | 2.1, 2.2 |
+| 2026-08-31 | **Rejected: TSE's `dependency-freeze.yml`** (`Deps Approved` label gate). Dependabot is the update path here and 2.4 already groups bumps by `dependency-type`; the gate would red every grouped Dependabot PR until hand-labelled. | 2.1 ladder |
 
 ---
 
@@ -503,30 +505,81 @@ Run against the real project with two dashboard-created users
 ## Phase 2 — Quality gates
 
 The largest gap after the database. There is **no linter and no formatter**, and
-`.github/CONTRIBUTING.md:33` currently states that as *policy* — so that file
+`.github/CONTRIBUTING.md:41` currently states that as *policy* — so that file
 changes in the same PR as 2.1.
 
+**2.1, 2.2 and 2.3b were written from a misreading of the reference, and are
+corrected below.** `the-student-experience` is a read-only reference
+(`ROADMAP.md` "Decisions"), so where it and this file disagreed, it wins. Checking
+its `eslint.config.js` against what 2.1/2.2 claimed it contains:
+
+| This file claimed TSE has | TSE actually has |
+|---|---|
+| `no-console: error` with path exemptions | **no `no-console` rule at all** — `grep -c no-console eslint.config.js` returns 0 |
+| "no `eslint-disable`, no `svelte-ignore`" | `no-warning-comments` with **`svelte-ignore` as its only term**; nothing bans `eslint-disable` |
+| the config living beside the game | TSE is a single package with **one config at its root** |
+
+Two of those were invented, and the third was overtaken by the workspace move — the
+same way PR 7 overtook 2.4's `directory`. Dropping `no-console` also deletes the
+whole `devTools.ts` / `tools/**` / `balanceReport.test.ts` exemption exercise 2.2
+described, because there is no rule left for those files to be exempt from.
+
+**The ladder is four PRs, in order.** A (this item, docs only), B (2.1), C (2.2),
+D (2.3b). B before C because C is two rules added to the config B creates; D last
+because it is the only one that needs a repo-settings edit, and because its `Lint`
+job cannot exist until B does.
+
 - [ ] **2.1** ESLint + Prettier, mirroring `the-student-experience`.
-      `games/math-blaster/eslint.config.js`: flat config with `js`/`ts`/`svelte`
-      recommended, `eslint-config-prettier`, `svelte.configs.prettier`, TSE's
-      `includeIgnoreFile('.gitignore')` trick, `no-console: error` with commented
-      path exemptions, and `parserOptions.projectService: true` on `**/*.svelte`.
-      `games/math-blaster/prettier.config.js`: TSE's exact settings — `useTabs: true`,
+      **At the repo root, not beside the game.** TSE is a single package, so its one
+      root config is the shape being mirrored; and ESLint flat config has no
+      `--workspaces --if-present` equivalent, so a per-workspace config would mean
+      four copies with no mechanism to keep them in step. Same reasoning as 2.4's
+      single Dependabot entry, and the same correction.
+      `eslint.config.js`: flat config with `js`/`ts`/`svelte` recommended,
+      `eslint-config-prettier`, `svelte.configs.prettier`, TSE's
+      `includeIgnoreFile('.gitignore')` trick, and TSE's `no-unused-vars` with the
+      four `^_` ignore patterns.
+      `prettier.config.js`: TSE's exact settings — `useTabs: true`,
       `singleQuote: true`, `trailingComma: 'none'`, `printWidth: 100`, plus
       `prettier-plugin-svelte`.
-      Skip TSE's `no-restricted-globals: fetch` (no server here) and its
-      inline-`<svg>` ban (everything is canvas).
-      **Sequencing:** the first `prettier --write` rewrites nearly every file. Keep
-      it as its own commit so a rebase can take it wholesale, and land it when no
-      long-lived branch is open.
-- [ ] **2.2** Adopt TSE's zero-suppressions rule: no `eslint-disable`, no
-      `svelte-ignore`, machine-enforced via `no-warning-comments` plus a
-      `no-restricted-syntax` selector on `SvelteHTMLComment`. Note
-      `src/lib/runtime/balanceReport.test.ts:39,41,56,58` already carries four
-      `// eslint-disable-next-line no-console` comments that are inert today and
-      become both live *and* forbidden the moment ESLint exists. The correct fix is
-      a path-scoped `no-console: off` override for that file plus `tools/**` and
-      `runtime/devTools.ts`, each line commented with why.
+      Scripts, also TSE's verbatim:
+      `lint` = `prettier --check --cache . && eslint --cache --cache-strategy content .`,
+      `format` = `prettier --write .`. No `--max-warnings 0`: TSE has none, and no
+      rule here is set to `warn`.
+      **Skip four of TSE's rule blocks, all for structural reasons, not taste:**
+      `no-restricted-imports` (PostHog is not a dependency), `no-restricted-globals:
+      fetch` (no server code), the inline-`<svg>` ban (everything is canvas, and
+      there is no Lucide here to point people at instead), and
+      `prettier-plugin-tailwindcss` (no Tailwind).
+      **`parserOptions.projectService: true` is skipped too, and this one is a
+      prediction rather than a certainty.** TSE needs it for
+      `svelte/no-navigation-without-resolve`, a SvelteKit-router rule with no
+      counterpart here. It is also expected to fail: every `tsconfig.json` in this
+      repo is solution-style (`files: []` + `references`), and the project service
+      resolves to the nearest one, which contains no files. If it turns out to work,
+      prefer it and strike this paragraph; if a type-aware rule is ever wanted and it
+      does not, the fix is an explicit `project: [...]` list of the `tsconfig.app.json`
+      files, not `projectService`.
+      **Sequencing:** the first `prettier --write` rewrites nearly every file — 88 of
+      the 90 tracked `.ts`/`.svelte` files are 2-space indented and `useTabs: true`
+      re-indents all of them. Keep it as its own commit so a rebase can take it
+      wholesale, and land it when no long-lived branch is open. A
+      `.git-blame-ignore-revs` naming that commit is worth adding at the same time;
+      TSE has none, but TSE never did a repo-wide reformat.
+- [ ] **2.2** Adopt TSE's suppression rule: **no `svelte-ignore`**, machine-enforced
+      via `no-warning-comments` (term `svelte-ignore`, `location: 'anywhere'`) for the
+      comment form, plus TSE's `no-restricted-syntax` selector on
+      `SvelteHTMLComment` for the `<!-- ... -->` template form. Every Svelte compiler
+      warning points at a real hazard, and this is what stops a suppression routing
+      around the existing `svelte-check --fail-on-warnings` contract.
+      **`eslint-disable` is not banned** — the reference does not ban it, and the
+      claim that it did was this file's invention. Should a case for banning it ever
+      arise, it is a separate decision on its own merits, not a port.
+      Nothing in `apps/`, `games/` or `packages/` carries a `svelte-ignore` today, so
+      this lands green. The four `// eslint-disable-next-line no-console` comments at
+      `games/math-blaster/src/lib/runtime/balanceReport.test.ts:39,41,56,58` are
+      deleted back in 2.1, not here: with no `no-console` rule they suppress nothing,
+      and ESLint's default `reportUnusedDisableDirectives: 'warn'` would flag all four.
 - [x] **2.3** ~~Fix the CI job that lies.~~ DONE (2026-08-26).
       `.github/workflows/ci.yml` was named "Build, Check & Test" and never ran
       `npm run build`, so a Vite build failure passed CI and surfaced on
@@ -541,16 +594,36 @@ changes in the same PR as 2.1.
       failure, an unresolvable asset, a Svelte compile error `tsc` is happy
       with. The comment in `ci.yml` says so accurately.
       *This is `ROADMAP.md` PR 8 — tick it there too.*
-- [ ] **2.3b** Split into one job per gate (`Lint` / `Build` / `svelte-check` /
-      `Unit tests`), so a failure names itself instead of hiding inside one
-      combined check. **Deliberately not done here:** `"Build, Check & Test"` is
-      the *required status check* on `main`, so renaming or splitting the job
-      leaves branch protection waiting forever on a context that no longer
-      reports — the PR sits `BLOCKED` with nothing to fix, which is exactly the
-      failure mode that cost time on #26 and #30 today. Doing it means updating
-      the protection rule in the same change, which is a repo-settings edit
-      rather than a code one. Bundle it with 2.1, which adds the `Lint` job
-      anyway.
+- [ ] **2.3b** Split into one job per gate, so a failure names itself instead of
+      hiding inside one combined check. The job names *are* the branch-protection
+      contexts, so they are fixed by this item: `Lint`, `Build`,
+      `svelte-check (strict)`, `Unit tests` — TSE's four, minus its Playwright
+      container, which nothing here needs while every test is jest under
+      `testEnvironment: node`.
+      The `Lint` job takes TSE's cache pair (`actions/cache/restore@v4` before,
+      `save@v4` guarded to `main` after) over `.eslintcache` and
+      `node_modules/.cache/prettier`. Both of TSE's comments come with it: the
+      `--cache-strategy content` in 2.1's `lint` script is load-bearing because
+      ESLint's default keys on mtime and `actions/checkout` writes every file with a
+      fresh mtime, and only `main` writes because cache entries are branch-scoped, so
+      a PR's entry is unreadable everywhere else while still evicting the one every
+      branch restores from.
+      Two things about this repo's `ci.yml` do **not** get replaced by the
+      reference's: the `on:` block, whose `types: [opened, synchronize, reopened,
+      edited]` records the stacked-PR retarget bug in its own comment (TSE has a bare
+      `pull_request:`), and `actions/*@v5` (TSE is still on `@v4`).
+      **Why this was deferred, and what unblocks it:** `"Build, Check & Test"` is the
+      *required status check* on `main`, so renaming or splitting the job leaves
+      branch protection waiting forever on a context that no longer reports — the PR
+      sits `BLOCKED` with nothing to fix, which is exactly the failure mode that cost
+      time on #26 and #30. `enforce_admins` is on, so there is no bypass. The order is
+      therefore: push the PR, let the four checks report green, **then** PATCH
+      `branches/main/protection/required_status_checks` to the four new contexts
+      (keeping `strict: true`), then merge. Between those last two steps every other
+      open PR is blocked until rebased, `strict: true` having required that anyway.
+      An earlier draft of this item said to bundle it with 2.1. That is wrong: 2.1's
+      format commit rewrites nearly every file, and burying a branch-protection
+      cutover inside that diff is how the cutover gets missed.
 - [x] **2.4** ~~`.github/dependabot.yml`~~ DONE (2026-08-26), modelled on
       `eng-mcp-server`'s: npm weekly grouped by `dependency-type`,
       github-actions monthly, `open-pull-requests-limit: 5`,
