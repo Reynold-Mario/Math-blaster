@@ -27,6 +27,17 @@ export default defineConfig(
 			// typescript-eslint strongly recommend that you do not use the no-undef lint rule on TypeScript projects.
 			// see: https://typescript-eslint.io/troubleshooting/faqs/eslint/#i-get-errors-from-the-no-undef-rule-about-global-variables-not-being-defined-even-though-there-are-no-typescript-errors
 			'no-undef': 'off',
+			// Ban `svelte` + `ignore` directives in script comments (both line and
+			// block form) inside .ts files and script blocks. Every Svelte compiler
+			// warning points at a real hazard (state_referenced_locally, a11y,
+			// reactivity); silencing it hides the bug for the next reader. Fix at the
+			// source instead. Paired with the SvelteHTMLComment selector below, which
+			// covers the HTML-comment form in templates.
+			//
+			// This is also what stops a suppression routing around the existing
+			// `svelte-check --fail-on-warnings` contract, which is the only reason
+			// that contract has held so far.
+			'no-warning-comments': ['error', { terms: ['svelte-ignore'], location: 'anywhere' }],
 			// Underscore-prefixed args/vars are the standard "intentionally
 			// unused" marker (drop-in API-symmetric callbacks, type shims).
 			'@typescript-eslint/no-unused-vars': [
@@ -61,6 +72,19 @@ export default defineConfig(
 				extraFileExtensions: ['.svelte'],
 				parser: ts.parser
 			}
+		},
+		rules: {
+			// Ban the HTML-comment form of the ignore directive in templates. Same
+			// reason as the `no-warning-comments` rule above: silencing a compiler
+			// warning hides the bug. Fix the underlying warning instead.
+			'no-restricted-syntax': [
+				'error',
+				{
+					selector: 'SvelteHTMLComment[value=/(?:^|\\s)svelte-ignore(?:\\s|$)/]',
+					message:
+						'Do not silence Svelte compiler warnings with `<!-- svelte-ignore ... -->`. Fix the underlying warning instead (see CLAUDE.md).'
+				}
+			]
 		}
 	},
 	{

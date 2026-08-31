@@ -581,7 +581,7 @@ job cannot exist until B does.
       split is what turns it into a `Lint` job; waiting for that would have left a
       linter in the repo that CI does not run. The cost is that "Build, Check & Test"
       understates the job until 2.3b renames it.
-- [ ] **2.2** Adopt TSE's suppression rule: **no `svelte-ignore`**, machine-enforced
+- [x] **2.2** ~~Adopt TSE's suppression rule~~ DONE (2026-08-31): **no `svelte-ignore`**, machine-enforced
       via `no-warning-comments` (term `svelte-ignore`, `location: 'anywhere'`) for the
       comment form, plus TSE's `no-restricted-syntax` selector on
       `SvelteHTMLComment` for the `<!-- ... -->` template form. Every Svelte compiler
@@ -595,6 +595,18 @@ job cannot exist until B does.
       `games/math-blaster/src/lib/runtime/balanceReport.test.ts:39,41,56,58` are
       deleted back in 2.1, not here: with no `no-console` rule they suppress nothing,
       and ESLint's default `reportUnusedDisableDirectives: 'warn'` would flag all four.
+
+      *Shipped:* both halves proved to fire rather than assumed, which is the 2.3
+      standard. A `<!-- svelte-ignore a11y_click_events_have_key_events -->` in
+      `Game.svelte` errors on `no-restricted-syntax`, and a `// svelte-ignore` line
+      in `audio.ts` errors on `no-warning-comments`; both reverted, lint green.
+      Worth knowing: `eslint-plugin-svelte`'s own `svelte/no-unused-svelte-ignore`
+      fires alongside the template ban, so that case reports twice. Harmless, and
+      not worth turning either off - the second message is about a *different*
+      defect (a directive silencing nothing).
+      The rule is also written into `games/math-blaster/CLAUDE.md`'s conventions,
+      because an agent reading only that file would otherwise reach for the
+      directive and be told no by CI instead of by the docs.
 - [x] **2.3** ~~Fix the CI job that lies.~~ DONE (2026-08-26).
       `.github/workflows/ci.yml` was named "Build, Check & Test" and never ran
       `npm run build`, so a Vite build failure passed CI and surfaced on
