@@ -621,7 +621,7 @@ job cannot exist until B does.
       failure, an unresolvable asset, a Svelte compile error `tsc` is happy
       with. The comment in `ci.yml` says so accurately.
       *This is `ROADMAP.md` PR 8 — tick it there too.*
-- [ ] **2.3b** Split into one job per gate, so a failure names itself instead of
+- [x] **2.3b** ~~Split into one job per gate~~ DONE (2026-08-31), so a failure names itself instead of
       hiding inside one combined check. The job names *are* the branch-protection
       contexts, so they are fixed by this item: `Lint`, `Build`,
       `svelte-check (strict)`, `Unit tests` — TSE's four, minus its Playwright
@@ -651,6 +651,31 @@ job cannot exist until B does.
       An earlier draft of this item said to bundle it with 2.1. That is wrong: 2.1's
       format commit rewrites nearly every file, and burying a branch-protection
       cutover inside that diff is how the cutover gets missed.
+
+      *Shipped:* four jobs — `Lint`, `Build`, `svelte-check (strict)`, `Unit tests`.
+      Each installs its own dependencies, so four `npm ci` runs replace one; they are
+      parallel, and the reference accepts the same trade.
+      **The protection cutover is a manual step and has to happen between the checks
+      going green and the merge.** `enforce_admins` is on, so there is no bypass:
+
+      ```sh
+      gh api -X PATCH \
+        repos/Reynold-Mario/Math-blaster/branches/main/protection/required_status_checks \
+        --input - <<'JSON'
+      { "strict": true, "checks": [
+          { "context": "Lint" }, { "context": "Build" },
+          { "context": "svelte-check (strict)" }, { "context": "Unit tests" } ] }
+      JSON
+      ```
+
+      To roll back, PATCH the same endpoint with a single
+      `{ "context": "Build, Check & Test" }`.
+      **Knock-on, and it is not optional:** between the PATCH and the merge every other
+      open PR is blocked, because their branches still carry the one-job workflow and
+      cannot report the new contexts. The four open Dependabot PRs each need
+      `@dependabot rebase` afterwards; `strict: true` would have required that anyway.
+      (#36 targets `/math-blaster`, a directory that no longer exists — close it rather
+      than rebase it.)
 - [x] **2.4** ~~`.github/dependabot.yml`~~ DONE (2026-08-26), modelled on
       `eng-mcp-server`'s: npm weekly grouped by `dependency-type`,
       github-actions monthly, `open-pull-requests-limit: 5`,

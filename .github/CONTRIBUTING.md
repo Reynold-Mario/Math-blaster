@@ -57,7 +57,8 @@ reviewable in one place instead of scattered through the source.
 
 - Branch off `main` (e.g. `feat/short-description`, `fix/short-description`).
 - Keep PRs small and focused on a single change.
-- Open a PR against `main`. The "Build, Check & Test" CI check must pass before merge.
+- Open a PR against `main`. All four CI checks — `Lint`, `Build`, `svelte-check (strict)`
+  and `Unit tests` — must pass before merge.
 - Reference related issues in the PR description where applicable.
 
 ## Architecture & project conventions
