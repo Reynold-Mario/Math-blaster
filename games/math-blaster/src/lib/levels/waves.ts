@@ -19,38 +19,38 @@ import type { EnemyArchetypeId } from './enemyArchetypes';
 import { clampLane } from './enemyArchetypes';
 
 export type FormationShape =
-  /** Evenly spread across the field, all released level. */
-  | 'line'
-  /** Evenly spread, but staggered into a downward-pointing V so the
-   * centre reaches the player first. */
-  | 'vee'
-  /** Single lane, stacked vertically - a sustained squeeze on one column
-   * that punishes staying put. */
-  | 'column'
-  /** Split to the far edges, leaving the middle open. Forces a choice
-   * about which side to commit to. */
-  | 'pincer'
-  /** Spread across the field at irregular lanes and depths. Still
-   * deterministic - "scatter" describes the look, not the method. */
-  | 'scatter';
+	/** Evenly spread across the field, all released level. */
+	| 'line'
+	/** Evenly spread, but staggered into a downward-pointing V so the
+	 * centre reaches the player first. */
+	| 'vee'
+	/** Single lane, stacked vertically - a sustained squeeze on one column
+	 * that punishes staying put. */
+	| 'column'
+	/** Split to the far edges, leaving the middle open. Forces a choice
+	 * about which side to commit to. */
+	| 'pincer'
+	/** Spread across the field at irregular lanes and depths. Still
+	 * deterministic - "scatter" describes the look, not the method. */
+	| 'scatter';
 
 export interface WaveSpec {
-  shape: FormationShape;
-  /**
-   * One entry per slot in the formation - its length IS the formation
-   * size, and the entries decide what fills each slot. Mixing archetypes
-   * in one wave is the point (a shielded sentinel escorted by spores
-   * reads very differently from either alone).
-   */
-  archetypes: EnemyArchetypeId[];
-  /** Seconds to wait after releasing this wave before the next one. */
-  gapSec: number;
-  /**
-   * Vertical spacing between staggered slots, in y-percent. Slots offset
-   * this way start *above* the top of the screen (negative y) and simply
-   * aren't drawn until they descend into view.
-   */
-  staggerPct?: number;
+	shape: FormationShape;
+	/**
+	 * One entry per slot in the formation - its length IS the formation
+	 * size, and the entries decide what fills each slot. Mixing archetypes
+	 * in one wave is the point (a shielded sentinel escorted by spores
+	 * reads very differently from either alone).
+	 */
+	archetypes: EnemyArchetypeId[];
+	/** Seconds to wait after releasing this wave before the next one. */
+	gapSec: number;
+	/**
+	 * Vertical spacing between staggered slots, in y-percent. Slots offset
+	 * this way start *above* the top of the screen (negative y) and simply
+	 * aren't drawn until they descend into view.
+	 */
+	staggerPct?: number;
 }
 
 /**
@@ -65,15 +65,15 @@ export interface WaveSpec {
  * the thing `loopFrom` was there to arrange.
  */
 export interface WavePlan {
-  waves: WaveSpec[];
+	waves: WaveSpec[];
 }
 
 export interface FormationSlot {
-  archetype: EnemyArchetypeId;
-  xPct: number;
-  /** Starting vertical position. 0 is the top of the screen; negative
-   * values are a head-start delay expressed as distance. */
-  y: number;
+	archetype: EnemyArchetypeId;
+	xPct: number;
+	/** Starting vertical position. 0 is the top of the screen; negative
+	 * values are a head-start delay expressed as distance. */
+	y: number;
 }
 
 /** Formations are laid out inside these bounds rather than the full 0-100
@@ -86,9 +86,9 @@ const PINCER_INSET_PCT = 16;
 
 /** Evenly spaces `count` slots across the spread, centring a lone slot. */
 function spreadLanes(count: number): number[] {
-  if (count <= 1) return [(SPREAD_MIN_PCT + SPREAD_MAX_PCT) / 2];
-  const step = (SPREAD_MAX_PCT - SPREAD_MIN_PCT) / (count - 1);
-  return Array.from({ length: count }, (_, i) => SPREAD_MIN_PCT + step * i);
+	if (count <= 1) return [(SPREAD_MIN_PCT + SPREAD_MAX_PCT) / 2];
+	const step = (SPREAD_MAX_PCT - SPREAD_MIN_PCT) / (count - 1);
+	return Array.from({ length: count }, (_, i) => SPREAD_MIN_PCT + step * i);
 }
 
 /**
@@ -98,52 +98,58 @@ function spreadLanes(count: number): number[] {
  * twice and tests can assert on exact positions.
  */
 function hash(seed: number): number {
-  let h = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b);
-  h ^= h >>> 13;
-  h = Math.imul(h, 0xc2b2ae35);
-  h ^= h >>> 16;
-  return (h >>> 0) / 0xffffffff;
+	let h = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b);
+	h ^= h >>> 13;
+	h = Math.imul(h, 0xc2b2ae35);
+	h ^= h >>> 16;
+	return (h >>> 0) / 0xffffffff;
 }
 
 function laneFor(shape: FormationShape, index: number, count: number, waveIndex: number): number {
-  switch (shape) {
-    case 'line':
-    case 'vee':
-      return spreadLanes(count)[index];
-    case 'column':
-      // The lane itself shifts wave to wave, so a repeating column plan
-      // doesn't drill the same spot forever.
-      return SPREAD_MIN_PCT + hash(waveIndex) * (SPREAD_MAX_PCT - SPREAD_MIN_PCT);
-    case 'pincer': {
-      const half = Math.ceil(count / 2);
-      const onLeft = index < half;
-      const withinSide = onLeft ? index : index - half;
-      const sideCount = onLeft ? half : count - half;
-      const spacing = sideCount > 1 ? 10 : 0;
-      return onLeft
-        ? PINCER_INSET_PCT + withinSide * spacing
-        : 100 - PINCER_INSET_PCT - withinSide * spacing;
-    }
-    case 'scatter':
-      return SPREAD_MIN_PCT + hash(waveIndex * 31 + index) * (SPREAD_MAX_PCT - SPREAD_MIN_PCT);
-  }
+	switch (shape) {
+		case 'line':
+		case 'vee':
+			return spreadLanes(count)[index];
+		case 'column':
+			// The lane itself shifts wave to wave, so a repeating column plan
+			// doesn't drill the same spot forever.
+			return SPREAD_MIN_PCT + hash(waveIndex) * (SPREAD_MAX_PCT - SPREAD_MIN_PCT);
+		case 'pincer': {
+			const half = Math.ceil(count / 2);
+			const onLeft = index < half;
+			const withinSide = onLeft ? index : index - half;
+			const sideCount = onLeft ? half : count - half;
+			const spacing = sideCount > 1 ? 10 : 0;
+			return onLeft
+				? PINCER_INSET_PCT + withinSide * spacing
+				: 100 - PINCER_INSET_PCT - withinSide * spacing;
+		}
+		case 'scatter':
+			return SPREAD_MIN_PCT + hash(waveIndex * 31 + index) * (SPREAD_MAX_PCT - SPREAD_MIN_PCT);
+	}
 }
 
-function depthFor(shape: FormationShape, index: number, count: number, waveIndex: number, stagger: number): number {
-  switch (shape) {
-    case 'line':
-    case 'pincer':
-      return 0;
-    case 'vee': {
-      // Distance from the centre slot, so the middle of the V leads.
-      const centre = (count - 1) / 2;
-      return -Math.abs(index - centre) * stagger;
-    }
-    case 'column':
-      return -index * stagger;
-    case 'scatter':
-      return -hash(waveIndex * 17 + index * 7) * stagger * count;
-  }
+function depthFor(
+	shape: FormationShape,
+	index: number,
+	count: number,
+	waveIndex: number,
+	stagger: number
+): number {
+	switch (shape) {
+		case 'line':
+		case 'pincer':
+			return 0;
+		case 'vee': {
+			// Distance from the centre slot, so the middle of the V leads.
+			const centre = (count - 1) / 2;
+			return -Math.abs(index - centre) * stagger;
+		}
+		case 'column':
+			return -index * stagger;
+		case 'scatter':
+			return -hash(waveIndex * 17 + index * 7) * stagger * count;
+	}
 }
 
 /**
@@ -152,12 +158,12 @@ function depthFor(shape: FormationShape, index: number, count: number, waveIndex
  * shapes ignore it entirely.
  */
 export function buildFormation(spec: WaveSpec, waveIndex: number): FormationSlot[] {
-  const count = spec.archetypes.length;
-  const stagger = spec.staggerPct ?? DEFAULT_STAGGER_PCT;
+	const count = spec.archetypes.length;
+	const stagger = spec.staggerPct ?? DEFAULT_STAGGER_PCT;
 
-  return spec.archetypes.map((archetype, index) => ({
-    archetype,
-    xPct: clampLane(laneFor(spec.shape, index, count, waveIndex)),
-    y: depthFor(spec.shape, index, count, waveIndex, stagger),
-  }));
+	return spec.archetypes.map((archetype, index) => ({
+		archetype,
+		xPct: clampLane(laneFor(spec.shape, index, count, waveIndex)),
+		y: depthFor(spec.shape, index, count, waveIndex, stagger)
+	}));
 }

@@ -12,17 +12,17 @@
  * All are optional: absent is the normal, supported state.
  */
 interface ImportMetaEnv {
-  readonly VITE_SUPABASE_URL?: string;
-  readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
-  /**
-   * Where the platform that knows who is playing is mounted, as a same-origin
-   * PATH (`/learner`) and never an origin - its cookies are `SameSite=Lax`, so
-   * a cross-origin request carries none of them. Absent means a standalone
-   * build: no requests, no identity, and exactly the local game.
-   */
-  readonly VITE_VT_IDENTITY_BASE?: string;
+	readonly VITE_SUPABASE_URL?: string;
+	readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
+	/**
+	 * Where the platform that knows who is playing is mounted, as a same-origin
+	 * PATH (`/learner`) and never an origin - its cookies are `SameSite=Lax`, so
+	 * a cross-origin request carries none of them. Absent means a standalone
+	 * build: no requests, no identity, and exactly the local game.
+	 */
+	readonly VITE_VT_IDENTITY_BASE?: string;
 }
 
 interface ImportMeta {
-  readonly env: ImportMetaEnv;
+	readonly env: ImportMetaEnv;
 }

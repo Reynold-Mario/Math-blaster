@@ -28,16 +28,16 @@ export const CLAIM_MARKER_KEY = 'pixelMathBlaster.claimedBy.v1';
  * meaning what it meant.
  */
 export function learnerScopedKey(anonymousKey: string, learnerId: string): string {
-  return `${anonymousKey}.${learnerId}`;
+	return `${anonymousKey}.${learnerId}`;
 }
 
 export type ClaimOutcome =
-  /** First learner on this device. The anonymous save is theirs. */
-  | 'claimed'
-  /** This same learner already claimed it, so there is nothing left to carry. */
-  | 'already-mine'
-  /** Somebody else got here first. This learner starts fresh. */
-  | 'already-claimed-by-other';
+	/** First learner on this device. The anonymous save is theirs. */
+	| 'claimed'
+	/** This same learner already claimed it, so there is nothing left to carry. */
+	| 'already-mine'
+	/** Somebody else got here first. This learner starts fresh. */
+	| 'already-claimed-by-other';
 
 /**
  * Decide whether this learner may adopt the device's anonymous save.
@@ -53,22 +53,22 @@ export type ClaimOutcome =
  * another's is the same mistake at a different moment.
  */
 export function claimAnonymousSave(storage: StorageLike | null, learnerId: string): ClaimOutcome {
-  if (storage === null) return 'already-claimed-by-other';
-  let existing: string | null;
-  try {
-    existing = storage.getItem(CLAIM_MARKER_KEY);
-  } catch {
-    // Storage present but throwing (Safari private mode has done this).
-    // Refusing to claim is the safe direction: the cost is a fresh profile,
-    // where the cost of claiming wrongly is somebody else's.
-    return 'already-claimed-by-other';
-  }
-  if (existing === learnerId) return 'already-mine';
-  if (existing !== null && existing !== '') return 'already-claimed-by-other';
-  try {
-    storage.setItem(CLAIM_MARKER_KEY, learnerId);
-  } catch {
-    return 'already-claimed-by-other';
-  }
-  return 'claimed';
+	if (storage === null) return 'already-claimed-by-other';
+	let existing: string | null;
+	try {
+		existing = storage.getItem(CLAIM_MARKER_KEY);
+	} catch {
+		// Storage present but throwing (Safari private mode has done this).
+		// Refusing to claim is the safe direction: the cost is a fresh profile,
+		// where the cost of claiming wrongly is somebody else's.
+		return 'already-claimed-by-other';
+	}
+	if (existing === learnerId) return 'already-mine';
+	if (existing !== null && existing !== '') return 'already-claimed-by-other';
+	try {
+		storage.setItem(CLAIM_MARKER_KEY, learnerId);
+	} catch {
+		return 'already-claimed-by-other';
+	}
+	return 'claimed';
 }

@@ -53,50 +53,50 @@ const BOSS_WEAK_POINT_CUT_MS = 4200;
  * matched rather than a flat rate - more matching digits reads as a
  * bigger shove, not just a fixed partial-credit amount. */
 function partialMatchRatio(result: AnswerResult): number {
-  if (!result.digitMatch || result.digitMatch.matches.length === 0) return 0;
-  const hits = result.digitMatch.matches.filter(Boolean).length;
-  return hits / result.digitMatch.matches.length;
+	if (!result.digitMatch || result.digitMatch.matches.length === 0) return 0;
+	const hits = result.digitMatch.matches.filter(Boolean).length;
+	return hits / result.digitMatch.matches.length;
 }
 
 /** Exact and equivalent are the only verdicts that count as mastery: they
  * extend a boss combo, and they're the only thing a shield yields to. */
 function isMastered(verdict: AnswerVerdict): boolean {
-  return verdict === 'exact' || verdict === 'equivalent';
+	return verdict === 'exact' || verdict === 'equivalent';
 }
 
 /** How far a non-exact answer shoves a grunt back up the screen. Exact and
  * equivalent return 0 because they don't push anything - they break the
  * layer instead. */
 function knockbackForGrunt(result: AnswerResult): number {
-  switch (result.verdict) {
-    case 'close':
-      return KNOCKBACK_CLOSE_PCT;
-    case 'partial':
-      return KNOCKBACK_PARTIAL_MAX_PCT * partialMatchRatio(result);
-    default:
-      return 0;
-  }
+	switch (result.verdict) {
+		case 'close':
+			return KNOCKBACK_CLOSE_PCT;
+		case 'partial':
+			return KNOCKBACK_PARTIAL_MAX_PCT * partialMatchRatio(result);
+		default:
+			return 0;
+	}
 }
 
 function bossCutFor(result: AnswerResult): number {
-  switch (result.verdict) {
-    case 'exact':
-    case 'equivalent':
-      return BOSS_CUT_EXACT_MS;
-    case 'close':
-      return BOSS_CUT_CLOSE_MS;
-    case 'partial':
-      return Math.round(BOSS_CUT_PARTIAL_MAX_MS * partialMatchRatio(result));
-    default:
-      return 0;
-  }
+	switch (result.verdict) {
+		case 'exact':
+		case 'equivalent':
+			return BOSS_CUT_EXACT_MS;
+		case 'close':
+			return BOSS_CUT_CLOSE_MS;
+		case 'partial':
+			return Math.round(BOSS_CUT_PARTIAL_MAX_MS * partialMatchRatio(result));
+		default:
+			return 0;
+	}
 }
 
 interface ReinforcementDecision {
-  shouldReinforce: boolean;
-  /** The streak value to store back wherever the caller keeps it - 0 when
-   * reset, otherwise the incremented count. */
-  missStreak: number;
+	shouldReinforce: boolean;
+	/** The streak value to store back wherever the caller keeps it - 0 when
+	 * reset, otherwise the incremented count. */
+	missStreak: number;
 }
 
 /** Whether an answer counts as engaging with the problem at all. Exact and
@@ -104,7 +104,7 @@ interface ReinforcementDecision {
  * `partial` at least got a place value right. All four say the player is
  * still working, which is the only thing reinforcements care about. */
 function isEngaged(verdict: AnswerVerdict): boolean {
-  return isMastered(verdict) || verdict === 'close' || verdict === 'partial';
+	return isMastered(verdict) || verdict === 'close' || verdict === 'partial';
 }
 
 /**
@@ -123,109 +123,113 @@ function isEngaged(verdict: AnswerVerdict): boolean {
  * only actually engaging clears it.
  */
 function decideReinforcement(verdict: AnswerVerdict, missStreak: number): ReinforcementDecision {
-  if (isEngaged(verdict)) {
-    return { shouldReinforce: false, missStreak: 0 };
-  }
+	if (isEngaged(verdict)) {
+		return { shouldReinforce: false, missStreak: 0 };
+	}
 
-  const streak = missStreak + 1;
-  const past = streak - REINFORCE_GRACE_MISSES;
-  if (past <= 0) return { shouldReinforce: false, missStreak: streak };
+	const streak = missStreak + 1;
+	const past = streak - REINFORCE_GRACE_MISSES;
+	if (past <= 0) return { shouldReinforce: false, missStreak: streak };
 
-  const chance = Math.min(1, REINFORCE_CHANCE_START + (past - 1) * REINFORCE_CHANCE_STEP);
-  return { shouldReinforce: Math.random() < chance, missStreak: streak };
+	const chance = Math.min(1, REINFORCE_CHANCE_START + (past - 1) * REINFORCE_CHANCE_STEP);
+	return { shouldReinforce: Math.random() < chance, missStreak: streak };
 }
 
 /** The consequence of one shot on a grunt. Pure - callers apply the
  * knockback/layer/shield changes and spawn the reinforcement themselves. */
 export interface GruntHitOutcome {
-  /** How far up the screen to shove the enemy, in y-percent. Only ever
-   * non-zero for close and partial answers - the reward for nearly getting
-   * it right is time, not a dent in a health bar. */
-  knockbackPct: number;
-  /** The shot bounced off an intact shield: nothing landed, and the
-   * shield is still up. */
-  blocked: boolean;
-  /** This shot stripped the shield. Nothing else lands on the same shot -
-   * breaking through is its own step. */
-  shieldBroken: boolean;
-  /** The current layer was answered. When other layers remain the caller
-   * mints a new problem instead of removing the enemy. */
-  layerBroken: boolean;
-  /** The last layer was answered - the enemy is gone. */
-  defeated: boolean;
-  reinforce: boolean;
-  missStreak: number;
+	/** How far up the screen to shove the enemy, in y-percent. Only ever
+	 * non-zero for close and partial answers - the reward for nearly getting
+	 * it right is time, not a dent in a health bar. */
+	knockbackPct: number;
+	/** The shot bounced off an intact shield: nothing landed, and the
+	 * shield is still up. */
+	blocked: boolean;
+	/** This shot stripped the shield. Nothing else lands on the same shot -
+	 * breaking through is its own step. */
+	shieldBroken: boolean;
+	/** The current layer was answered. When other layers remain the caller
+	 * mints a new problem instead of removing the enemy. */
+	layerBroken: boolean;
+	/** The last layer was answered - the enemy is gone. */
+	defeated: boolean;
+	reinforce: boolean;
+	missStreak: number;
 }
 
 /** Everything a grunt hit reads off its target. No health here: a layer is
  * a question to answer, not a pool to drain, so `layersRemaining` is the
  * whole of an enemy's durability. */
 export interface GruntTarget {
-  layersRemaining: number;
-  shielded: boolean;
+	layersRemaining: number;
+	shielded: boolean;
 }
 
-export function resolveGruntHit(result: AnswerResult, target: GruntTarget, missStreak: number): GruntHitOutcome {
-  const decision = decideReinforcement(result.verdict, missStreak);
-  const base = {
-    reinforce: decision.shouldReinforce,
-    missStreak: decision.missStreak,
-  };
+export function resolveGruntHit(
+	result: AnswerResult,
+	target: GruntTarget,
+	missStreak: number
+): GruntHitOutcome {
+	const decision = decideReinforcement(result.verdict, missStreak);
+	const base = {
+		reinforce: decision.shouldReinforce,
+		missStreak: decision.missStreak
+	};
 
-  // A shield is a hard gate, not a partial reduction: only an exact answer
-  // gets through it, and doing so costs the whole shot.
-  if (target.shielded) {
-    const cracked = isMastered(result.verdict);
-    return {
-      ...base,
-      knockbackPct: 0,
-      blocked: !cracked,
-      shieldBroken: cracked,
-      layerBroken: false,
-      defeated: false,
-    };
-  }
+	// A shield is a hard gate, not a partial reduction: only an exact answer
+	// gets through it, and doing so costs the whole shot.
+	if (target.shielded) {
+		const cracked = isMastered(result.verdict);
+		return {
+			...base,
+			knockbackPct: 0,
+			blocked: !cracked,
+			shieldBroken: cracked,
+			layerBroken: false,
+			defeated: false
+		};
+	}
 
-  // Only mastery answers a layer. Anything less lands as a shove, which is
-  // why `close` can never accumulate into a kill the way half-damage used
-  // to - it buys the player time to work the problem out properly.
-  const layerBroken = isMastered(result.verdict);
+	// Only mastery answers a layer. Anything less lands as a shove, which is
+	// why `close` can never accumulate into a kill the way half-damage used
+	// to - it buys the player time to work the problem out properly.
+	const layerBroken = isMastered(result.verdict);
 
-  return {
-    ...base,
-    knockbackPct: layerBroken ? 0 : knockbackForGrunt(result),
-    blocked: false,
-    shieldBroken: false,
-    layerBroken,
-    defeated: layerBroken && target.layersRemaining <= 1,
-  };
+	return {
+		...base,
+		knockbackPct: layerBroken ? 0 : knockbackForGrunt(result),
+		blocked: false,
+		shieldBroken: false,
+		layerBroken,
+		defeated: layerBroken && target.layersRemaining <= 1
+	};
 }
 
 /** The consequence of one answer aimed at a boss. There's no damage here
  * because there's no health: an answer either shortens the fight, breaks
  * a shield, extends a combo, or does nothing. */
 export interface BossAnswerOutcome {
-  /** Milliseconds to shave off the survive clock. */
-  surviveCutMs: number;
-  /** Hit the shielded body, or missed the weak point's exactness
-   * requirement - nothing happened, and the combo is untouched. */
-  blocked: boolean;
-  /** This answer cracked the weak point and dropped the shield. */
-  shieldBroken: boolean;
-  /** The combo value to store back. */
-  combo: number;
-  /** A standing combo was just reset by a non-exact answer. */
-  comboBroken: boolean;
-  /** The combo reached the threshold - the fight is over, right now. */
-  masteryAchieved: boolean;
-  reinforce: boolean;
-  missStreak: number;
+	/** Milliseconds to shave off the survive clock. */
+	surviveCutMs: number;
+	/** Hit the shielded body, or missed the weak point's exactness
+	 * requirement - nothing happened, and the combo is untouched. */
+	blocked: boolean;
+	/** This answer cracked the weak point and dropped the shield. */
+	shieldBroken: boolean;
+	/** The combo value to store back. */
+	combo: number;
+	/** A standing combo was just reset by a non-exact answer. */
+	comboBroken: boolean;
+	/** The combo reached the threshold - the fight is over, right now. */
+	masteryAchieved: boolean;
+	reinforce: boolean;
+	missStreak: number;
 }
 
 export interface BossTarget {
-  comboRequired: number;
-  /** False while the shield is up. */
-  vulnerable: boolean;
+	comboRequired: number;
+	/** False while the shield is up. */
+	vulnerable: boolean;
 }
 
 /**
@@ -246,51 +250,51 @@ export interface BossTarget {
  *   combo. Anything less simply bounces.
  */
 export function resolveBossAnswer(
-  result: AnswerResult,
-  boss: BossTarget,
-  combo: number,
-  missStreak: number,
-  atWeakPoint: boolean
+	result: AnswerResult,
+	boss: BossTarget,
+	combo: number,
+	missStreak: number,
+	atWeakPoint: boolean
 ): BossAnswerOutcome {
-  const decision = decideReinforcement(result.verdict, missStreak);
-  const mastered = isMastered(result.verdict);
-  const base = {
-    reinforce: decision.shouldReinforce,
-    missStreak: decision.missStreak,
-  };
-  const blockedOutcome: BossAnswerOutcome = {
-    ...base,
-    surviveCutMs: 0,
-    blocked: true,
-    shieldBroken: false,
-    combo,
-    comboBroken: false,
-    masteryAchieved: false,
-  };
+	const decision = decideReinforcement(result.verdict, missStreak);
+	const mastered = isMastered(result.verdict);
+	const base = {
+		reinforce: decision.shouldReinforce,
+		missStreak: decision.missStreak
+	};
+	const blockedOutcome: BossAnswerOutcome = {
+		...base,
+		surviveCutMs: 0,
+		blocked: true,
+		shieldBroken: false,
+		combo,
+		comboBroken: false,
+		masteryAchieved: false
+	};
 
-  if (!boss.vulnerable) {
-    if (!atWeakPoint || !mastered) return blockedOutcome;
+	if (!boss.vulnerable) {
+		if (!atWeakPoint || !mastered) return blockedOutcome;
 
-    const nextCombo = combo + 1;
-    return {
-      ...base,
-      surviveCutMs: BOSS_WEAK_POINT_CUT_MS,
-      blocked: false,
-      shieldBroken: true,
-      combo: nextCombo,
-      comboBroken: false,
-      masteryAchieved: nextCombo >= boss.comboRequired,
-    };
-  }
+		const nextCombo = combo + 1;
+		return {
+			...base,
+			surviveCutMs: BOSS_WEAK_POINT_CUT_MS,
+			blocked: false,
+			shieldBroken: true,
+			combo: nextCombo,
+			comboBroken: false,
+			masteryAchieved: nextCombo >= boss.comboRequired
+		};
+	}
 
-  const nextCombo = mastered ? combo + 1 : 0;
-  return {
-    ...base,
-    surviveCutMs: bossCutFor(result),
-    blocked: false,
-    shieldBroken: false,
-    combo: nextCombo,
-    comboBroken: !mastered && combo > 0,
-    masteryAchieved: mastered && nextCombo >= boss.comboRequired,
-  };
+	const nextCombo = mastered ? combo + 1 : 0;
+	return {
+		...base,
+		surviveCutMs: bossCutFor(result),
+		blocked: false,
+		shieldBroken: false,
+		combo: nextCombo,
+		comboBroken: !mastered && combo > 0,
+		masteryAchieved: mastered && nextCombo >= boss.comboRequired
+	};
 }

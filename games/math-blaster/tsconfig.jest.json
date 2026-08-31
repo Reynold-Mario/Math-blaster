@@ -1,13 +1,13 @@
 {
-  "extends": "./tsconfig.app.json",
-  "compilerOptions": {
-    "ignoreDeprecations": "6.0",
-    "module": "commonjs",
-    "moduleResolution": "node",
-    "types": ["jest", "node"],
-    "verbatimModuleSyntax": false,
-    "erasableSyntaxOnly": false
-  },
-  "include": ["src/**/*.test.ts"],
-  "exclude": []
+	"extends": "./tsconfig.app.json",
+	"compilerOptions": {
+		"ignoreDeprecations": "6.0",
+		"module": "commonjs",
+		"moduleResolution": "node",
+		"types": ["jest", "node"],
+		"verbatimModuleSyntax": false,
+		"erasableSyntaxOnly": false
+	},
+	"include": ["src/**/*.test.ts"],
+	"exclude": []
 }

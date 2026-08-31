@@ -1,13 +1,13 @@
-import { defineConfig } from 'vite'
-import { svelte } from '@sveltejs/vite-plugin-svelte'
+import { defineConfig } from 'vite';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 /**
  * The `.ts` extension is REQUIRED, not stylistic. Vite's `configLoader: 'native'`
  * (the planned default) resolves this import with Node's own resolver, which
  * does not do extensionless lookups - it warns today and breaks later.
  * `tsconfig.node.json` already sets `allowImportingTsExtensions`.
  */
-import { GAMES, gameHref, type PlayableGame } from './src/games.ts'
-import { DEV_PORT as MATH_BLASTER_DEV_PORT } from '../../games/math-blaster/dev-port.ts'
+import { GAMES, gameHref, type PlayableGame } from './src/games.ts';
+import { DEV_PORT as MATH_BLASTER_DEV_PORT } from '../../games/math-blaster/dev-port.ts';
 
 /**
  * Deliberately thinner than `games/math-blaster/vite.config.ts`, and the two
@@ -50,8 +50,8 @@ import { DEV_PORT as MATH_BLASTER_DEV_PORT } from '../../games/math-blaster/dev-
  * ports do not overlap, because 5173 belongs to this server.
  */
 const GAME_DEV_PORTS: Record<string, number> = {
-  'math-blaster': MATH_BLASTER_DEV_PORT,
-}
+	'math-blaster': MATH_BLASTER_DEV_PORT
+};
 
 /**
  * Make the catalog's Play links work in local dev.
@@ -81,59 +81,59 @@ const GAME_DEV_PORTS: Record<string, number> = {
  * no DOM and no assets.
  */
 const isPlayable = (game: (typeof GAMES)[number]): game is PlayableGame =>
-  game.status === 'playable'
+	game.status === 'playable';
 
 const gameProxy = Object.fromEntries(
-  GAMES.filter(isPlayable).map((game) => {
-    const port = GAME_DEV_PORTS[game.id]
-    if (port === undefined) {
-      throw new Error(
-        `No dev-server port for playable game '${game.id}'. Add it to GAME_DEV_PORTS ` +
-          `in apps/web/vite.config.ts, or the catalog's Play link will silently ` +
-          `re-serve the catalog instead of the game.`,
-      )
-    }
+	GAMES.filter(isPlayable).map((game) => {
+		const port = GAME_DEV_PORTS[game.id];
+		if (port === undefined) {
+			throw new Error(
+				`No dev-server port for playable game '${game.id}'. Add it to GAME_DEV_PORTS ` +
+					`in apps/web/vite.config.ts, or the catalog's Play link will silently ` +
+					`re-serve the catalog instead of the game.`
+			);
+		}
 
-    /**
-     * A REGEXP KEY, not the bare prefix, so the boundary is exact. Vite treats
-     * a key starting with `^` as a RegExp and a plain key as a `startsWith`
-     * prefix - and a prefix of `/learner/games/math-blaster` would also
-     * swallow a future `/learner/games/math-blaster-advanced/`, proxying it to
-     * the wrong game's server. `(/|$)` pins it to a whole path segment.
-     *
-     * Game ids are kebab-case slugs (they are directory names under `games/`
-     * and a `base` path), so there is nothing here to escape.
-     */
-    const prefix = gameHref(game).replace(/\/$/, '')
+		/**
+		 * A REGEXP KEY, not the bare prefix, so the boundary is exact. Vite treats
+		 * a key starting with `^` as a RegExp and a plain key as a `startsWith`
+		 * prefix - and a prefix of `/learner/games/math-blaster` would also
+		 * swallow a future `/learner/games/math-blaster-advanced/`, proxying it to
+		 * the wrong game's server. `(/|$)` pins it to a whole path segment.
+		 *
+		 * Game ids are kebab-case slugs (they are directory names under `games/`
+		 * and a `base` path), so there is nothing here to escape.
+		 */
+		const prefix = gameHref(game).replace(/\/$/, '');
 
-    return [
-      `^${prefix}(/|$)`,
-      {
-        target: `http://localhost:${port}`,
-        /**
-         * The game's HMR socket dials its own origin directly, so it does not
-         * come through here - but a game that ever sets `server.hmr.port` to
-         * match its page would, and a silently dead socket is a bad way to
-         * find that out.
-         */
-        ws: true,
-      },
-    ]
-  }),
-)
+		return [
+			`^${prefix}(/|$)`,
+			{
+				target: `http://localhost:${port}`,
+				/**
+				 * The game's HMR socket dials its own origin directly, so it does not
+				 * come through here - but a game that ever sets `server.hmr.port` to
+				 * match its page would, and a silently dead socket is a bad way to
+				 * find that out.
+				 */
+				ws: true
+			}
+		];
+	})
+);
 
 export default defineConfig({
-  plugins: [svelte()],
-  server: {
-    /**
-     * `strictPort` because this is the URL the root `npm run dev` tells you to
-     * open and the one every game's port is numbered relative to. Vite's
-     * default on a busy port is to walk to the next free one - which is 5174,
-     * the game's, so a drifting catalog would take the port out from under the
-     * server it proxies to. Failing on the spot says what is wrong.
-     */
-    port: 5173,
-    strictPort: true,
-    proxy: gameProxy,
-  },
-})
+	plugins: [svelte()],
+	server: {
+		/**
+		 * `strictPort` because this is the URL the root `npm run dev` tells you to
+		 * open and the one every game's port is numbered relative to. Vite's
+		 * default on a busy port is to walk to the next free one - which is 5174,
+		 * the game's, so a drifting catalog would take the port out from under the
+		 * server it proxies to. Failing on the spot says what is wrong.
+		 */
+		port: 5173,
+		strictPort: true,
+		proxy: gameProxy
+	}
+});

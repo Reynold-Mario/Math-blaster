@@ -1,31 +1,31 @@
 {
-  "name": "math-blaster",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "sprites": "node tools/buildSprites.mjs",
-    "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json --fail-on-warnings && tsc -p tsconfig.node.json",
-    "test": "jest"
-  },
-  "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^7.2.0",
-    "@tsconfig/svelte": "^5.0.8",
-    "@types/jest": "^30.0.0",
-    "@types/node": "^24.13.3",
-    "jest": "^30.4.2",
-    "svelte": "^5.56.8",
-    "svelte-check": "^4.7.3",
-    "ts-jest": "^29.4.12",
-    "typescript": "~6.0.2",
-    "vite": "^8.2.0"
-  },
-  "dependencies": {
-    "@pixel-blaster/motion": "*",
-    "@pixel-blaster/theme": "*",
-    "@supabase/supabase-js": "^2.112.4"
-  }
+	"name": "math-blaster",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"sprites": "node tools/buildSprites.mjs",
+		"preview": "vite preview",
+		"check": "svelte-check --tsconfig ./tsconfig.app.json --fail-on-warnings && tsc -p tsconfig.node.json",
+		"test": "jest"
+	},
+	"devDependencies": {
+		"@sveltejs/vite-plugin-svelte": "^7.2.0",
+		"@tsconfig/svelte": "^5.0.8",
+		"@types/jest": "^30.0.0",
+		"@types/node": "^24.13.3",
+		"jest": "^30.4.2",
+		"svelte": "^5.56.8",
+		"svelte-check": "^4.7.3",
+		"ts-jest": "^29.4.12",
+		"typescript": "~6.0.2",
+		"vite": "^8.2.0"
+	},
+	"dependencies": {
+		"@pixel-blaster/motion": "*",
+		"@pixel-blaster/theme": "*",
+		"@supabase/supabase-js": "^2.112.4"
+	}
 }

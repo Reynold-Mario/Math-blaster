@@ -1,17 +1,17 @@
 {
-  /**
-   * Same trade as the game's `tsconfig.jest.json`: ts-jest needs commonjs, and
-   * commonjs plus `moduleResolution: node` is what makes `import.meta`
-   * unreachable from a test (ROADMAP invariant 6). Nothing in `src/` reads it.
-   */
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "ignoreDeprecations": "6.0",
-    "module": "commonjs",
-    "moduleResolution": "node",
-    "types": ["jest", "node"],
-    "verbatimModuleSyntax": false
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": []
+	/**
+	 * Same trade as the game's `tsconfig.jest.json`: ts-jest needs commonjs, and
+	 * commonjs plus `moduleResolution: node` is what makes `import.meta`
+	 * unreachable from a test (ROADMAP invariant 6). Nothing in `src/` reads it.
+	 */
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"ignoreDeprecations": "6.0",
+		"module": "commonjs",
+		"moduleResolution": "node",
+		"types": ["jest", "node"],
+		"verbatimModuleSyntax": false
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": []
 }

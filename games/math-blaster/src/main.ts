@@ -1,4 +1,4 @@
-import { mount } from 'svelte'
+import { mount } from 'svelte';
 /**
  * BEFORE `./app.css` AND BEFORE `mount()`, AND THE ORDER IS THE POINT.
  *
@@ -11,12 +11,12 @@ import { mount } from 'svelte'
  * `Game.svelte` and `MotionToggle.svelte` import it by name, and `GameCanvas`
  * takes the answer as a prop.
  */
-import '@pixel-blaster/motion'
-import './app.css'
-import App from './App.svelte'
+import '@pixel-blaster/motion';
+import './app.css';
+import App from './App.svelte';
 
 const app = mount(App, {
-  target: document.getElementById('app')!,
-})
+	target: document.getElementById('app')!
+});
 
-export default app
+export default app;

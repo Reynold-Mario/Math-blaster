@@ -9,25 +9,25 @@
  */
 
 * {
-  box-sizing: border-box;
+	box-sizing: border-box;
 }
 
 html,
 body {
-  margin: 0;
-  padding: 0;
+	margin: 0;
+	padding: 0;
 }
 
 body {
-  min-height: 100vh;
-  /* Deep space, brightening a little toward the top so the page reads as
+	min-height: 100vh;
+	/* Deep space, brightening a little toward the top so the page reads as
      looking outward rather than as a flat dark rectangle. Same treatment as
      the game, so the two do not look like separate products. */
-  background: radial-gradient(ellipse at 50% -10%, #16224a, #0a1024 45%, var(--bg));
-  background-attachment: fixed;
-  font-family: 'Baloo 2', sans-serif;
-  color: var(--text);
-  /**
+	background: radial-gradient(ellipse at 50% -10%, #16224a, #0a1024 45%, var(--bg));
+	background-attachment: fixed;
+	font-family: 'Baloo 2', sans-serif;
+	color: var(--text);
+	/**
    * NO `display: flex` HERE, AND IT IS THE ONE RULE THAT DIFFERS FROM THE GAME.
    *
    * ROADMAP PR 10 flags exactly this: `body { display: flex }` is game layout -
@@ -48,14 +48,14 @@ body {
 h1,
 h2,
 h3 {
-  margin: 0;
+	margin: 0;
 }
 
 p {
-  margin: 0;
+	margin: 0;
 }
 
 ::selection {
-  background: var(--accent-warm);
-  color: var(--bg);
+	background: var(--accent-warm);
+	color: var(--bg);
 }

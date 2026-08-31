@@ -31,7 +31,7 @@
  */
 
 /** Which of the two sources wins, and which way. See the header. */
-export type MotionPreference = 'system' | 'reduce' | 'full'
+export type MotionPreference = 'system' | 'reduce' | 'full';
 
 /**
  * ONE KEY FOR EVERY SURFACE ON THE ORIGIN, AND DELIBERATELY NOT NAMESPACED PER
@@ -46,10 +46,10 @@ export type MotionPreference = 'system' | 'reduce' | 'full'
  * (identity is a `fetch`; invariant 16) and is often not a signed-in child at
  * all. A shared device getting one motion setting is the correct trade.
  */
-export const MOTION_STORAGE_KEY = 'pixel-blaster:motion'
+export const MOTION_STORAGE_KEY = 'pixel-blaster:motion';
 
 /** The OS-level setting, as a media query string. */
-export const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
+export const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
 /**
  * The attribute the resolved answer is mirrored onto `<html>` as, so that CSS
@@ -65,21 +65,18 @@ export const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
  * markup does not exist until `mount()` runs, and this attribute is set before
  * that (see each app's `main.ts`).
  */
-export const MOTION_ATTRIBUTE = 'data-motion'
+export const MOTION_ATTRIBUTE = 'data-motion';
 
 /** Anything we did not write - a hand-edited value, a key from an older
  * build, `null` - means "no preference", never "reduce". */
 export function parsePreference(raw: string | null | undefined): MotionPreference {
-  return raw === 'reduce' || raw === 'full' ? raw : 'system'
+	return raw === 'reduce' || raw === 'full' ? raw : 'system';
 }
 
 /** THE WHOLE RULE, in one pure line: an explicit preference wins; otherwise
  * the device decides. */
-export function resolveReducedMotion(
-  preference: MotionPreference,
-  systemReduce: boolean,
-): boolean {
-  return preference === 'system' ? systemReduce : preference === 'reduce'
+export function resolveReducedMotion(preference: MotionPreference, systemReduce: boolean): boolean {
+	return preference === 'system' ? systemReduce : preference === 'reduce';
 }
 
 /**
@@ -92,10 +89,10 @@ export function resolveReducedMotion(
  * button would read as broken.
  */
 export function togglePreference(
-  preference: MotionPreference,
-  systemReduce: boolean,
+	preference: MotionPreference,
+	systemReduce: boolean
 ): MotionPreference {
-  return resolveReducedMotion(preference, systemReduce) ? 'full' : 'reduce'
+	return resolveReducedMotion(preference, systemReduce) ? 'full' : 'reduce';
 }
 
 /**
@@ -103,18 +100,18 @@ export function togglePreference(
  * A real one is `browserMotionEnvironment(window)`; tests pass a fake.
  */
 export interface MotionEnvironment {
-  /** Whether the OS asks for reduced motion, right now. */
-  systemReduce(): boolean
-  /** Fires when the OS setting changes. Returns an unsubscribe. */
-  onSystemChange(listener: () => void): () => void
-  /** The raw stored preference, or `null`. */
-  readPreference(): string | null
-  writePreference(value: string): void
-  /** Fires when ANOTHER document on this origin writes the key - the catalog
-   * and a game open in two tabs. Returns an unsubscribe. */
-  onExternalWrite(listener: () => void): () => void
-  /** Mirror the resolved answer somewhere CSS can see it. */
-  reflect(reduced: boolean): void
+	/** Whether the OS asks for reduced motion, right now. */
+	systemReduce(): boolean;
+	/** Fires when the OS setting changes. Returns an unsubscribe. */
+	onSystemChange(listener: () => void): () => void;
+	/** The raw stored preference, or `null`. */
+	readPreference(): string | null;
+	writePreference(value: string): void;
+	/** Fires when ANOTHER document on this origin writes the key - the catalog
+	 * and a game open in two tabs. Returns an unsubscribe. */
+	onExternalWrite(listener: () => void): () => void;
+	/** Mirror the resolved answer somewhere CSS can see it. */
+	reflect(reduced: boolean): void;
 }
 
 /**
@@ -126,89 +123,86 @@ export interface MotionEnvironment {
  * it is not.
  */
 export function browserMotionEnvironment(win: Window): MotionEnvironment {
-  const query = win.matchMedia(REDUCED_MOTION_QUERY)
+	const query = win.matchMedia(REDUCED_MOTION_QUERY);
 
-  return {
-    systemReduce: () => query.matches,
+	return {
+		systemReduce: () => query.matches,
 
-    onSystemChange(listener) {
-      // LIVE, WITH NO RELOAD - which is the one thing the media query in our
-      // stylesheets used to give us for free and this had to earn back.
-      query.addEventListener('change', listener)
-      return () => query.removeEventListener('change', listener)
-    },
+		onSystemChange(listener) {
+			// LIVE, WITH NO RELOAD - which is the one thing the media query in our
+			// stylesheets used to give us for free and this had to earn back.
+			query.addEventListener('change', listener);
+			return () => query.removeEventListener('change', listener);
+		},
 
-    readPreference() {
-      try {
-        return win.localStorage.getItem(MOTION_STORAGE_KEY)
-      } catch {
-        return null
-      }
-    },
+		readPreference() {
+			try {
+				return win.localStorage.getItem(MOTION_STORAGE_KEY);
+			} catch {
+				return null;
+			}
+		},
 
-    writePreference(value) {
-      try {
-        win.localStorage.setItem(MOTION_STORAGE_KEY, value)
-      } catch {
-        // Nothing to do and nothing to report: the setting still applies to
-        // this document, it just will not survive the navigation.
-      }
-    },
+		writePreference(value) {
+			try {
+				win.localStorage.setItem(MOTION_STORAGE_KEY, value);
+			} catch {
+				// Nothing to do and nothing to report: the setting still applies to
+				// this document, it just will not survive the navigation.
+			}
+		},
 
-    onExternalWrite(listener) {
-      const onStorage = (event: StorageEvent) => {
-        // `key === null` is a whole-storage clear, which is also a change to
-        // ours. Anything else is somebody else's key.
-        if (event.key === null || event.key === MOTION_STORAGE_KEY) listener()
-      }
-      win.addEventListener('storage', onStorage)
-      return () => win.removeEventListener('storage', onStorage)
-    },
+		onExternalWrite(listener) {
+			const onStorage = (event: StorageEvent) => {
+				// `key === null` is a whole-storage clear, which is also a change to
+				// ours. Anything else is somebody else's key.
+				if (event.key === null || event.key === MOTION_STORAGE_KEY) listener();
+			};
+			win.addEventListener('storage', onStorage);
+			return () => win.removeEventListener('storage', onStorage);
+		},
 
-    reflect(reduced) {
-      win.document.documentElement.setAttribute(
-        MOTION_ATTRIBUTE,
-        reduced ? 'reduce' : 'full',
-      )
-    },
-  }
+		reflect(reduced) {
+			win.document.documentElement.setAttribute(MOTION_ATTRIBUTE, reduced ? 'reduce' : 'full');
+		}
+	};
 }
 
 /** For anywhere there is no browser - a test, a node build step. Motion is
  * never reduced, nothing is stored, and no listener ever fires. */
 export function inertMotionEnvironment(): MotionEnvironment {
-  const noop = () => () => {}
-  return {
-    systemReduce: () => false,
-    onSystemChange: noop,
-    readPreference: () => null,
-    writePreference: () => {},
-    onExternalWrite: noop,
-    reflect: () => {},
-  }
+	const noop = () => () => {};
+	return {
+		systemReduce: () => false,
+		onSystemChange: noop,
+		readPreference: () => null,
+		writePreference: () => {},
+		onExternalWrite: noop,
+		reflect: () => {}
+	};
 }
 
 export function defaultMotionEnvironment(): MotionEnvironment {
-  return typeof window === 'undefined'
-    ? inertMotionEnvironment()
-    : browserMotionEnvironment(window)
+	return typeof window === 'undefined'
+		? inertMotionEnvironment()
+		: browserMotionEnvironment(window);
 }
 
 export interface MotionStore {
-  /** What has been asked for. */
-  readonly preference: MotionPreference
-  /** What that resolves to, and the only thing a renderer should read. */
-  readonly reduced: boolean
-  readonly systemReduce: boolean
-  set(preference: MotionPreference): void
-  /** Flip what is on screen, and remember it. */
-  toggle(): void
-  /**
-   * Called when `reduced` CHANGES, never on subscribe - read `.reduced` for
-   * the initial value, the same contract `gameEvents.on` has.
-   */
-  subscribe(listener: (reduced: boolean) => void): () => void
-  dispose(): void
+	/** What has been asked for. */
+	readonly preference: MotionPreference;
+	/** What that resolves to, and the only thing a renderer should read. */
+	readonly reduced: boolean;
+	readonly systemReduce: boolean;
+	set(preference: MotionPreference): void;
+	/** Flip what is on screen, and remember it. */
+	toggle(): void;
+	/**
+	 * Called when `reduced` CHANGES, never on subscribe - read `.reduced` for
+	 * the initial value, the same contract `gameEvents.on` has.
+	 */
+	subscribe(listener: (reduced: boolean) => void): () => void;
+	dispose(): void;
 }
 
 /**
@@ -220,65 +214,65 @@ export interface MotionStore {
  * punished for it.
  */
 export function createMotionStore(
-  env: MotionEnvironment = defaultMotionEnvironment(),
+	env: MotionEnvironment = defaultMotionEnvironment()
 ): MotionStore {
-  let preference = parsePreference(env.readPreference())
-  let systemReduce = env.systemReduce()
-  let reduced = resolveReducedMotion(preference, systemReduce)
-  const listeners = new Set<(reduced: boolean) => void>()
+	let preference = parsePreference(env.readPreference());
+	let systemReduce = env.systemReduce();
+	let reduced = resolveReducedMotion(preference, systemReduce);
+	const listeners = new Set<(reduced: boolean) => void>();
 
-  // Before anything renders, so the first paint is already correct.
-  env.reflect(reduced)
+	// Before anything renders, so the first paint is already correct.
+	env.reflect(reduced);
 
-  function settle() {
-    const next = resolveReducedMotion(preference, systemReduce)
-    if (next === reduced) return
-    reduced = next
-    env.reflect(reduced)
-    for (const listener of listeners) listener(reduced)
-  }
+	function settle() {
+		const next = resolveReducedMotion(preference, systemReduce);
+		if (next === reduced) return;
+		reduced = next;
+		env.reflect(reduced);
+		for (const listener of listeners) listener(reduced);
+	}
 
-  const stopSystem = env.onSystemChange(() => {
-    systemReduce = env.systemReduce()
-    settle()
-  })
+	const stopSystem = env.onSystemChange(() => {
+		systemReduce = env.systemReduce();
+		settle();
+	});
 
-  const stopExternal = env.onExternalWrite(() => {
-    preference = parsePreference(env.readPreference())
-    settle()
-  })
+	const stopExternal = env.onExternalWrite(() => {
+		preference = parsePreference(env.readPreference());
+		settle();
+	});
 
-  function set(next: MotionPreference) {
-    if (next === preference) return
-    preference = next
-    env.writePreference(next)
-    settle()
-  }
+	function set(next: MotionPreference) {
+		if (next === preference) return;
+		preference = next;
+		env.writePreference(next);
+		settle();
+	}
 
-  return {
-    get preference() {
-      return preference
-    },
-    get reduced() {
-      return reduced
-    },
-    get systemReduce() {
-      return systemReduce
-    },
-    set,
-    toggle: () => set(togglePreference(preference, systemReduce)),
-    subscribe(listener) {
-      listeners.add(listener)
-      return () => {
-        listeners.delete(listener)
-      }
-    },
-    dispose() {
-      stopSystem()
-      stopExternal()
-      listeners.clear()
-    },
-  }
+	return {
+		get preference() {
+			return preference;
+		},
+		get reduced() {
+			return reduced;
+		},
+		get systemReduce() {
+			return systemReduce;
+		},
+		set,
+		toggle: () => set(togglePreference(preference, systemReduce)),
+		subscribe(listener) {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+		dispose() {
+			stopSystem();
+			stopExternal();
+			listeners.clear();
+		}
+	};
 }
 
 /**
@@ -290,4 +284,4 @@ export function createMotionStore(
  * stylesheets correct - a component that forgets to subscribe still renders
  * with the right CSS.
  */
-export const motion: MotionStore = createMotionStore()
+export const motion: MotionStore = createMotionStore();
