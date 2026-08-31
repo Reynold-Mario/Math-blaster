@@ -614,6 +614,19 @@ Don't "fix" these without checking - they're intentional stopping points, not bu
 
 ## Conventions worth keeping
 
+- **NEVER SILENCE A SVELTE COMPILER WARNING.** `<!-- svelte-ignore ... -->` and
+  `// svelte-ignore ...` are both ESLint errors, in templates and in script
+  blocks alike, so this is machine-enforced rather than advisory. Every one of
+  those warnings points at a real hazard - `state_referenced_locally`,
+  `prefer-svelte-reactivity`, the a11y set - and `npm run check` runs
+  `--fail-on-warnings`, so a suppression is the one thing that can route around
+  the zero-warning contract. Fix the warning at its source.
+  Where a *lint* rule is genuinely wrong for a file, switch it off for that file
+  in the root `eslint.config.js` with the reason written down, the way
+  `svelte/prefer-svelte-reactivity` is switched off for `GameCanvas.svelte` and
+  `SkillTreeScreen.svelte`. An exemption in one reviewable place beats inline
+  disables scattered through the source.
+
 - **A CURRICULUM'S `id` IS THE TOPIC'S ONE TRUE NAME**, and it equals the id
   of the `gradeTree` node that teaches it. Mastery is recorded against that
   string, so a topic with two ids splits one child's practice across two rows
