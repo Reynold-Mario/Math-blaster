@@ -667,7 +667,7 @@ into `packages/`, or a second game — hits the first one again:
 > **Do not rename the `math-blaster` package.** `--workspace games/math-blaster` addresses
 > it by path regardless, so renaming is pure churn.
 >
-> **Do not touch `name: Build, Check & Test` in the workflow** — see
+> **Do not touch any job's `name:` in the workflow** — see
 > [Invariants](#invariants).
 
 *Verify:* `npm ci` at the root, then `npm run check --workspaces` and
@@ -1426,10 +1426,14 @@ expensive, quiet consequences.
    sets `"module": "commonjs"`, so `import.meta` is a compile error. This is the same class
    of trap as the existing rule that assets are fetched by URL and never imported.
 7. **Nothing has a foreign key to `auth.users`.** See the data model above.
-8. **Do not rename the CI job.** `Build, Check & Test` is a required status check on
-   `main`. Renaming it, splitting it into a matrix, or adding a `paths:` filter all break
-   merges — a required check that reports as *skipped* blocks a merge just as firmly as
-   one that fails.
+8. **Do not rename a CI job.** `Lint`, `Build`, `svelte-check (strict)` and `Unit tests`
+   are each a required status check on `main`. Renaming one, folding it into a matrix, or
+   adding a `paths:` filter all break merges — a required check that reports as *skipped*
+   blocks a merge just as firmly as one that fails. There were four names to get wrong
+   instead of one from the moment the job was split; the rule did not change, only its
+   surface area. Changing a name means editing the protection rule in the same change and
+   letting the new contexts report green *before* the merge, never after — see `todo.md`
+   2.3b for the order that takes.
 9. **Update this file in the same PR that changes what it describes.** A roadmap is exactly
    the kind of document that drifts, and correcting doc drift has already cost this repo
    one dedicated PR.

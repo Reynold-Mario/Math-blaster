@@ -1,5 +1,18 @@
 name: CI
 
+# One job per gate, so a failure names itself instead of hiding inside one
+# combined check. The shape is `the-student-experience`'s, minus its Playwright
+# container - every test here is jest under `testEnvironment: node`.
+#
+#   Lint                  prettier --check + eslint, behind a content-keyed cache
+#   Build                 vite build, per workspace
+#   svelte-check (strict) svelte-check --fail-on-warnings + tsc
+#   Unit tests            jest, per workspace
+#
+# Each job installs its own dependencies. That is four `npm ci` runs rather than
+# one, which the reference also accepts: they happen in parallel, and the whole
+# matrix finishes sooner than the serial job it replaces.
+
 on:
   push:
     branches: [main]
@@ -17,10 +30,13 @@ on:
     #
     # The cost is that `edited` also covers title and body edits - there is no
     # base-only activity type - so editing a description runs CI too. That is
-    # cheap here (a ~20s job, and the concurrency group above cancels the
-    # previous run for the same ref) and is deliberately NOT guarded with a
-    # job-level `if:`. "Build, Check & Test" is a required status check on
-    # main, and a required check that reports as skipped can block a merge.
+    # cheap here and is deliberately NOT guarded with a job-level `if:`. All
+    # four job names below are required status checks on main, and a required
+    # check that reports as skipped can block a merge.
+    #
+    # Kept as-is rather than taking the reference's bare `pull_request:`. This
+    # block records a bug that was actually hit here; the reference has not hit
+    # it yet.
     types: [opened, synchronize, reopened, edited]
 
 # Read-only by default. Nothing here publishes, comments or pushes, so the
@@ -33,13 +49,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    # THE NAME IS LOAD-BEARING. "Build, Check & Test" is the required status
-    # check on main, so renaming this job - or splitting it into one job per
-    # step, which would otherwise be the tidier shape - leaves branch protection
-    # waiting forever on a context that no longer reports. Splitting it needs
-    # the protection rule updated in the same change; see todo.md 2.3.
-    name: Build, Check & Test
+  # EVERY `name:` IN THIS FILE IS LOAD-BEARING. All four are required status
+  # checks on main, so renaming a job - or adding a `paths:` filter to one -
+  # leaves branch protection waiting forever on a context that no longer
+  # reports, and a required check that reports as *skipped* blocks a merge just
+  # as firmly as one that fails. Changing a name means updating the protection
+  # rule in the same change; see todo.md 2.3b for the order that takes.
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -56,36 +73,115 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Lint runs first: it is the cheapest gate and, unlike the two below, it
-      # depends on nothing having been bundled or type-checked.
+      # Persist .eslintcache and prettier's cache dir across runs. Both tools skip
+      # unchanged files. Key rotates when any config that affects rule evaluation
+      # changes (.gitignore is read by includeIgnoreFile() so it decides what gets
+      # linted at all); restore-keys lets any prior run for the same config hash
+      # rehydrate.
       #
-      # This is a STEP rather than a job only because the job name is a required
-      # status check - see the note on `name:` above. It becomes its own `Lint`
-      # job in the split (todo.md 2.3b), which is also what stops "Build, Check &
-      # Test" understating what this job does. Adding it here rather than waiting
-      # for the split is deliberate: the alternative leaves a linter in the repo
-      # that CI does not run.
+      # The `--cache-strategy content` in `npm run lint` is load-bearing: eslint's
+      # default strategy keys on mtime, and actions/checkout writes every file with
+      # a fresh mtime, so the restored cache matches nothing and the whole repo is
+      # re-linted on every run despite a reported cache hit.
+      - name: Restore lint caches
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .eslintcache
+            node_modules/.cache/prettier
+          key: lint-cache-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'prettier.config.js', '.prettierignore', '.gitignore') }}-${{ github.sha }}
+          restore-keys: |
+            lint-cache-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'prettier.config.js', '.prettierignore', '.gitignore') }}-
+
       - name: Lint (prettier + eslint)
         run: npm run lint
 
+      # Only main writes. Cache entries are branch-scoped, so an entry written by a
+      # PR is unreadable from every other branch. It helps nobody while still
+      # counting against the repo quota, evicting the main entry that every branch
+      # does restore from.
+      - name: Save lint caches
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .eslintcache
+            node_modules/.cache/prettier
+          key: lint-cache-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'prettier.config.js', '.prettierignore', '.gitignore') }}-${{ github.sha }}
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
       # THE JOB WAS CALLED "Build" AND DID NOT BUILD, so a Vite build that
-      # failed passed CI and only showed up on someone's machine.
+      # failed passed CI and only showed up on someone's machine. It is its own
+      # job now, which is what keeps that from being possible again.
       #
       # Type-checking is not bundling: `npm run check` never invokes Vite, so it
       # cannot see a plugin or config failure, an unresolvable asset, or a
-      # Svelte compile error that tsc is happy with. It runs first because it is
-      # the cheapest way to fail - no point type-checking code that cannot be
-      # bundled.
+      # Svelte compile error that tsc is happy with. That is why both exist.
       #
       # `--workspaces` excludes the root, so a root script calling the same
       # script name in each workspace does not recurse. `--if-present` is what
-      # lets a workspace with no `test` (the landing page, when it arrives)
-      # sit alongside one that has them, instead of failing the run.
+      # lets a workspace with no `test` (apps/web) sit alongside one that has
+      # them, instead of failing the run.
       - name: Build
         run: npm run build --workspaces --if-present
 
+  svelte-check:
+    name: svelte-check (strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `--fail-on-warnings` lives in each workspace's own `check` script, so
+      # the zero-warning contract holds locally too and not only here.
       - name: Type-check (svelte-check + tsc)
         run: npm run check --workspaces --if-present
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Run tests
         run: npm run test --workspaces --if-present -- --ci
