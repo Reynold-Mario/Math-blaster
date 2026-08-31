@@ -36,9 +36,7 @@ const enabled = process.env.BALANCE_REPORT === '1';
         'run sec': Math.round(s.meanRunSec),
       });
 
-      // eslint-disable-next-line no-console
       console.log(`\n--- ${player.name}: per-wave averages ---`);
-      // eslint-disable-next-line no-console
       console.table(
         waveProfile(runs, 14).map((w) => ({
           wave: `${w.waveNumber}${w.isBoss ? ' B' : ''}`,
@@ -53,9 +51,7 @@ const enabled = process.env.BALANCE_REPORT === '1';
       );
     }
 
-    // eslint-disable-next-line no-console
     console.log('\n=== WHERE RUNS END ===');
-    // eslint-disable-next-line no-console
     console.table(summaryRows);
     expect(summaryRows).toHaveLength(SIM_PLAYERS.length);
   });

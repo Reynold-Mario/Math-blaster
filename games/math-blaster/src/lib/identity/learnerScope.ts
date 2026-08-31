@@ -54,7 +54,7 @@ export type ClaimOutcome =
  */
 export function claimAnonymousSave(storage: StorageLike | null, learnerId: string): ClaimOutcome {
   if (storage === null) return 'already-claimed-by-other';
-  let existing: string | null = null;
+  let existing: string | null;
   try {
     existing = storage.getItem(CLAIM_MARKER_KEY);
   } catch {

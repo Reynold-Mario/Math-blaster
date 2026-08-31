@@ -589,7 +589,7 @@
           >▶</button>
         </div>
         <div class="keypad">
-          {#each ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'FIRE'] as d}
+          {#each ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'FIRE'] as d (d)}
             {#if d === '⌫'}
               <button class="key wide" onclick={() => input.pressBackspace()}>⌫</button>
             {:else if d === 'FIRE'}

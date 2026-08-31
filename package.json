@@ -12,6 +12,8 @@
     "dev": "concurrently --kill-others --prefix-colors auto \"npm:dev:*\"",
     "dev:catalog": "npm run dev --workspace apps/web",
     "dev:math-blaster": "npm run dev --workspace games/math-blaster",
+    "lint": "prettier --check --cache . && eslint --cache --cache-strategy content .",
+    "format": "prettier --write .",
     "build": "npm run build --workspaces --if-present",
     "check": "npm run check --workspaces --if-present",
     "test": "npm run test --workspaces --if-present"
@@ -20,6 +22,14 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "concurrently": "^10.0.5"
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^10.0.5",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-svelte": "^3.23.0",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "prettier-plugin-svelte": "^4.1.1",
+    "typescript-eslint": "^8.68.0"
   }
 }

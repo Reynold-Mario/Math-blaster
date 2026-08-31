@@ -529,7 +529,7 @@ D (2.3b). B before C because C is two rules added to the config B creates; D las
 because it is the only one that needs a repo-settings edit, and because its `Lint`
 job cannot exist until B does.
 
-- [ ] **2.1** ESLint + Prettier, mirroring `the-student-experience`.
+- [x] **2.1** ~~ESLint + Prettier~~ DONE (2026-08-31), mirroring `the-student-experience`.
       **At the repo root, not beside the game.** TSE is a single package, so its one
       root config is the shape being mirrored; and ESLint flat config has no
       `--workspaces --if-present` equivalent, so a per-workspace config would mean
@@ -551,21 +551,36 @@ job cannot exist until B does.
       fetch` (no server code), the inline-`<svg>` ban (everything is canvas, and
       there is no Lucide here to point people at instead), and
       `prettier-plugin-tailwindcss` (no Tailwind).
-      **`parserOptions.projectService: true` is skipped too, and this one is a
-      prediction rather than a certainty.** TSE needs it for
+      **`parserOptions.projectService: true` is ON, and the prediction that it
+      would fail was wrong.** This item expected the solution-style tsconfigs
+      (`files: []` + `references`) to leave the project service resolving to a
+      config containing no files. They do not - it follows the references, and the
+      repo lints clean with it on. Measured: 1.5s with, 1.1s without, which the CI
+      cache absorbs. Nothing needs it yet (TSE turns it on for
       `svelte/no-navigation-without-resolve`, a SvelteKit-router rule with no
-      counterpart here. It is also expected to fail: every `tsconfig.json` in this
-      repo is solution-style (`files: []` + `references`), and the project service
-      resolves to the nearest one, which contains no files. If it turns out to work,
-      prefer it and strike this paragraph; if a type-aware rule is ever wanted and it
-      does not, the fix is an explicit `project: [...]` list of the `tsconfig.app.json`
-      files, not `projectService`.
-      **Sequencing:** the first `prettier --write` rewrites nearly every file — 88 of
-      the 90 tracked `.ts`/`.svelte` files are 2-space indented and `useTabs: true`
-      re-indents all of them. Keep it as its own commit so a rebase can take it
-      wholesale, and land it when no long-lived branch is open. A
-      `.git-blame-ignore-revs` naming that commit is worth adding at the same time;
-      TSE has none, but TSE never did a repo-wide reformat.
+      counterpart here); it is on so the first type-aware rule anyone reaches for
+      works rather than erroring.
+      **Sequencing:** the first `prettier --write` rewrites nearly every file - 88 of
+      the 90 tracked `.ts`/`.svelte` files were 2-space indented and `useTabs: true`
+      re-indented all of them. It is its own commit so a rebase can take it wholesale,
+      with a `.git-blame-ignore-revs` naming that commit; TSE has none, but TSE never
+      did a repo-wide reformat.
+
+      *Shipped:* 9 real ESLint findings, all fixed rather than suppressed - five
+      unkeyed `{#each}` blocks (`Game.svelte`, `SkillTreeScreen.svelte`; the skill-tree
+      edges gained a `key` field to have something stable to key on), one
+      `(window as any)` vendor shim in `audio.ts`, and one dead initialiser in
+      `learnerScope.ts`. The four stale `no-console` disables went with them.
+      Three `svelte/prefer-svelte-reactivity` hits were **false positives and are
+      switched off for their two files, with the reason in the config**: the
+      skill-tree's `ALL_PIPS` / `CHILDREN_OF` are built once at module init and then
+      only read, and `GameCanvas`'s `flashUntil` is rAF-driven animation state that
+      nothing reactive reads. Config-level, commented exemptions are the reference's
+      own pattern for this (its data-viz `<svg>` allowlist).
+      **`npm run lint` also went into `ci.yml` as a step here, not in 2.3b.** The
+      split is what turns it into a `Lint` job; waiting for that would have left a
+      linter in the repo that CI does not run. The cost is that "Build, Check & Test"
+      understates the job until 2.3b renames it.
 - [ ] **2.2** Adopt TSE's suppression rule: **no `svelte-ignore`**, machine-enforced
       via `no-warning-comments` (term `svelte-ignore`, `location: 'anywhere'`) for the
       comment form, plus TSE's `no-restricted-syntax` selector on

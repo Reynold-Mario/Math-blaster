@@ -212,6 +212,8 @@
     depth: number;
   }
   interface Edge {
+    /** The child pip this line runs to. One edge per pip, so this is unique. */
+    key: string;
     x1: number;
     y1: number;
     x2: number;
@@ -245,7 +247,8 @@
       const x = radius * Math.sin(rad);
       const y = -radius * Math.cos(rad);
       nodes.push({ pip, x, y, angleDeg, depth });
-      if (parentPos) edges.push({ x1: parentPos.x, y1: parentPos.y, x2: x, y2: y });
+      if (parentPos)
+        edges.push({ key: pip.key, x1: parentPos.x, y1: parentPos.y, x2: x, y2: y });
       const children = visibleChildrenOf(pip);
       if (children.length === 0) return;
       const weights = children.map(leafWeight);
@@ -339,7 +342,7 @@
     {#if maxed}<span class="max-badge">✦</span>{/if}
     {#if installments && installments.length > 1}
       <span class="installment-dots">
-        {#each installments as _, i}
+        {#each installments as _, i (i)}
           <span class="dot" class:filled={i < paid}></span>
         {/each}
       </span>
@@ -392,7 +395,7 @@
   </div>
 
   <div class="legend">
-    {#each CATEGORY_ORDER as category}
+    {#each CATEGORY_ORDER as category (category)}
       <span class="legend-item" class:locked={!branchOpen(category)}>
         <span class="legend-dot" style="background: {CATEGORY_BRIGHT[category]}"></span>
         {CATEGORY_LABELS[category]}{branchOpen(category) ? '' : ' 🔒'}
@@ -403,7 +406,7 @@
   <div class="radial-viewport" bind:this={viewportEl}>
     <div class="radial-canvas" style="width: {canvasSize}px; height: {canvasSize}px;">
       <svg class="tree-lines" width={canvasSize} height={canvasSize} viewBox="0 0 {canvasSize} {canvasSize}">
-        {#each layout.edges as edge}
+        {#each layout.edges as edge (edge.key)}
           <line
             x1={halfExtent + edge.x1}
             y1={halfExtent + edge.y1}
@@ -434,7 +437,7 @@
         role="radiogroup"
         aria-label="Which grade's maths to practise"
       >
-        {#each PLAYABLE_GRADES as grade}
+        {#each PLAYABLE_GRADES as grade (grade)}
           <button
             class="grade-btn"
             class:selected={profile.selectedGrade === grade}
