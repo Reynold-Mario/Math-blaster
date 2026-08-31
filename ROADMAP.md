@@ -239,14 +239,16 @@ pixel-blaster/                  repo root == Netlify base directory
 workspace — which is why Track A can land it before the workspace move happens.
 ```
 
-Root `package.json`, **as shipped**:
+Root `package.json`, **as shipped** (`dev` since revised — see below):
 
 ```json
 {
   "name": "pixel-blaster", "private": true, "version": "0.0.0", "type": "module",
   "workspaces": ["apps/*", "games/*", "packages/*"],
   "scripts": {
-    "dev": "npm run dev --workspace games/math-blaster",
+    "dev": "concurrently --kill-others --prefix-colors auto \"npm:dev:*\"",
+    "dev:catalog": "npm run dev --workspace apps/web",
+    "dev:math-blaster": "npm run dev --workspace games/math-blaster",
     "check": "npm run check --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present"
@@ -261,11 +263,25 @@ Root `package.json`, **as shipped**:
 fan-out form is correct for one workspace and for several; PR 12 repoints it when it
 creates the script.
 
-**`dev` stays pointed at the game, and PR 11 deliberately did not flip it.** The original
-draft of this block aimed it at `apps/web`. But `npm run dev -w apps/web` serves only that
-workspace, so the catalog's one link 404s — making the catalog the default `npm run dev`
-would hand every contributor a page whose only action is broken, in exchange for nothing.
-PR 12 is when an assembled site exists and the question has a real answer.
+**`dev` pointed at the game through PR 11, and now points at the catalog.** The original
+draft of this block aimed it at `apps/web`, and PR 11 deliberately did not flip it: `npm
+run dev -w apps/web` serves only that workspace, so the catalog's one link 404s, and
+making the catalog the default would have handed every contributor a page whose only
+action is broken. **The dev-server proxy is what changed the answer** — the catalog now
+forwards `/learner/games/<slug>/` to the game's own dev server, so the link works, and
+the entry point can be the page that lists what there is to play.
+
+That needs both servers up, which is the one thing `--workspaces` cannot do: it runs
+scripts in series. Hence `concurrently` — the sole root dependency — and the
+`npm:dev:*` wildcard, so **a new game adds one `dev:<slug>` script and nothing else**:
+no list of servers to keep in step, the same reasoning as invariant 1.
+
+The ports invert with the default. 5173 is Vite's, and it now belongs to the catalog
+because that is the URL you are told to open; math-blaster moved to 5174, declared once
+in `games/math-blaster/dev-port.ts` and imported by both its own config and the catalog's
+proxy map. Both set `strictPort`: Vite's habit of walking to the next free port would
+otherwise slide the game out from under the proxy, or the catalog onto the game's port,
+and either failure presents as a Play link that hangs rather than as a bound-port error.
 
 `--workspaces` excludes the root, so a root script calling the same script name in each
 workspace does not recurse. `--if-present` is what lets `packages/theme`, which has

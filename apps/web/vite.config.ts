@@ -7,6 +7,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte'
  * `tsconfig.node.json` already sets `allowImportingTsExtensions`.
  */
 import { GAMES, gameHref, type PlayableGame } from './src/games.ts'
+import { DEV_PORT as MATH_BLASTER_DEV_PORT } from '../../games/math-blaster/dev-port.ts'
 
 /**
  * Deliberately thinner than `games/math-blaster/vite.config.ts`, and the two
@@ -21,6 +22,10 @@ import { GAMES, gameHref, type PlayableGame } from './src/games.ts'
  * counterpart in production, so there is nothing for it to match; the games
  * take a `base` and this does not. Never `'./'` - see ROADMAP invariant 4.
  *
+ * It does take a `server.port`, and 5173 rather than any other number: `npm
+ * run dev` at the repo root starts this server and the games behind it, and
+ * Vite's default port belongs to whatever you are meant to open.
+ *
  * The sprites are ES-imported from the game's `public/` by relative path (see
  * `src/sprites.ts`). That needs no `server.fs.allow` entry: Vite's default
  * allow-root is the npm workspace root, which the root `package.json`'s
@@ -30,16 +35,22 @@ import { GAMES, gameHref, type PlayableGame } from './src/games.ts'
 /**
  * Which port each playable game's dev server answers on.
  *
- * ONE ENTRY PER PLAYABLE GAME, and the only thing this file hardcodes about a
- * game. The path is derived (see below); the port cannot be, because it is a
- * property of how you launched the thing rather than of the game itself.
+ * ONE ENTRY PER PLAYABLE GAME - but the entry POINTS AT the game's own
+ * declaration rather than restating the number, so the game workspace and this
+ * proxy cannot drift apart. See ROADMAP invariant 1: the way to satisfy an
+ * invariant about keeping copies in step is to delete a copy. The port is a
+ * property of how the game's server was launched, so the game's directory is
+ * where it belongs; what stays here is only the mapping.
  *
- * 5173 is Vite's default and `npm run dev` at the repo root is math-blaster,
- * so the common case needs no flags. Only one game can own 5173 - a second
- * playable game means launching it on its own port and adding it here.
+ * Reaching across a workspace boundary by relative path is the same move
+ * `src/sprites.ts` already makes for the game's APNGs, and for the same
+ * reason: this page is downstream of the games it lists.
+ *
+ * A second playable game adds a line here and a `dev-port.ts` of its own -
+ * ports do not overlap, because 5173 belongs to this server.
  */
 const GAME_DEV_PORTS: Record<string, number> = {
-  'math-blaster': 5173,
+  'math-blaster': MATH_BLASTER_DEV_PORT,
 }
 
 /**
@@ -114,6 +125,15 @@ const gameProxy = Object.fromEntries(
 export default defineConfig({
   plugins: [svelte()],
   server: {
+    /**
+     * `strictPort` because this is the URL the root `npm run dev` tells you to
+     * open and the one every game's port is numbered relative to. Vite's
+     * default on a busy port is to walk to the next free one - which is 5174,
+     * the game's, so a drifting catalog would take the port out from under the
+     * server it proxies to. Failing on the spot says what is wrong.
+     */
+    port: 5173,
+    strictPort: true,
     proxy: gameProxy,
   },
 })

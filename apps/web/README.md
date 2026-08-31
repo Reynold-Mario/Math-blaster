@@ -4,7 +4,8 @@ The standalone landing page: a grid of what there is to play. Plain Vite + Svelt
 no runtime dependencies, no auth, no network.
 
 ```
-npm run dev -w apps/web
+npm run dev              # this page on :5173, with the games proxied behind it
+npm run dev -w apps/web  # this page alone
 ```
 
 `apps/web/src/games.ts` is the single source of truth for what this page says about each
@@ -17,5 +18,9 @@ domain and unreachable once the games are proxied. `ROADMAP.md` says so under "W
 route shape is `/learner/games/<slug>/` from day one" — worth reading before building much
 more here.
 
-Under `npm run dev` the Play link 404s. That is expected: this dev server serves only this
-workspace, and the two are assembled into one `dist/` by `scripts/build-site.mjs` (PR 12).
+**Run this workspace alone and the Play link goes nowhere.** It is an absolute path, so
+it needs the game on the same origin: `npm run dev` at the repo root starts the game's
+server too and proxies the path prefix through to it (see `vite.config.ts`), and in
+production `scripts/build-site.mjs` (PR 12) assembles both into one `dist/`. With only
+this server running there is no 404 to notice — the path hits this dev server's SPA
+fallback and it re-serves this page.

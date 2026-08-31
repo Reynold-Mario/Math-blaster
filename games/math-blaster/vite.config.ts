@@ -1,5 +1,8 @@
 import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
+/** The `.ts` extension is REQUIRED, not stylistic - see the identical import
+ *  in `apps/web/vite.config.ts` for why. */
+import { DEV_PORT } from './dev-port.ts'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -18,10 +21,26 @@ export default defineConfig({
    * Never `'./'` - a relative base resolves against the CURRENT DOCUMENT URL,
    * so it breaks the moment a path gains a segment. See ROADMAP invariant 4.
    *
-   * The dev server moves with it: `npm run dev` now serves the game at
-   * `localhost:5173/learner/games/math-blaster/`, not at `/`.
+   * The dev server moves with it: the game is served at
+   * `/learner/games/math-blaster/`, not at `/`.
    */
   base: '/learner/games/math-blaster/',
+  /**
+   * WHY A PINNED PORT AT ALL: `apps/web`'s dev server proxies this game's path
+   * prefix here, so this port is something another process depends on rather
+   * than a detail of one terminal. `dev-port.ts` holds the number and the
+   * reasoning; `strictPort` is what keeps a busy port from silently moving the
+   * game out from under that proxy.
+   *
+   * This is what `npm run dev -w games/math-blaster` gives you: the game on
+   * its own, at `localhost:5174/learner/games/math-blaster/`. Plain
+   * `npm run dev` at the root runs the catalog alongside it and is the way in
+   * you normally want - the game is one click from the card.
+   */
+  server: {
+    port: DEV_PORT,
+    strictPort: true,
+  },
   /**
    * Env files live at the REPO ROOT, two levels up, not in this workspace.
    *

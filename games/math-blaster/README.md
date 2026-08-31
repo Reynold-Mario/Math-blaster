@@ -236,14 +236,18 @@ npm ci
 npm run dev
 ```
 
-Then open the printed local URL. **It is
-`http://localhost:5173/learner/games/math-blaster/`, not `http://localhost:5173/`** - the
-game is built at that `base` so a published URL survives being proxied onto the Varsity
-Tutors domain unchanged. Vite prints the right one and redirects the bare root to it, but
-a bookmark from before the move will land nowhere.
+That starts the catalog on `:5173` and this game behind it. **Open
+<http://localhost:5173/> and click the Pixel Math Blaster card** - the catalog proxies
+`/learner/games/math-blaster/` through to this game's server, so both surfaces sit on one
+origin exactly as they will in production, and progression saved in `localStorage` is the
+same save either way.
 
-`npm run dev` at the root is aimed at this game. To target it explicitly - which is what
-you want once there is more than one workspace - use `npm run dev -w games/math-blaster`.
+`npm run dev -w games/math-blaster` runs this game on its own, at
+`http://localhost:5174/learner/games/math-blaster/`. **Note the path: not
+`http://localhost:5174/`** - the game is built at that `base` so a published URL survives
+being proxied onto the Varsity Tutors domain unchanged. Vite prints the right URL and
+redirects the bare root to it, but a bookmark from before the move will land nowhere. The
+port is pinned in `dev-port.ts`, because the catalog's proxy depends on it.
 
 `npm run build` produces a production bundle; `npm run check` runs the
 full type-check (svelte-check + tsc).

@@ -14,8 +14,9 @@ npm ci
 
 ## Development
 
-- `npm run dev` — start the game's Vite dev server
-- `npm run dev -w apps/web` — start the catalog page
+- `npm run dev` — start every dev server: the catalog on :5173, each game behind it.
+  Open <http://localhost:5173/> and click through; the catalog proxies the games
+- `npm run dev -w apps/web` / `npm run dev -w games/math-blaster` — one server alone
 - `npm run build` — production build of every workspace
 - `npm run preview -w games/math-blaster` — preview a production build locally
 
