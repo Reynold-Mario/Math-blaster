@@ -4,9 +4,9 @@ Pixel-art arcade math shooter for K-3 kids, set in space. Svelte 5 (runes) +
 TypeScript + Vite.
 Gameplay renders on `<canvas>`; Svelte owns UI chrome only.
 
-Always run `npm run check` AND `npm test` after edits - CI gates both,
-and the whole codebase currently passes with 0 errors/warnings; keep it that
-way.
+Always run `npm run lint`, `npm run check` AND `npm test` after edits - CI gates
+all three, and the whole codebase currently passes with 0 errors/warnings; keep
+it that way.
 
 ## Architecture
 

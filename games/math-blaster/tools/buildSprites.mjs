@@ -18,34 +18,40 @@ import { SPRITE_SOURCES, rasterizeFrame, blank } from './spriteFrames.mjs';
 const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'sprites');
 
 function preview() {
-  const ramp = ' .:-=+*#%@';
-  for (const [key, source] of Object.entries(SPRITE_SOURCES)) {
-    console.log(`\n=== ${key}  ${source.w}x${source.h}  ${source.frames} frames @ ${source.delayMs}ms ===`);
-    for (let f = 0; f < source.frames; f++) {
-      const g = blank(source.w, source.h);
-      source.draw(g, f, source.frames);
-      console.log(`-- frame ${f}`);
-      for (const row of g) {
-        console.log(row.map((c) => (c === 0 ? ' ' : ramp[Math.min(ramp.length - 1, c)])).join(''));
-      }
-    }
-  }
+	const ramp = ' .:-=+*#%@';
+	for (const [key, source] of Object.entries(SPRITE_SOURCES)) {
+		console.log(
+			`\n=== ${key}  ${source.w}x${source.h}  ${source.frames} frames @ ${source.delayMs}ms ===`
+		);
+		for (let f = 0; f < source.frames; f++) {
+			const g = blank(source.w, source.h);
+			source.draw(g, f, source.frames);
+			console.log(`-- frame ${f}`);
+			for (const row of g) {
+				console.log(row.map((c) => (c === 0 ? ' ' : ramp[Math.min(ramp.length - 1, c)])).join(''));
+			}
+		}
+	}
 }
 
 function build() {
-  mkdirSync(OUT_DIR, { recursive: true });
-  let total = 0;
-  for (const [key, source] of Object.entries(SPRITE_SOURCES)) {
-    const frames = Array.from({ length: source.frames }, (_, i) => ({
-      rgba: rasterizeFrame(source, i),
-      delayMs: source.delayMs,
-    }));
-    const bytes = encodeApng(frames, source.w, source.h);
-    writeFileSync(join(OUT_DIR, `${key}.apng`), bytes);
-    total += bytes.length;
-    console.log(`${key.padEnd(10)} ${source.w}x${source.h}  ${String(source.frames).padStart(2)} frames  ${String(bytes.length).padStart(6)} bytes`);
-  }
-  console.log(`\n${Object.keys(SPRITE_SOURCES).length} sprites, ${(total / 1024).toFixed(1)} KB total -> public/sprites/`);
+	mkdirSync(OUT_DIR, { recursive: true });
+	let total = 0;
+	for (const [key, source] of Object.entries(SPRITE_SOURCES)) {
+		const frames = Array.from({ length: source.frames }, (_, i) => ({
+			rgba: rasterizeFrame(source, i),
+			delayMs: source.delayMs
+		}));
+		const bytes = encodeApng(frames, source.w, source.h);
+		writeFileSync(join(OUT_DIR, `${key}.apng`), bytes);
+		total += bytes.length;
+		console.log(
+			`${key.padEnd(10)} ${source.w}x${source.h}  ${String(source.frames).padStart(2)} frames  ${String(bytes.length).padStart(6)} bytes`
+		);
+	}
+	console.log(
+		`\n${Object.keys(SPRITE_SOURCES).length} sprites, ${(total / 1024).toFixed(1)} KB total -> public/sprites/`
+	);
 }
 
 if (process.argv.includes('--preview')) preview();

@@ -25,5 +25,7 @@ import { GRADE_ORDER, type GradeLevel } from '../levels/gradeTree';
  * file - the seam was already in the right place.
  */
 export function resolveGrade(profile: PlayerProfile): GradeLevel {
-  return (GRADE_ORDER as string[]).includes(profile.selectedGrade) ? profile.selectedGrade : DEFAULT_GRADE;
+	return (GRADE_ORDER as string[]).includes(profile.selectedGrade)
+		? profile.selectedGrade
+		: DEFAULT_GRADE;
 }

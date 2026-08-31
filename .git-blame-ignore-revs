@@ -1,0 +1,13 @@
+# Revisions to skip when running `git blame`.
+#
+# GitHub honours this file automatically. Locally it needs telling once:
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Only whole-repo mechanical reformats belong here - never a commit that
+# changed behaviour, or blame silently lies about who wrote the logic.
+
+# Format the repository with Prettier (2026-08-31). The reference's config sets
+# `useTabs: true` and this repo was 2-space throughout, so the first
+# `prettier --write` re-indented 117 files.
+7f2e42046b1b133015298a921675cf7f546defcc

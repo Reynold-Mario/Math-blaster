@@ -20,61 +20,55 @@ export type BossSpriteKind = 'dreadnought' | 'leviathan';
  * position, movement is the main lever on how hard something is to hit -
  * there is no health to make it tougher with instead. */
 export type EnemyMovement =
-  /** Straight down the lane it spawned in. */
-  | 'straight'
-  /** Sine-weaves around its spawn lane, so the player has to lead it. */
-  | 'weave'
-  /** Loiters near the top, then accelerates hard past the midline. */
-  | 'dive';
+	/** Straight down the lane it spawned in. */
+	| 'straight'
+	/** Sine-weaves around its spawn lane, so the player has to lead it. */
+	| 'weave'
+	/** Loiters near the top, then accelerates hard past the midline. */
+	| 'dive';
 
 export type EnemyArchetypeId =
-  | 'drifter'
-  | 'weaver'
-  | 'diver'
-  | 'bulwark'
-  | 'sentinel'
-  | 'splitter'
-  | 'spore';
+	'drifter' | 'weaver' | 'diver' | 'bulwark' | 'sentinel' | 'splitter' | 'spore';
 
 export interface EnemyArchetype {
-  id: EnemyArchetypeId;
-  /** Player-facing name, used by presentation code only. */
-  label: string;
-  sprite: GruntKind;
-  movement: EnemyMovement;
-  /**
-   * How many problems must be worked through to destroy it, and the whole
-   * of its durability - there is no health behind a layer. Each answered
-   * layer mints a *fresh* problem, so a 2-layer enemy is two questions,
-   * which is the point. Only exact/equivalent clears one; close and
-   * partial answers knock the enemy back up the screen instead, so they
-   * can never accumulate into a kill.
-   */
-  layers: number;
-  /** Multiplies the level's authored fallSpeed range. */
-  speedMultiplier: number;
-  /** Drawn at the smaller pixel scale. */
-  mini: boolean;
-  /**
-   * Starts behind a shield that only an exact/equivalent answer strips.
-   * Every other verdict bounces off for nothing - the one place in the
-   * game where being close genuinely isn't good enough.
-   */
-  shielded: boolean;
-  /** How many `spore` minis it breaks into when destroyed. 0 = none. */
-  splitsInto: number;
-  /**
-   * Whether killing it is counted as a real kill - which decides the
-   * per-kill share of the wave-clear time bonus and the bounty. It does NOT
-   * decide whether the thing has to leave the board: a wave ends when the
-   * board is empty, so uncounted debris still has to be dealt with. (This
-   * used to gate a level's `enemiesToClear` quota, which no longer exists.)
-   * Split debris deliberately doesn't - otherwise a splitter would be
-   * three cheap points of progress instead of a complication.
-   */
-  countsTowardClear: boolean;
-  /** Scales both score and currency awarded for the kill. */
-  bountyMultiplier: number;
+	id: EnemyArchetypeId;
+	/** Player-facing name, used by presentation code only. */
+	label: string;
+	sprite: GruntKind;
+	movement: EnemyMovement;
+	/**
+	 * How many problems must be worked through to destroy it, and the whole
+	 * of its durability - there is no health behind a layer. Each answered
+	 * layer mints a *fresh* problem, so a 2-layer enemy is two questions,
+	 * which is the point. Only exact/equivalent clears one; close and
+	 * partial answers knock the enemy back up the screen instead, so they
+	 * can never accumulate into a kill.
+	 */
+	layers: number;
+	/** Multiplies the level's authored fallSpeed range. */
+	speedMultiplier: number;
+	/** Drawn at the smaller pixel scale. */
+	mini: boolean;
+	/**
+	 * Starts behind a shield that only an exact/equivalent answer strips.
+	 * Every other verdict bounces off for nothing - the one place in the
+	 * game where being close genuinely isn't good enough.
+	 */
+	shielded: boolean;
+	/** How many `spore` minis it breaks into when destroyed. 0 = none. */
+	splitsInto: number;
+	/**
+	 * Whether killing it is counted as a real kill - which decides the
+	 * per-kill share of the wave-clear time bonus and the bounty. It does NOT
+	 * decide whether the thing has to leave the board: a wave ends when the
+	 * board is empty, so uncounted debris still has to be dealt with. (This
+	 * used to gate a level's `enemiesToClear` quota, which no longer exists.)
+	 * Split debris deliberately doesn't - otherwise a splitter would be
+	 * three cheap points of progress instead of a complication.
+	 */
+	countsTowardClear: boolean;
+	/** Scales both score and currency awarded for the kill. */
+	bountyMultiplier: number;
 }
 
 // --- Movement tuning. Deliberately expressed against `y` rather than
@@ -121,132 +115,132 @@ export const LANE_MIN_PCT = 8;
 export const LANE_MAX_PCT = 92;
 
 export function clampLane(xPct: number): number {
-  return Math.max(LANE_MIN_PCT, Math.min(LANE_MAX_PCT, xPct));
+	return Math.max(LANE_MIN_PCT, Math.min(LANE_MAX_PCT, xPct));
 }
 
 const ARCHETYPE_LIST: EnemyArchetype[] = [
-  {
-    id: 'drifter',
-    label: 'Drifter',
-    sprite: 'drone',
-    movement: 'straight',
-    layers: 1,
-    speedMultiplier: 1,
-    mini: false,
-    shielded: false,
-    splitsInto: 0,
-    countsTowardClear: true,
-    bountyMultiplier: 1,
-  },
-  {
-    id: 'weaver',
-    label: 'Weaver',
-    sprite: 'swarmer',
-    movement: 'weave',
-    layers: 1,
-    speedMultiplier: 1.1,
-    mini: false,
-    shielded: false,
-    splitsInto: 0,
-    countsTowardClear: true,
-    bountyMultiplier: 1.4,
-  },
-  {
-    id: 'diver',
-    label: 'Diver',
-    sprite: 'swarmer',
-    movement: 'dive',
-    layers: 1,
-    speedMultiplier: 1,
-    mini: false,
-    shielded: false,
-    splitsInto: 0,
-    countsTowardClear: true,
-    bountyMultiplier: 1.4,
-  },
-  {
-    id: 'bulwark',
-    label: 'Bulwark',
-    sprite: 'hulk',
-    movement: 'straight',
-    layers: 2,
-    speedMultiplier: 0.7,
-    mini: false,
-    shielded: false,
-    splitsInto: 0,
-    countsTowardClear: true,
-    bountyMultiplier: 2,
-  },
-  {
-    id: 'sentinel',
-    label: 'Sentinel',
-    sprite: 'hulk',
-    movement: 'straight',
-    layers: 2,
-    speedMultiplier: 0.6,
-    mini: false,
-    shielded: true,
-    splitsInto: 0,
-    countsTowardClear: true,
-    bountyMultiplier: 2.6,
-  },
-  {
-    id: 'splitter',
-    label: 'Splitter',
-    sprite: 'drone',
-    movement: 'straight',
-    layers: 1,
-    speedMultiplier: 0.8,
-    mini: false,
-    shielded: false,
-    splitsInto: 2,
-    countsTowardClear: true,
-    bountyMultiplier: 1.5,
-  },
-  {
-    id: 'spore',
-    label: 'Spore',
-    sprite: 'drone',
-    movement: 'weave',
-    layers: 1,
-    speedMultiplier: 1.25,
-    mini: true,
-    shielded: false,
-    splitsInto: 0,
-    countsTowardClear: false,
-    bountyMultiplier: 0.5,
-  },
+	{
+		id: 'drifter',
+		label: 'Drifter',
+		sprite: 'drone',
+		movement: 'straight',
+		layers: 1,
+		speedMultiplier: 1,
+		mini: false,
+		shielded: false,
+		splitsInto: 0,
+		countsTowardClear: true,
+		bountyMultiplier: 1
+	},
+	{
+		id: 'weaver',
+		label: 'Weaver',
+		sprite: 'swarmer',
+		movement: 'weave',
+		layers: 1,
+		speedMultiplier: 1.1,
+		mini: false,
+		shielded: false,
+		splitsInto: 0,
+		countsTowardClear: true,
+		bountyMultiplier: 1.4
+	},
+	{
+		id: 'diver',
+		label: 'Diver',
+		sprite: 'swarmer',
+		movement: 'dive',
+		layers: 1,
+		speedMultiplier: 1,
+		mini: false,
+		shielded: false,
+		splitsInto: 0,
+		countsTowardClear: true,
+		bountyMultiplier: 1.4
+	},
+	{
+		id: 'bulwark',
+		label: 'Bulwark',
+		sprite: 'hulk',
+		movement: 'straight',
+		layers: 2,
+		speedMultiplier: 0.7,
+		mini: false,
+		shielded: false,
+		splitsInto: 0,
+		countsTowardClear: true,
+		bountyMultiplier: 2
+	},
+	{
+		id: 'sentinel',
+		label: 'Sentinel',
+		sprite: 'hulk',
+		movement: 'straight',
+		layers: 2,
+		speedMultiplier: 0.6,
+		mini: false,
+		shielded: true,
+		splitsInto: 0,
+		countsTowardClear: true,
+		bountyMultiplier: 2.6
+	},
+	{
+		id: 'splitter',
+		label: 'Splitter',
+		sprite: 'drone',
+		movement: 'straight',
+		layers: 1,
+		speedMultiplier: 0.8,
+		mini: false,
+		shielded: false,
+		splitsInto: 2,
+		countsTowardClear: true,
+		bountyMultiplier: 1.5
+	},
+	{
+		id: 'spore',
+		label: 'Spore',
+		sprite: 'drone',
+		movement: 'weave',
+		layers: 1,
+		speedMultiplier: 1.25,
+		mini: true,
+		shielded: false,
+		splitsInto: 0,
+		countsTowardClear: false,
+		bountyMultiplier: 0.5
+	}
 ];
 
 export const ENEMY_ARCHETYPES: Record<EnemyArchetypeId, EnemyArchetype> = ARCHETYPE_LIST.reduce(
-  (acc, archetype) => {
-    acc[archetype.id] = archetype;
-    return acc;
-  },
-  {} as Record<EnemyArchetypeId, EnemyArchetype>
+	(acc, archetype) => {
+		acc[archetype.id] = archetype;
+		return acc;
+	},
+	{} as Record<EnemyArchetypeId, EnemyArchetype>
 );
 
 export function enemyArchetype(id: EnemyArchetypeId): EnemyArchetype {
-  return ENEMY_ARCHETYPES[id];
+	return ENEMY_ARCHETYPES[id];
 }
 
 /** The moving parts of an enemy that its movement pattern actually reads.
  * Passing primitives rather than an EnemyInstance keeps this module free
  * of any runtime-state dependency (and trivially testable). */
 export interface MovementInput {
-  movement: EnemyMovement;
-  /** Current vertical position, 0-100. */
-  y: number;
-  /** The lane the enemy was released into - a weave oscillates around
-   * this, it doesn't accumulate drift. */
-  anchorXPct: number;
-  /** 0-1 offset into the weave cycle, so a formation of weavers doesn't
-   * move as one rigid block. */
-  wavePhase: number;
-  /** Fall speed in y-percent per second, already scaled by archetype and
-   * skill multipliers. */
-  speed: number;
-  dtSec: number;
+	movement: EnemyMovement;
+	/** Current vertical position, 0-100. */
+	y: number;
+	/** The lane the enemy was released into - a weave oscillates around
+	 * this, it doesn't accumulate drift. */
+	anchorXPct: number;
+	/** 0-1 offset into the weave cycle, so a formation of weavers doesn't
+	 * move as one rigid block. */
+	wavePhase: number;
+	/** Fall speed in y-percent per second, already scaled by archetype and
+	 * skill multipliers. */
+	speed: number;
+	dtSec: number;
 }
 
 /**
@@ -256,20 +250,23 @@ export interface MovementInput {
  * at any frame rate and can't accumulate rounding drift.
  */
 export function stepMovement(input: MovementInput): { y: number; xPct: number } {
-  const { movement, anchorXPct, wavePhase, speed, dtSec } = input;
+	const { movement, anchorXPct, wavePhase, speed, dtSec } = input;
 
-  if (movement === 'dive') {
-    const committed = input.y >= DIVE_TRIGGER_Y_PCT;
-    const factor = committed ? DIVE_SPEED_MULTIPLIER : DIVE_APPROACH_MULTIPLIER;
-    return { y: input.y + speed * factor * dtSec, xPct: anchorXPct };
-  }
+	if (movement === 'dive') {
+		const committed = input.y >= DIVE_TRIGGER_Y_PCT;
+		const factor = committed ? DIVE_SPEED_MULTIPLIER : DIVE_APPROACH_MULTIPLIER;
+		return { y: input.y + speed * factor * dtSec, xPct: anchorXPct };
+	}
 
-  const y = input.y + speed * dtSec;
+	const y = input.y + speed * dtSec;
 
-  if (movement === 'weave') {
-    const cycles = y / WEAVE_PERIOD_PCT + wavePhase;
-    return { y, xPct: clampLane(anchorXPct + Math.sin(cycles * Math.PI * 2) * WEAVE_AMPLITUDE_PCT) };
-  }
+	if (movement === 'weave') {
+		const cycles = y / WEAVE_PERIOD_PCT + wavePhase;
+		return {
+			y,
+			xPct: clampLane(anchorXPct + Math.sin(cycles * Math.PI * 2) * WEAVE_AMPLITUDE_PCT)
+		};
+	}
 
-  return { y, xPct: anchorXPct };
+	return { y, xPct: anchorXPct };
 }

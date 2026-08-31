@@ -34,9 +34,14 @@ import { createSupabaseRemote } from './supabaseRemote';
  * Deliberately duplicates the guard in `getSupabaseClient` - see note 2 above.
  */
 export function isSupabaseConfigured(): boolean {
-  const url = import.meta.env.VITE_SUPABASE_URL;
-  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  return typeof url === 'string' && url !== '' && typeof publishableKey === 'string' && publishableKey !== '';
+	const url = import.meta.env.VITE_SUPABASE_URL;
+	const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+	return (
+		typeof url === 'string' &&
+		url !== '' &&
+		typeof publishableKey === 'string' &&
+		publishableKey !== ''
+	);
 }
 
 let clientPromise: Promise<SupabaseClient> | null = null;
@@ -54,49 +59,49 @@ let clientPromise: Promise<SupabaseClient> | null = null;
  * anyway, because the branch is unreachable in such a build.
  */
 export function getSupabaseClient(): Promise<SupabaseClient> {
-  if (clientPromise === null) {
-    clientPromise = (async () => {
-      const url = import.meta.env.VITE_SUPABASE_URL;
-      const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      if (
-        typeof url !== 'string' ||
-        url === '' ||
-        typeof publishableKey !== 'string' ||
-        publishableKey === ''
-      ) {
-        // Folds to an unconditional throw with no credentials, which is what
-        // makes the import below dead code. Keep them in one body.
-        throw new Error(
-          'Supabase is not configured. Put VITE_SUPABASE_URL and ' +
-            'VITE_SUPABASE_PUBLISHABLE_KEY in .env.local at the REPO ROOT.'
-        );
-      }
-      const { createClient } = await import('@supabase/supabase-js');
-      return createClient(url, publishableKey, {
-        auth: {
-          // The session belongs in storage so a reload does not sign the player
-          // out, and refresh has to be automatic because a run can easily
-          // outlast an access token.
-          persistSession: true,
-          autoRefreshToken: true,
-          // Not an OAuth callback handler: there is no redirect flow to parse,
-          // and leaving this on makes every boot inspect the address bar.
-          detectSessionInUrl: false,
-        },
-      });
-    })().catch((error: unknown) => {
-      // A failed load must not be cached, or one offline boot means no sync for
-      // the rest of the session. Same rule as createLazyRemote.
-      clientPromise = null;
-      throw error;
-    });
-  }
-  return clientPromise;
+	if (clientPromise === null) {
+		clientPromise = (async () => {
+			const url = import.meta.env.VITE_SUPABASE_URL;
+			const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+			if (
+				typeof url !== 'string' ||
+				url === '' ||
+				typeof publishableKey !== 'string' ||
+				publishableKey === ''
+			) {
+				// Folds to an unconditional throw with no credentials, which is what
+				// makes the import below dead code. Keep them in one body.
+				throw new Error(
+					'Supabase is not configured. Put VITE_SUPABASE_URL and ' +
+						'VITE_SUPABASE_PUBLISHABLE_KEY in .env.local at the REPO ROOT.'
+				);
+			}
+			const { createClient } = await import('@supabase/supabase-js');
+			return createClient(url, publishableKey, {
+				auth: {
+					// The session belongs in storage so a reload does not sign the player
+					// out, and refresh has to be automatic because a run can easily
+					// outlast an access token.
+					persistSession: true,
+					autoRefreshToken: true,
+					// Not an OAuth callback handler: there is no redirect flow to parse,
+					// and leaving this on makes every boot inspect the address bar.
+					detectSessionInUrl: false
+				}
+			});
+		})().catch((error: unknown) => {
+			// A failed load must not be cached, or one offline boot means no sync for
+			// the rest of the session. Same rule as createLazyRemote.
+			clientPromise = null;
+			throw error;
+		});
+	}
+	return clientPromise;
 }
 
 /** The progression port, backed by the lazily-loaded client. */
 export async function loadSupabaseRemote(): Promise<RemoteProgression> {
-  return createSupabaseRemote(await getSupabaseClient());
+	return createSupabaseRemote(await getSupabaseClient());
 }
 
 /**
@@ -113,23 +118,23 @@ export async function loadSupabaseRemote(): Promise<RemoteProgression> {
  * before the load has finished.
  */
 export function onSupabaseIdentityChange(listener: () => void): () => void {
-  let unsubscribe: (() => void) | null = null;
-  let cancelled = false;
-  void getSupabaseClient()
-    .then((client) => {
-      if (cancelled) return;
-      const { data } = client.auth.onAuthStateChange(() => listener());
-      unsubscribe = () => data.subscription.unsubscribe();
-    })
-    .catch(() => {
-      // Unconfigured, or the chunk never arrived. Either way there is no
-      // identity to hear about and the local game is unaffected. Swallowed
-      // rather than reported: the store's own read reports the same failure,
-      // and two lines per boot for one cause is noise.
-    });
-  return () => {
-    cancelled = true;
-    unsubscribe?.();
-    unsubscribe = null;
-  };
+	let unsubscribe: (() => void) | null = null;
+	let cancelled = false;
+	void getSupabaseClient()
+		.then((client) => {
+			if (cancelled) return;
+			const { data } = client.auth.onAuthStateChange(() => listener());
+			unsubscribe = () => data.subscription.unsubscribe();
+		})
+		.catch(() => {
+			// Unconfigured, or the chunk never arrived. Either way there is no
+			// identity to hear about and the local game is unaffected. Swallowed
+			// rather than reported: the store's own read reports the same failure,
+			// and two lines per boot for one cause is noise.
+		});
+	return () => {
+		cancelled = true;
+		unsubscribe?.();
+		unsubscribe = null;
+	};
 }

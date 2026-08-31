@@ -39,3 +39,6 @@ pnpm-debug.log*
 # config belongs in review.
 .claude/settings.local.json
 .claude/worktrees/
+
+# ESLint cache. Prettier's lives under node_modules/.cache, already ignored.
+.eslintcache

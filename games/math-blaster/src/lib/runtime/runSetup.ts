@@ -37,22 +37,22 @@ export const SKIP_STEP_WAVES = WAVE_BOSS_INTERVAL;
  * only the clamped figure can't distinguish them.
  */
 export function checkpointWave(profile: PlayerProfile): number {
-  const effect = currentEffect(findBaseSkillNode('checkpoint')!, profile.skillProgress);
-  return effect.kind === 'checkpoint' ? effect.startWave : 1;
+	const effect = currentEffect(findBaseSkillNode('checkpoint')!, profile.skillProgress);
+	return effect.kind === 'checkpoint' ? effect.startWave : 1;
 }
 
 /** The wave the Checkpoint skill entitles this player to start from. */
 export function freeStartWave(profile: PlayerProfile): number {
-  return clampToReached(profile, checkpointWave(profile));
+	return clampToReached(profile, checkpointWave(profile));
 }
 
 /** The furthest wave this player may start from by any means. */
 export function maxStartWave(profile: PlayerProfile): number {
-  return Math.max(1, Math.floor(profile.highestWaveReached));
+	return Math.max(1, Math.floor(profile.highestWaveReached));
 }
 
 function clampToReached(profile: PlayerProfile, wave: number): number {
-  return Math.min(maxStartWave(profile), Math.max(1, Math.floor(wave)));
+	return Math.min(maxStartWave(profile), Math.max(1, Math.floor(wave)));
 }
 
 /**
@@ -61,21 +61,21 @@ function clampToReached(profile: PlayerProfile, wave: number): number {
  * special-casing it.
  */
 export function skipCost(fromWave: number, toWave: number): number {
-  const waves = Math.floor(toWave) - Math.floor(fromWave);
-  return waves <= 0 ? 0 : waves * SKIP_COST_PER_WAVE;
+	const waves = Math.floor(toWave) - Math.floor(fromWave);
+	return waves <= 0 ? 0 : waves * SKIP_COST_PER_WAVE;
 }
 
 /** The next wave a paid skip could reach from here, or null when the
  * player has already reached their ceiling. */
 export function nextSkipTarget(profile: PlayerProfile, fromWave: number): number | null {
-  const target = Math.floor(fromWave) + SKIP_STEP_WAVES;
-  return target > maxStartWave(profile) ? null : target;
+	const target = Math.floor(fromWave) + SKIP_STEP_WAVES;
+	return target > maxStartWave(profile) ? null : target;
 }
 
 export interface SkipPurchase {
-  profile: PlayerProfile;
-  startWave: number;
-  spent: number;
+	profile: PlayerProfile;
+	startWave: number;
+	spent: number;
 }
 
 /**
@@ -83,19 +83,23 @@ export interface SkipPurchase {
  * unreachable or unaffordable, so a caller can offer the button without
  * having to re-derive whether it is legal.
  */
-export function purchaseSkip(profile: PlayerProfile, fromWave: number, toWave: number): SkipPurchase | null {
-  const from = clampToReached(profile, fromWave);
-  const to = Math.floor(toWave);
-  if (to <= from || to > maxStartWave(profile)) return null;
+export function purchaseSkip(
+	profile: PlayerProfile,
+	fromWave: number,
+	toWave: number
+): SkipPurchase | null {
+	const from = clampToReached(profile, fromWave);
+	const to = Math.floor(toWave);
+	if (to <= from || to > maxStartWave(profile)) return null;
 
-  const cost = skipCost(from, to);
-  if (cost > profile.currency) return null;
+	const cost = skipCost(from, to);
+	if (cost > profile.currency) return null;
 
-  return {
-    profile: { ...profile, currency: profile.currency - cost },
-    startWave: to,
-    spent: cost,
-  };
+	return {
+		profile: { ...profile, currency: profile.currency - cost },
+		startWave: to,
+		spent: cost
+	};
 }
 
 /**
@@ -106,13 +110,13 @@ export function purchaseSkip(profile: PlayerProfile, fromWave: number, toWave: n
  * Returns the same object when nothing changed, so callers can skip a save.
  */
 export function recordWaveReached(profile: PlayerProfile, waveNumber: number): PlayerProfile {
-  const wave = Math.max(1, Math.floor(waveNumber));
-  if (wave <= profile.highestWaveReached) return profile;
-  return { ...profile, highestWaveReached: wave };
+	const wave = Math.max(1, Math.floor(waveNumber));
+	if (wave <= profile.highestWaveReached) return profile;
+	return { ...profile, highestWaveReached: wave };
 }
 
 /** Whether starting here drops the player straight into a boss fight -
  * used by the run-setup screen to label a checkpoint honestly. */
 export function startsOnBoss(waveNumber: number): boolean {
-  return isBossWave(waveNumber);
+	return isBossWave(waveNumber);
 }

@@ -20,4 +20,4 @@
  * the proxy target and leave the catalog's Play link answering ECONNREFUSED -
  * a failure a good deal more confusing than "port 5174 is already in use".
  */
-export const DEV_PORT = 5174
+export const DEV_PORT = 5174;

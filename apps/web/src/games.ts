@@ -26,39 +26,39 @@
  *  `public/sprites/` - each key costs bundle bytes because `SPRITE_ART` is a
  *  `Record` and Rollup cannot shake unused entries out of one. Add a key when
  *  a card needs it, rather than mirroring the directory. */
-export type SpriteKey = 'player' | 'drone' | 'swarmer' | 'hulk'
+export type SpriteKey = 'player' | 'drone' | 'swarmer' | 'hulk';
 
 /** A palette token by reference, never a hex literal, so a palette change stays
  *  one file. The platform's catalog plays the same trick with
  *  `var(--game-accent-<id>)`; we point at the existing space palette instead of
  *  minting a token per game, because four entries do not need that layer. */
-type AccentToken = `var(--accent-${string})`
+type AccentToken = `var(--accent-${string})`;
 
 interface CatalogGameBase {
-  /** ONE STRING IN THREE PLACES now, not four: the directory under `games/`,
-   *  the vite `base`, and `game_slug` in the database. The catalog href used to
-   *  be the fourth - `gameHref()` derives it, so it cannot drift out of step.
-   *  See ROADMAP invariant 1. */
-  id: string
-  name: string
-  description: string
-  /** Free prose, matching the platform catalog's convention. Not parsed, not
-   *  filtered, and hand-maintained: it tracks `AUTHORED_GRADES` in the game's
-   *  `gradeTree.ts`, which is K-3 today. Deriving it would mean importing
-   *  across a workspace boundary, which would mean extracting a package for
-   *  one consumer - see ROADMAP invariant 3. Accepted drift, revisited in
-   *  PR 16. */
-  grades: string
-  accent: AccentToken
-  sprite: SpriteKey
+	/** ONE STRING IN THREE PLACES now, not four: the directory under `games/`,
+	 *  the vite `base`, and `game_slug` in the database. The catalog href used to
+	 *  be the fourth - `gameHref()` derives it, so it cannot drift out of step.
+	 *  See ROADMAP invariant 1. */
+	id: string;
+	name: string;
+	description: string;
+	/** Free prose, matching the platform catalog's convention. Not parsed, not
+	 *  filtered, and hand-maintained: it tracks `AUTHORED_GRADES` in the game's
+	 *  `gradeTree.ts`, which is K-3 today. Deriving it would mean importing
+	 *  across a workspace boundary, which would mean extracting a package for
+	 *  one consumer - see ROADMAP invariant 3. Accepted drift, revisited in
+	 *  PR 16. */
+	grades: string;
+	accent: AccentToken;
+	sprite: SpriteKey;
 }
 
 export interface PlayableGame extends CatalogGameBase {
-  status: 'playable'
+	status: 'playable';
 }
 
 export interface UpcomingGame extends CatalogGameBase {
-  status: 'coming-soon'
+	status: 'coming-soon';
 }
 
 /**
@@ -67,7 +67,7 @@ export interface UpcomingGame extends CatalogGameBase {
  * is the one bug this page is actually capable of having, and this makes it a
  * compile error instead of a thing to remember.
  */
-export type CatalogGame = PlayableGame | UpcomingGame
+export type CatalogGame = PlayableGame | UpcomingGame;
 
 /**
  * The href is DERIVED, never stored. That removes one of the four places
@@ -79,7 +79,7 @@ export type CatalogGame = PlayableGame | UpcomingGame
  * redirect hop on every launch; now it cannot be written.
  */
 export function gameHref(game: PlayableGame): `/learner/games/${string}/` {
-  return `/learner/games/${game.id}/`
+	return `/learner/games/${game.id}/`;
 }
 
 /**
@@ -93,44 +93,44 @@ export function gameHref(game: PlayableGame): `/learner/games/${string}/` {
  * them turns out not to be next, change it here and nothing else moves.
  */
 export const GAMES: CatalogGame[] = [
-  {
-    id: 'math-blaster',
-    status: 'playable',
-    name: 'Pixel Math Blaster',
-    description:
-      'Line up under a falling enemy, type the answer, fire. Close answers buy you time; only an exact one clears the stack.',
-    grades: 'Grades K-3',
-    accent: 'var(--accent-hot)',
-    sprite: 'player',
-  },
-  {
-    id: 'word-blaster',
-    status: 'coming-soon',
-    name: 'Word Blaster',
-    description:
-      'The same ship and the same clock, pointed at reading: take the clue, type the word, fire.',
-    grades: 'Grades K-3',
-    accent: 'var(--accent-violet)',
-    sprite: 'drone',
-  },
-  {
-    id: 'shape-blaster',
-    status: 'coming-soon',
-    name: 'Shape Blaster',
-    description:
-      'Sort by sides, angles and symmetry before the formation reaches the bottom of the screen.',
-    grades: 'Grades K-3',
-    accent: 'var(--accent-green)',
-    sprite: 'swarmer',
-  },
-  {
-    id: 'clock-blaster',
-    status: 'coming-soon',
-    name: 'Clock Blaster',
-    description:
-      'Read the dial, count the coins, fire the answer. Time and money running on the same clock.',
-    grades: 'Grades 1-3',
-    accent: 'var(--accent-cyan)',
-    sprite: 'hulk',
-  },
-]
+	{
+		id: 'math-blaster',
+		status: 'playable',
+		name: 'Pixel Math Blaster',
+		description:
+			'Line up under a falling enemy, type the answer, fire. Close answers buy you time; only an exact one clears the stack.',
+		grades: 'Grades K-3',
+		accent: 'var(--accent-hot)',
+		sprite: 'player'
+	},
+	{
+		id: 'word-blaster',
+		status: 'coming-soon',
+		name: 'Word Blaster',
+		description:
+			'The same ship and the same clock, pointed at reading: take the clue, type the word, fire.',
+		grades: 'Grades K-3',
+		accent: 'var(--accent-violet)',
+		sprite: 'drone'
+	},
+	{
+		id: 'shape-blaster',
+		status: 'coming-soon',
+		name: 'Shape Blaster',
+		description:
+			'Sort by sides, angles and symmetry before the formation reaches the bottom of the screen.',
+		grades: 'Grades K-3',
+		accent: 'var(--accent-green)',
+		sprite: 'swarmer'
+	},
+	{
+		id: 'clock-blaster',
+		status: 'coming-soon',
+		name: 'Clock Blaster',
+		description:
+			'Read the dial, count the coins, fire the answer. Time and money running on the same clock.',
+		grades: 'Grades 1-3',
+		accent: 'var(--accent-cyan)',
+		sprite: 'hulk'
+	}
+];

@@ -1,10 +1,10 @@
 import type {
-  RemoteProgression,
-  RemoteSnapshot,
-  RemoteWrite,
-  RemoteWriteResult,
-  RunSubmission,
-  RunSubmitResult,
+	RemoteProgression,
+	RemoteSnapshot,
+	RemoteWrite,
+	RemoteWriteResult,
+	RunSubmission,
+	RunSubmitResult
 } from './RemoteProgression';
 
 /**
@@ -21,36 +21,36 @@ import type {
  * arrives, rather than after.
  */
 export function createLazyRemote(load: () => Promise<RemoteProgression>): RemoteProgression {
-  let loading: Promise<RemoteProgression> | null = null;
+	let loading: Promise<RemoteProgression> | null = null;
 
-  function get(): Promise<RemoteProgression> {
-    if (loading === null) {
-      // Memoize the PROMISE rather than the resolved value, so two calls that
-      // arrive together share one load instead of racing two imports.
-      loading = load().catch((error: unknown) => {
-        // ...but never memoize a FAILURE. A chunk fetch that failed because the
-        // player booted offline has to be retryable when the connection comes
-        // back, and the store's backoff will ask again. Caching the rejected
-        // promise would turn one bad moment into a permanently local session.
-        loading = null;
-        throw error;
-      });
-    }
-    return loading;
-  }
+	function get(): Promise<RemoteProgression> {
+		if (loading === null) {
+			// Memoize the PROMISE rather than the resolved value, so two calls that
+			// arrive together share one load instead of racing two imports.
+			loading = load().catch((error: unknown) => {
+				// ...but never memoize a FAILURE. A chunk fetch that failed because the
+				// player booted offline has to be retryable when the connection comes
+				// back, and the store's backoff will ask again. Caching the rejected
+				// promise would turn one bad moment into a permanently local session.
+				loading = null;
+				throw error;
+			});
+		}
+		return loading;
+	}
 
-  return {
-    async currentProfileId(): Promise<string | null> {
-      return (await get()).currentProfileId();
-    },
-    async read(gameSlug: string): Promise<RemoteSnapshot | null> {
-      return (await get()).read(gameSlug);
-    },
-    async write(input: RemoteWrite): Promise<RemoteWriteResult> {
-      return (await get()).write(input);
-    },
-    async submitRun(run: RunSubmission): Promise<RunSubmitResult> {
-      return (await get()).submitRun(run);
-    },
-  };
+	return {
+		async currentProfileId(): Promise<string | null> {
+			return (await get()).currentProfileId();
+		},
+		async read(gameSlug: string): Promise<RemoteSnapshot | null> {
+			return (await get()).read(gameSlug);
+		},
+		async write(input: RemoteWrite): Promise<RemoteWriteResult> {
+			return (await get()).write(input);
+		},
+		async submitRun(run: RunSubmission): Promise<RunSubmitResult> {
+			return (await get()).submitRun(run);
+		}
+	};
 }

@@ -25,23 +25,33 @@ them with `--workspaces --if-present`.
 
 ## Before opening a pull request
 
-All PRs into `main` are gated by CI, which runs three checks. Please run all three from
-the repo root first:
+All PRs into `main` are gated by CI. Please run all four from the repo root first:
 
 ```
+npm run lint    # prettier --check + eslint — formatting is enforced, not suggested
 npm run build   # vite build — type-checking is not bundling, so this catches what check cannot
 npm run check   # svelte-check + tsc — must pass with 0 errors/warnings
 npm test        # jest unit tests
 ```
 
-Both must pass locally and in CI before a PR can be merged.
+All four must pass locally and in CI before a PR can be merged.
 
 ## Code style
 
-This project does not currently use a linter or formatter (no ESLint/Prettier configured).
-Please match the existing style/formatting of the surrounding code. If you'd like to
-introduce a linter/formatter, open an issue or PR to discuss it first rather than
-including it alongside an unrelated change.
+Formatting is Prettier's, and it is not a matter of taste: `npm run lint` fails on any file
+`prettier --check` would rewrite. `npm run format` fixes the whole repo in place — run it,
+or format on save, rather than hand-matching the surrounding code.
+
+`eslint.config.js` and `prettier.config.js` live at the repo root and cover every
+workspace. Both mirror `the-student-experience`, which this repo treats as a **read-only
+reference** for tooling; `todo.md` 2.1 records what was taken from it, what was skipped,
+and why. If you want to change a rule, change it there and say which way the reference
+goes.
+
+Suppressions are config-level and commented, not inline. Where a rule is genuinely wrong
+for a file, it is switched off for that file in `eslint.config.js` with the reason written
+down — see the `svelte/prefer-svelte-reactivity` block. That way the exemption is
+reviewable in one place instead of scattered through the source.
 
 ## Branching & PR workflow
 

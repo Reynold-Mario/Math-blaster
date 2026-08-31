@@ -28,27 +28,27 @@ export type IdentityProvider = 'vt';
  * deliberately offers nowhere to put one.
  */
 export interface LearnerIdentity {
-  /**
-   * The platform's learner id. Opaque, stable, and per-CHILD rather than per
-   * household account - which is the whole point: two siblings on one tablet
-   * are two players, not one.
-   */
-  readonly learnerId: string;
-  readonly provider: IdentityProvider;
-  /**
-   * The platform's grade, UNVALIDATED and in the PLATFORM's vocabulary
-   * (`'K' | '1'..'12' | 'college' | 'adult'`), which is wider than the game's.
-   * Translating it is a curriculum question, so it happens in `levels/`, not
-   * here - this port only reports what was said.
-   *
-   * `null` means the platform holds no opinion, which is different from
-   * holding one this game cannot use. Both leave the local pick standing, but
-   * only one of them is worth a diagnostic.
-   */
-  readonly grade: string | null;
-  /** How this learner was chosen. Diagnostics only - never persisted, never
-   * shown, never sent anywhere. */
-  readonly pickedBy: 'url-param' | 'primary' | 'first';
+	/**
+	 * The platform's learner id. Opaque, stable, and per-CHILD rather than per
+	 * household account - which is the whole point: two siblings on one tablet
+	 * are two players, not one.
+	 */
+	readonly learnerId: string;
+	readonly provider: IdentityProvider;
+	/**
+	 * The platform's grade, UNVALIDATED and in the PLATFORM's vocabulary
+	 * (`'K' | '1'..'12' | 'college' | 'adult'`), which is wider than the game's.
+	 * Translating it is a curriculum question, so it happens in `levels/`, not
+	 * here - this port only reports what was said.
+	 *
+	 * `null` means the platform holds no opinion, which is different from
+	 * holding one this game cannot use. Both leave the local pick standing, but
+	 * only one of them is worth a diagnostic.
+	 */
+	readonly grade: string | null;
+	/** How this learner was chosen. Diagnostics only - never persisted, never
+	 * shown, never sent anywhere. */
+	readonly pickedBy: 'url-param' | 'primary' | 'first';
 }
 
 /**
@@ -57,32 +57,32 @@ export interface LearnerIdentity {
  * platform is down" without anyone logging a response body.
  */
 export type AnonymousReason =
-  /** No platform is configured in this build. Zero requests were made. */
-  | 'not-configured'
-  /** The platform answered, and nobody is signed in. */
-  | 'unauthenticated'
-  /** Offline, blocked, timed out, 5xx, or an answer that was not JSON. */
-  | 'unavailable'
-  /** Signed in, but the household is empty - so there is nobody to play as. */
-  | 'no-learners';
+	/** No platform is configured in this build. Zero requests were made. */
+	| 'not-configured'
+	/** The platform answered, and nobody is signed in. */
+	| 'unauthenticated'
+	/** Offline, blocked, timed out, 5xx, or an answer that was not JSON. */
+	| 'unavailable'
+	/** Signed in, but the household is empty - so there is nobody to play as. */
+	| 'no-learners';
 
 export type IdentityResult =
-  | { outcome: 'identified'; identity: LearnerIdentity }
-  | { outcome: 'anonymous'; reason: AnonymousReason };
+	| { outcome: 'identified'; identity: LearnerIdentity }
+	| { outcome: 'anonymous'; reason: AnonymousReason };
 
 export interface LearnerIdentitySource {
-  /**
-   * Resolve once.
-   *
-   * **MUST NOT THROW** - the same contract `ProgressionCodec.parse` holds, and
-   * for the same reason: this sits on the boot path of a game that has to keep
-   * working when everything around it does not. Implementations memoize, so
-   * two callers share one round trip.
-   */
-  resolve(): Promise<IdentityResult>;
+	/**
+	 * Resolve once.
+	 *
+	 * **MUST NOT THROW** - the same contract `ProgressionCodec.parse` holds, and
+	 * for the same reason: this sits on the boot path of a game that has to keep
+	 * working when everything around it does not. Implementations memoize, so
+	 * two callers share one round trip.
+	 */
+	resolve(): Promise<IdentityResult>;
 }
 
 /** The anonymous answer, as a value - saves every caller rebuilding it. */
 export function anonymous(reason: AnonymousReason): IdentityResult {
-  return { outcome: 'anonymous', reason };
+	return { outcome: 'anonymous', reason };
 }

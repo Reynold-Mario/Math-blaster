@@ -56,6 +56,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Lint runs first: it is the cheapest gate and, unlike the two below, it
+      # depends on nothing having been bundled or type-checked.
+      #
+      # This is a STEP rather than a job only because the job name is a required
+      # status check - see the note on `name:` above. It becomes its own `Lint`
+      # job in the split (todo.md 2.3b), which is also what stops "Build, Check &
+      # Test" understating what this job does. Adding it here rather than waiting
+      # for the split is deliberate: the alternative leaves a linter in the repo
+      # that CI does not run.
+      - name: Lint (prettier + eslint)
+        run: npm run lint
+
       # THE JOB WAS CALLED "Build" AND DID NOT BUILD, so a Vite build that
       # failed passed CI and only showed up on someone's machine.
       #

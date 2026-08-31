@@ -30,26 +30,26 @@
  * `--cream` and `--shadow` are also gone; both were declared and never used.
  */
 :root {
-  --bg: #060a16; /* deepest: the page behind everything */
-  --surface: #121a2e; /* panel fill */
-  --surface-alt: #1b2540; /* raised controls - keys, buttons, chips */
-  --tooltip: #0b1226; /* popovers, which sit above panels */
-  --edge: #33415c; /* borders */
-  --edge-strong: #4b5f85;
-  --text: #e6edf9;
-  --text-dim: #98a7c4;
+	--bg: #060a16; /* deepest: the page behind everything */
+	--surface: #121a2e; /* panel fill */
+	--surface-alt: #1b2540; /* raised controls - keys, buttons, chips */
+	--tooltip: #0b1226; /* popovers, which sit above panels */
+	--edge: #33415c; /* borders */
+	--edge-strong: #4b5f85;
+	--text: #e6edf9;
+	--text-dim: #98a7c4;
 
-  /* Accents. `--accent-hot` and `--accent-warm` were `--marquee-red` and
+	/* Accents. `--accent-hot` and `--accent-warm` were `--marquee-red` and
      `--marquee-yellow`; there is no marquee any more. */
-  --accent-hot: #f4526a; /* primary action, FIRE, low clock */
-  --accent-warm: #f7b955; /* selection, countdown, economy */
-  --accent-cyan: #5cc8ff;
-  --accent-green: #3ddc97;
-  --accent-violet: #b98cff;
+	--accent-hot: #f4526a; /* primary action, FIRE, low clock */
+	--accent-warm: #f7b955; /* selection, countdown, economy */
+	--accent-cyan: #5cc8ff;
+	--accent-green: #3ddc97;
+	--accent-violet: #b98cff;
 
-  color-scheme: dark;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+	color-scheme: dark;
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }

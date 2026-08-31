@@ -27,14 +27,14 @@ import { createVtIdentity } from './vtIdentity';
 /** `Game.svelte` decides at construction whether the store gets an identity
  * source at all, and it cannot await. Folds to `return false` when unset. */
 export function isVtIdentityConfigured(): boolean {
-  const base = import.meta.env.VITE_VT_IDENTITY_BASE;
-  return typeof base === 'string' && base !== '';
+	const base = import.meta.env.VITE_VT_IDENTITY_BASE;
+	return typeof base === 'string' && base !== '';
 }
 
 export function createConfiguredVtIdentity(
-  onError?: (where: string, error: unknown) => void
+	onError?: (where: string, error: unknown) => void
 ): LearnerIdentitySource | null {
-  const base = import.meta.env.VITE_VT_IDENTITY_BASE;
-  if (typeof base !== 'string' || base === '') return null;
-  return createVtIdentity({ base, onError });
+	const base = import.meta.env.VITE_VT_IDENTITY_BASE;
+	if (typeof base !== 'string' || base === '') return null;
+	return createVtIdentity({ base, onError });
 }

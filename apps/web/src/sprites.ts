@@ -1,9 +1,9 @@
-import type { SpriteKey } from './games'
+import type { SpriteKey } from './games';
 
-import playerUrl from '../../../games/math-blaster/public/sprites/player.apng'
-import droneUrl from '../../../games/math-blaster/public/sprites/drone.apng'
-import swarmerUrl from '../../../games/math-blaster/public/sprites/swarmer.apng'
-import hulkUrl from '../../../games/math-blaster/public/sprites/hulk.apng'
+import playerUrl from '../../../games/math-blaster/public/sprites/player.apng';
+import droneUrl from '../../../games/math-blaster/public/sprites/drone.apng';
+import swarmerUrl from '../../../games/math-blaster/public/sprites/swarmer.apng';
+import hulkUrl from '../../../games/math-blaster/public/sprites/hulk.apng';
 
 /**
  * The card art, IMPORTED FROM THE GAME RATHER THAN COPIED INTO THIS WORKSPACE.
@@ -35,15 +35,15 @@ import hulkUrl from '../../../games/math-blaster/public/sprites/hulk.apng'
  * card wants. Two independent tables that happen to agree on width and height.
  */
 export const SPRITE_ART: Record<SpriteKey, { url: string; w: number; h: number }> = {
-  player: { url: playerUrl, w: 36, h: 19 },
-  drone: { url: droneUrl, w: 32, h: 24 },
-  swarmer: { url: swarmerUrl, w: 36, h: 28 },
-  hulk: { url: hulkUrl, w: 32, h: 32 },
-}
+	player: { url: playerUrl, w: 36, h: 19 },
+	drone: { url: droneUrl, w: 32, h: 24 },
+	swarmer: { url: swarmerUrl, w: 36, h: 28 },
+	hulk: { url: hulkUrl, w: 32, h: 32 }
+};
 
 /**
  * Integer, and it has to be. `spriteAtlas.ts` makes the same point: a bitmap
  * upscaled by a fraction with smoothing off gets uneven pixel widths, and the
  * whole pixel-art premise dies. 5x fits every sprite inside a 16:9 hero.
  */
-export const SPRITE_SCALE = 5
+export const SPRITE_SCALE = 5;

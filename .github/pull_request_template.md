@@ -8,6 +8,7 @@ Closes #
 
 ## Checklist
 
+- [ ] I ran `npm run lint` at the repo root and it passes (`npm run format` fixes formatting)
 - [ ] I ran `npm run check` at the repo root and it passes with 0 errors/warnings
 - [ ] I ran `npm test` at the repo root and all tests pass
 - [ ] I added/updated tests for new or changed logic where applicable

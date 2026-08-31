@@ -16,14 +16,14 @@ import { parseApng } from './apngParse';
  */
 
 export interface DecodedAnimation {
-  /** One full-canvas bitmap per frame, already composited. */
-  frames: ImageBitmap[];
-  /** Cumulative end time of each frame, so frame lookup is a scan of a
-   * pre-computed array rather than a running sum every draw. */
-  frameEndsMs: number[];
-  totalMs: number;
-  width: number;
-  height: number;
+	/** One full-canvas bitmap per frame, already composited. */
+	frames: ImageBitmap[];
+	/** Cumulative end time of each frame, so frame lookup is a scan of a
+	 * pre-computed array rather than a running sum every draw. */
+	frameEndsMs: number[];
+	totalMs: number;
+	width: number;
+	height: number;
 }
 
 const DISPOSE_BACKGROUND = 1;
@@ -36,46 +36,47 @@ const BLEND_OVER = 1;
 const MIN_FRAME_MS = 10;
 
 export async function decodeApng(url: string): Promise<DecodedAnimation> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
-  const parsed = parseApng(new Uint8Array(await response.arrayBuffer()));
+	const response = await fetch(url);
+	if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+	const parsed = parseApng(new Uint8Array(await response.arrayBuffer()));
 
-  const canvas = document.createElement('canvas');
-  canvas.width = parsed.width;
-  canvas.height = parsed.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error(`${url}: no 2D context to composite frames on.`);
-  ctx.imageSmoothingEnabled = false;
+	const canvas = document.createElement('canvas');
+	canvas.width = parsed.width;
+	canvas.height = parsed.height;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error(`${url}: no 2D context to composite frames on.`);
+	ctx.imageSmoothingEnabled = false;
 
-  const frames: ImageBitmap[] = [];
-  const frameEndsMs: number[] = [];
-  let elapsed = 0;
+	const frames: ImageBitmap[] = [];
+	const frameEndsMs: number[] = [];
+	let elapsed = 0;
 
-  for (const frame of parsed.frames) {
-    const subImage = await createImageBitmap(new Blob([frame.bytes], { type: 'image/png' }));
+	for (const frame of parsed.frames) {
+		const subImage = await createImageBitmap(new Blob([frame.bytes], { type: 'image/png' }));
 
-    // dispose_op PREVIOUS means "put back what was here before this frame",
-    // so the state has to be captured before drawing over it.
-    const snapshot = frame.disposeOp === DISPOSE_PREVIOUS
-      ? ctx.getImageData(0, 0, parsed.width, parsed.height)
-      : null;
+		// dispose_op PREVIOUS means "put back what was here before this frame",
+		// so the state has to be captured before drawing over it.
+		const snapshot =
+			frame.disposeOp === DISPOSE_PREVIOUS
+				? ctx.getImageData(0, 0, parsed.width, parsed.height)
+				: null;
 
-    // SOURCE replaces the region outright; OVER composites onto it. Only
-    // SOURCE needs the region cleared first.
-    if (frame.blendOp !== BLEND_OVER) ctx.clearRect(frame.x, frame.y, frame.w, frame.h);
-    ctx.drawImage(subImage, frame.x, frame.y);
-    subImage.close();
+		// SOURCE replaces the region outright; OVER composites onto it. Only
+		// SOURCE needs the region cleared first.
+		if (frame.blendOp !== BLEND_OVER) ctx.clearRect(frame.x, frame.y, frame.w, frame.h);
+		ctx.drawImage(subImage, frame.x, frame.y);
+		subImage.close();
 
-    frames.push(await createImageBitmap(canvas));
+		frames.push(await createImageBitmap(canvas));
 
-    elapsed += Math.max(MIN_FRAME_MS, frame.delayMs);
-    frameEndsMs.push(elapsed);
+		elapsed += Math.max(MIN_FRAME_MS, frame.delayMs);
+		frameEndsMs.push(elapsed);
 
-    if (frame.disposeOp === DISPOSE_BACKGROUND) ctx.clearRect(frame.x, frame.y, frame.w, frame.h);
-    else if (snapshot) ctx.putImageData(snapshot, 0, 0);
-  }
+		if (frame.disposeOp === DISPOSE_BACKGROUND) ctx.clearRect(frame.x, frame.y, frame.w, frame.h);
+		else if (snapshot) ctx.putImageData(snapshot, 0, 0);
+	}
 
-  if (frames.length === 0) throw new Error(`${url}: decoded to no frames.`);
+	if (frames.length === 0) throw new Error(`${url}: decoded to no frames.`);
 
-  return { frames, frameEndsMs, totalMs: elapsed, width: parsed.width, height: parsed.height };
+	return { frames, frameEndsMs, totalMs: elapsed, width: parsed.width, height: parsed.height };
 }

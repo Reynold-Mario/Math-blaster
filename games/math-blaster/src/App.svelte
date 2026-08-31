@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Game from './lib/Game.svelte';
+	import Game from './lib/Game.svelte';
 </script>
 
 <!--
@@ -13,13 +13,13 @@
   the furniture around it that have been removed.
 -->
 <div class="stage">
-  <Game />
+	<Game />
 </div>
 
 <style>
-  .stage {
-    width: 100%;
-    max-width: 720px;
-    margin: 0 auto;
-  }
+	.stage {
+		width: 100%;
+		max-width: 720px;
+		margin: 0 auto;
+	}
 </style>

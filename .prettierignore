@@ -1,0 +1,22 @@
+# Package Managers
+package-lock.json
+
+# Generated sprite assets. `npm run sprites` writes these; reformatting the
+# manifest would fight the generator on every run.
+games/math-blaster/public/
+
+# Supabase CLI state.
+supabase/.temp/
+
+# Markdown. NOT a style preference - Prettier corrupts these documents.
+#
+# `todo.md` and `ROADMAP.md` are the repo's decision record: long hand-wrapped
+# prose, nested blockquotes inside `- [ ]` items, and cross-references by item
+# number. Prettier re-indents a blockquote's continuation lines without moving
+# its first line, which splits the quote and renders the remainder as an
+# indented code block - it did exactly that to todo.md item 1.1. It also
+# rewrites every `*emphasis*` to `_emphasis_` across ~140KB of prose.
+#
+# The reference is no guide here: its only markdown is a one-line README, so it
+# has never run Prettier over a prose document.
+*.md
