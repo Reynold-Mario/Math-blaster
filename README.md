@@ -22,29 +22,30 @@ npm workspaces, so every command runs from this directory:
 
 ```
 npm ci
-npm run dev      # the game's dev server
-npm run dev -w apps/web    # the catalog page
+npm run dev      # the catalog on :5173, every game behind it
 npm run check    # svelte-check + tsc across every workspace
 npm test         # jest across every workspace
 npm run build    # production build of every workspace
 ```
 
-The two dev servers are separate, and the catalog's Play links point at the games by
-absolute path (`/learner/games/math-blaster/`) because in production one origin serves
-both. So **to follow a Play link locally, run both** — the game on Vite's default 5173,
-then the catalog, which proxies that path prefix through to it (see
-[`apps/web/vite.config.ts`](./apps/web/vite.config.ts)):
+**Open <http://localhost:5173/> and click a card.** `npm run dev` starts one dev server
+per playable surface — the catalog on 5173, math-blaster on 5174 — and the catalog proxies
+`/learner/games/<slug>/` through to the game's server, so the Play links work as URLs
+rather than as a second thing to launch. Ctrl-C stops all of them.
 
-```
-npm run dev                 # terminal 1 — the game, on :5173
-npm run dev -w apps/web     # terminal 2 — the catalog, on :5174
-```
+That indirection is the point rather than a convenience: the catalog's Play links are
+absolute paths, because in production one origin serves both surfaces. Reaching the game
+through the catalog's port reproduces that — one origin, so `localStorage` progression
+behaves the way it will in production instead of splitting into a per-port slot. Going
+straight to `:5174` is a different origin and a different save.
 
-Then browse the catalog at `:5174` and click through. With only the catalog running, a
-Play link lands on its SPA fallback and quietly re-serves the catalog itself — same URL,
-no error. Reaching the game through `:5174` rather than `:5173` also puts both surfaces
-on one origin, so `localStorage` progression behaves the way it will in production
-instead of splitting into a per-port slot.
+To run one workspace alone — `npm run dev -w apps/web` for the catalog, `npm run dev -w
+games/math-blaster` for the game — note that a catalog without its games serves a Play
+link that lands on the SPA fallback and quietly re-serves the catalog itself: same URL,
+no error.
+
+A new playable game adds a `dev:<slug>` script to the root `package.json`; `npm run dev`
+runs everything matching `dev:*`, so there is no list of servers to keep in step.
 
 Where this is going — more games, a catalog page, and per-profile progression — is in
 [`ROADMAP.md`](./ROADMAP.md), along with the ordered list of changes to get there.
