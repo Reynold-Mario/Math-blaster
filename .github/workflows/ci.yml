@@ -84,7 +84,7 @@ jobs:
       # a fresh mtime, so the restored cache matches nothing and the whole repo is
       # re-linted on every run despite a reported cache hit.
       - name: Restore lint caches
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             .eslintcache
@@ -102,7 +102,7 @@ jobs:
       # does restore from.
       - name: Save lint caches
         if: github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             .eslintcache
