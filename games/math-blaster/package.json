@@ -26,6 +26,6 @@
 	"dependencies": {
 		"@pixel-blaster/motion": "*",
 		"@pixel-blaster/theme": "*",
-		"@supabase/supabase-js": "^2.112.4"
+		"@supabase/supabase-js": "^2.115.0"
 	}
 }
