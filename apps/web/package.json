@@ -10,13 +10,13 @@
 		"check": "svelte-check --tsconfig ./tsconfig.app.json --fail-on-warnings && tsc -p tsconfig.node.json"
 	},
 	"devDependencies": {
-		"@sveltejs/vite-plugin-svelte": "^7.2.0",
+		"@sveltejs/vite-plugin-svelte": "^7.3.1",
 		"@tsconfig/svelte": "^5.0.8",
-		"@types/node": "^24.13.3",
-		"svelte": "^5.56.8",
+		"@types/node": "^26.6.5",
+		"svelte": "^5.57.2",
 		"svelte-check": "^4.7.3",
-		"typescript": "~6.0.2",
-		"vite": "^8.2.0"
+		"typescript": "~7.0.2",
+		"vite": "^8.3.4"
 	},
 	"dependencies": {
 		"@pixel-blaster/motion": "*",
